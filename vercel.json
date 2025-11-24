@@ -3,6 +3,6 @@
     { "source": "/api/storage/(.*)", "destination": "/api/storage" }
   ],
   "env": {
-    "VITE_MONGODB_URI": "@mongodb-uri"
+    "MONGODB_URI": "@mongodb-uri"
   }
 }

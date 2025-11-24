@@ -1,6 +1,6 @@
 import { MongoClient } from 'mongodb';
 
-const uri = process.env.VITE_MONGODB_URI;
+const uri = process.env.MONGODB_URI;
 let cachedClient = null;
 let cachedDb = null;
 
