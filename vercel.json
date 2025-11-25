@@ -1,8 +1,5 @@
 {
   "rewrites": [
-    { "source": "/api/storage/(.*)", "destination": "/api/storage" }
-  ],
-  "env": {
-    "MONGODB_URI": "@mongodb-uri"
-  }
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ]
 }
