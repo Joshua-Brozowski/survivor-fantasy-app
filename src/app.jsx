@@ -448,20 +448,144 @@ export default function SurvivorFantasyApp() {
         </div>
       </nav>
 
-      {/* Main Content - Placeholder */}
+      {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        <div className="bg-black/60 backdrop-blur-sm p-8 rounded-lg border-2 border-amber-600 text-center">
-          <h2 className="text-3xl font-bold text-amber-400 mb-4">🎉 Your App is Live!</h2>
-          <p className="text-white text-lg mb-2">Current View: <span className="text-amber-300">{currentView}</span></p>
-          <p className="text-amber-200 mb-4">All the component views (Dashboard, Picks, Leaderboard, etc.) are ready to be implemented!</p>
-          <p className="text-white">✅ Database Connected</p>
-          <p className="text-white">✅ Authentication Working</p>
-          <p className="text-white">✅ Deployed on Vercel</p>
-          <p className="text-white">✅ Auto-Deploy on GitHub Push</p>
-          <div className="mt-6 p-4 bg-green-900/30 border border-green-600 rounded-lg">
-            <p className="text-green-300">Everything is set up correctly! Now you can add all the game features progressively.</p>
+        {currentView === 'leaderboard' && (
+          <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+            <h2 className="text-2xl font-bold text-amber-400 mb-6 flex items-center gap-2">
+              <Trophy className="w-6 h-6" />
+              Leaderboard - Season 48
+            </h2>
+            
+            <div className="space-y-3">
+              {[...players]
+                .sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))
+                .map((player, index) => {
+                  const points = calculateTotalPoints(player.id);
+                  const isCurrentUser = player.id === currentUser.id;
+                  
+                  return (
+                    <div
+                      key={player.id}
+                      className={`bg-gradient-to-r from-amber-900/40 to-orange-900/40 p-4 rounded-lg border-2 transition ${
+                        isCurrentUser 
+                          ? 'border-yellow-400 shadow-lg shadow-yellow-400/30' 
+                          : 'border-amber-600'
+                      } flex items-center justify-between`}
+                    >
+                      <div className="flex items-center gap-4">
+                        {/* Rank Badge */}
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
+                          index === 0 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/50' :
+                          index === 1 ? 'bg-gray-400 text-black shadow-lg shadow-gray-400/50' :
+                          index === 2 ? 'bg-amber-700 text-white shadow-lg shadow-amber-700/50' :
+                          'bg-amber-600/50 text-white'
+                        }`}>
+                          {index + 1}
+                        </div>
+                        
+                        {/* Player Initial Circle */}
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-600 to-orange-600 flex items-center justify-center border-2 border-amber-400">
+                          <span className="text-white font-bold text-xl" style={{ fontFamily: 'Impact, fantasy' }}>
+                            {player.name.charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        
+                        {/* Player Info */}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-white font-bold text-lg">{player.name}</p>
+                            {player.isAdmin && (
+                              <Crown className="w-4 h-4 text-yellow-400" title="Game Master" />
+                            )}
+                            {isCurrentUser && (
+                              <span className="text-xs bg-amber-600 text-white px-2 py-1 rounded">YOU</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-sm">
+                            <span className="text-amber-300">{points} points</span>
+                            {index === 0 && points > 0 && (
+                              <span className="text-yellow-400 flex items-center gap-1">
+                                <Trophy className="w-3 h-3" />
+                                Leading
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Points Display */}
+                      <div className="text-right">
+                        <div className="text-3xl font-bold text-amber-400">
+                          {points}
+                        </div>
+                        <div className="text-xs text-amber-300">
+                          total points
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+            
+            {/* Stats Summary */}
+            <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-gradient-to-br from-yellow-900/60 to-amber-900/60 p-4 rounded-lg border border-yellow-600">
+                <div className="flex items-center gap-2 mb-2">
+                  <Crown className="w-5 h-5 text-yellow-400" />
+                  <p className="text-yellow-300 font-semibold">Leader</p>
+                </div>
+                <p className="text-white text-xl font-bold">
+                  {[...players].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))[0]?.name}
+                </p>
+                <p className="text-yellow-400 text-sm">
+                  {calculateTotalPoints([...players].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))[0]?.id)} pts
+                </p>
+              </div>
+              
+              <div className="bg-gradient-to-br from-purple-900/60 to-pink-900/60 p-4 rounded-lg border border-purple-600">
+                <div className="flex items-center gap-2 mb-2">
+                  <Target className="w-5 h-5 text-purple-400" />
+                  <p className="text-purple-300 font-semibold">Your Rank</p>
+                </div>
+                <p className="text-white text-xl font-bold">
+                  #{[...players]
+                    .sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))
+                    .findIndex(p => p.id === currentUser.id) + 1}
+                </p>
+                <p className="text-purple-400 text-sm">
+                  of {players.length} players
+                </p>
+              </div>
+              
+              <div className="bg-gradient-to-br from-blue-900/60 to-indigo-900/60 p-4 rounded-lg border border-blue-600">
+                <div className="flex items-center gap-2 mb-2">
+                  <Zap className="w-5 h-5 text-blue-400" />
+                  <p className="text-blue-300 font-semibold">Average Score</p>
+                </div>
+                <p className="text-white text-xl font-bold">
+                  {Math.round(players.reduce((sum, p) => sum + calculateTotalPoints(p.id), 0) / players.length)}
+                </p>
+                <p className="text-blue-400 text-sm">
+                  points per player
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Other views placeholder */}
+        {currentView !== 'leaderboard' && (
+          <div className="bg-black/60 backdrop-blur-sm p-8 rounded-lg border-2 border-amber-600 text-center">
+            <h2 className="text-3xl font-bold text-amber-400 mb-4">🎉 Your App is Live!</h2>
+            <p className="text-white text-lg mb-2">Current View: <span className="text-amber-300">{currentView}</span></p>
+            <p className="text-amber-200 mb-4">This view is coming next!</p>
+            <p className="text-white">✅ Database Connected</p>
+            <p className="text-white">✅ Authentication Working</p>
+            <p className="text-white">✅ Deployed on Vercel</p>
+            <p className="text-white">✅ Leaderboard Complete!</p>
+          </div>
+        )}
       </main>
 
       {/* Footer */}
