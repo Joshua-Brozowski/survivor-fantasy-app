@@ -450,6 +450,227 @@ export default function SurvivorFantasyApp() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
+        {currentView === 'picks' && (
+          <div className="space-y-6">
+            {/* Instinct Picks Section */}
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-amber-400 flex items-center gap-2">
+                  <Target className="w-6 h-6" />
+                  Instinct Pick
+                </h2>
+                {myInstinctPick && (
+                  <span className="text-green-400 font-semibold flex items-center gap-2">
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                    Pick Submitted
+                  </span>
+                )}
+              </div>
+
+              <p className="text-amber-200 mb-6">
+                Choose ONE contestant based purely on instinct before Episode 1 airs. This pick earns bonus points for each episode survived (+1) and making the merge (+5).
+              </p>
+
+              {gamePhase === 'instinct-picks' ? (
+                <>
+                  {myInstinctPick ? (
+                    <div className="bg-gradient-to-r from-green-900/40 to-emerald-900/40 p-6 rounded-lg border-2 border-green-600">
+                      <p className="text-green-300 font-semibold mb-3">Your Instinct Pick:</p>
+                      <div className="flex items-center gap-4">
+                        <img 
+                          src={contestants.find(c => c.id === myInstinctPick.contestantId)?.image} 
+                          alt=""
+                          className="w-24 h-24 rounded-lg object-cover border-4 border-green-500"
+                        />
+                        <div>
+                          <p className="text-white font-bold text-2xl">
+                            {contestants.find(c => c.id === myInstinctPick.contestantId)?.name}
+                          </p>
+                          <p className="text-green-300 text-lg">
+                            {contestants.find(c => c.id === myInstinctPick.contestantId)?.tribe} Tribe
+                          </p>
+                          <p className="text-green-400 text-sm mt-2">
+                            ✓ Locked in and ready for the season!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-600 rounded-lg">
+                        <p className="text-yellow-200 text-sm">
+                          ⏰ Pick must be submitted before Episode 1. Choose wisely - this pick cannot be changed!
+                        </p>
+                      </div>
+                      
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {contestants.map(contestant => (
+                          <div
+                            key={contestant.id}
+                            onClick={() => {
+                              if (window.confirm(`Select ${contestant.name} as your Instinct Pick? This cannot be changed!`)) {
+                                submitInstinctPick(contestant.id);
+                              }
+                            }}
+                            className="bg-gradient-to-br from-amber-900/40 to-orange-900/40 p-4 rounded-lg border-2 border-amber-600 hover:border-amber-400 cursor-pointer transition transform hover:scale-105"
+                          >
+                            <img 
+                              src={contestant.image} 
+                              alt={contestant.name}
+                              className="w-full h-40 object-cover rounded-lg mb-3"
+                            />
+                            <h3 className="text-white font-bold text-lg">{contestant.name}</h3>
+                            <p className="text-amber-300 text-sm mb-2">{contestant.tribe} Tribe</p>
+                            <button className="w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded font-semibold hover:from-amber-500 hover:to-orange-500 transition">
+                              Select as Instinct Pick
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="bg-gray-900/40 p-6 rounded-lg border border-gray-600">
+                  {myInstinctPick ? (
+                    <div className="flex items-center gap-4">
+                      <img 
+                        src={contestants.find(c => c.id === myInstinctPick.contestantId)?.image} 
+                        alt=""
+                        className="w-20 h-20 rounded-lg object-cover border-2 border-amber-500"
+                      />
+                      <div>
+                        <p className="text-gray-400 text-sm">Your Instinct Pick</p>
+                        <p className="text-white font-bold text-xl">
+                          {contestants.find(c => c.id === myInstinctPick.contestantId)?.name}
+                        </p>
+                        <p className="text-amber-400">
+                          {contestants.find(c => c.id === myInstinctPick.contestantId)?.eliminated 
+                            ? '❌ Eliminated' 
+                            : '✓ Still in the game'}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-gray-400">Instinct picks are now closed. You did not submit a pick.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Final Picks Section */}
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-purple-400 flex items-center gap-2">
+                  <Crown className="w-6 h-6" />
+                  Final Pick (Post-Merge)
+                </h2>
+                {myFinalPick && (
+                  <span className="text-green-400 font-semibold flex items-center gap-2">
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                    Pick Submitted
+                  </span>
+                )}
+              </div>
+
+              {gamePhase === 'instinct-picks' || gamePhase === 'early-season' ? (
+                <div className="bg-gray-900/40 p-8 rounded-lg border border-gray-600 text-center">
+                  <Crown className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+                  <p className="text-gray-400 text-lg">Final picks will open after the merge</p>
+                  <p className="text-gray-500 text-sm mt-2">Jeff will announce when it's time to make your final pick</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-purple-200 mb-6">
+                    Choose ONE contestant after the merge. This pick earns the same points as your instinct pick (except no episode survival bonuses).
+                  </p>
+
+                  {myFinalPick ? (
+                    <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-6 rounded-lg border-2 border-purple-600">
+                      <p className="text-purple-300 font-semibold mb-3">Your Final Pick:</p>
+                      <div className="flex items-center gap-4">
+                        <img 
+                          src={contestants.find(c => c.id === myFinalPick.contestantId)?.image} 
+                          alt=""
+                          className="w-24 h-24 rounded-lg object-cover border-4 border-purple-500"
+                        />
+                        <div>
+                          <p className="text-white font-bold text-2xl">
+                            {contestants.find(c => c.id === myFinalPick.contestantId)?.name}
+                          </p>
+                          <p className="text-purple-300 text-lg">
+                            {contestants.find(c => c.id === myFinalPick.contestantId)?.tribe} Tribe
+                          </p>
+                          <p className="text-purple-400 text-sm mt-2">
+                            ✓ Locked in for the rest of the season!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mb-4 p-3 bg-purple-900/30 border border-purple-600 rounded-lg">
+                        <p className="text-purple-200 text-sm">
+                          ⏰ Choose from the remaining contestants. This pick cannot be changed once submitted!
+                        </p>
+                      </div>
+                      
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {contestants.filter(c => !c.eliminated).map(contestant => (
+                          <div
+                            key={contestant.id}
+                            onClick={() => {
+                              if (window.confirm(`Select ${contestant.name} as your Final Pick? This cannot be changed!`)) {
+                                submitFinalPick(contestant.id);
+                              }
+                            }}
+                            className="bg-gradient-to-br from-purple-900/40 to-pink-900/40 p-4 rounded-lg border-2 border-purple-600 hover:border-purple-400 cursor-pointer transition transform hover:scale-105"
+                          >
+                            <img 
+                              src={contestant.image} 
+                              alt={contestant.name}
+                              className="w-full h-40 object-cover rounded-lg mb-3"
+                            />
+                            <h3 className="text-white font-bold text-lg">{contestant.name}</h3>
+                            <p className="text-purple-300 text-sm mb-2">{contestant.tribe} Tribe</p>
+                            <button className="w-full py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded font-semibold hover:from-purple-500 hover:to-pink-500 transition">
+                              Select as Final Pick
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Pick Status Summary */}
+            <div className="bg-black/60 backdrop-blur-sm p-4 rounded-lg border border-amber-600">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-amber-300 text-sm mb-2">Instinct Picks Submitted</p>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-gray-700 rounded-full h-2">
+                      <div 
+                        className="bg-gradient-to-r from-amber-600 to-orange-600 h-2 rounded-full transition-all"
+                        style={{ width: `${(pickStatus.submitted / pickStatus.total) * 100}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-white font-semibold">{pickStatus.submitted}/{pickStatus.total}</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-purple-300 text-sm mb-2">Game Phase</p>
+                  <p className="text-white font-bold capitalize">
+                    {gamePhase.replace('-', ' ')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {currentView === 'leaderboard' && (
           <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
             <h2 className="text-2xl font-bold text-amber-400 mb-6 flex items-center gap-2">
@@ -575,7 +796,7 @@ export default function SurvivorFantasyApp() {
         )}
 
         {/* Other views placeholder */}
-        {currentView !== 'leaderboard' && (
+        {currentView !== 'leaderboard' && currentView !== 'picks' && (
           <div className="bg-black/60 backdrop-blur-sm p-8 rounded-lg border-2 border-amber-600 text-center">
             <h2 className="text-3xl font-bold text-amber-400 mb-4">🎉 Your App is Live!</h2>
             <p className="text-white text-lg mb-2">Current View: <span className="text-amber-300">{currentView}</span></p>
@@ -584,6 +805,7 @@ export default function SurvivorFantasyApp() {
             <p className="text-white">✅ Authentication Working</p>
             <p className="text-white">✅ Deployed on Vercel</p>
             <p className="text-white">✅ Leaderboard Complete!</p>
+            <p className="text-white">✅ Picks Interface Complete!</p>
           </div>
         )}
       </main>
