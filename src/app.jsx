@@ -795,8 +795,24 @@ export default function SurvivorFantasyApp() {
           </div>
         )}
 
+        {currentView === 'questionnaire' && (
+          <QuestionnaireView 
+            currentUser={currentUser}
+            questionnaires={questionnaires}
+            submissions={submissions}
+            setSubmissions={setSubmissions}
+            contestants={contestants}
+            latePenalties={latePenalties}
+            setLatePenalties={setLatePenalties}
+            qotWVotes={qotWVotes}
+            setQotWVotes={setQotWVotes}
+            players={players}
+            storage={storage}
+          />
+        )}
+
         {/* Other views placeholder */}
-        {currentView !== 'leaderboard' && currentView !== 'picks' && (
+        {currentView !== 'leaderboard' && currentView !== 'picks' && currentView !== 'questionnaire' && (
           <div className="bg-black/60 backdrop-blur-sm p-8 rounded-lg border-2 border-amber-600 text-center">
             <h2 className="text-3xl font-bold text-amber-400 mb-4">🎉 Your App is Live!</h2>
             <p className="text-white text-lg mb-2">Current View: <span className="text-amber-300">{currentView}</span></p>
@@ -821,6 +837,399 @@ export default function SurvivorFantasyApp() {
           </p>
         </div>
       </footer>
+    </div>
+  );
+}
+
+// Questionnaire View Component
+function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmissions, contestants, latePenalties, setLatePenalties, qotWVotes, setQotWVotes, players, storage }) {
+  const activeQ = questionnaires.find(q => q.status === 'active');
+  const mySubmission = activeQ ? submissions.find(s => s.questionnaireId === activeQ.id && s.playerId === currentUser.id) : null;
+  const [answers, setAnswers] = useState({});
+  const [votingFor, setVotingFor] = useState(null);
+  const [viewingArchived, setViewingArchived] = useState(null);
+
+  const isOpen = activeQ && new Date() < new Date(activeQ.deadline) && new Date() < new Date(activeQ.lockedAt);
+  const isLocked = activeQ && new Date() >= new Date(activeQ.lockedAt);
+  const isLate = activeQ && new Date() > new Date(activeQ.deadline) && new Date() < new Date(activeQ.lockedAt);
+
+  const archivedQuestionnaires = questionnaires.filter(q => q.status === 'archived' && q.scoresReleased);
+
+  const handleSubmit = async () => {
+    if (!activeQ) return;
+
+    const requiredQuestions = activeQ.questions.filter(q => q.required);
+    const allRequiredAnswered = requiredQuestions.every(q => answers[q.id]);
+
+    if (!allRequiredAnswered) {
+      alert('Please answer all required questions!');
+      return;
+    }
+
+    if (!answers[activeQ.qotw.id]) {
+      alert('Please answer the Question of the Week!');
+      return;
+    }
+
+    const penalty = isLate ? (latePenalties[currentUser.id] || 0) + 1 : 0;
+
+    const newSubmission = {
+      id: Date.now(),
+      questionnaireId: activeQ.id,
+      playerId: currentUser.id,
+      answers,
+      submittedAt: new Date().toISOString(),
+      penalty
+    };
+
+    const updatedSubmissions = [...submissions.filter(s => !(s.questionnaireId === activeQ.id && s.playerId === currentUser.id)), newSubmission];
+    setSubmissions(updatedSubmissions);
+    await storage.set('submissions', JSON.stringify(updatedSubmissions));
+
+    if (penalty > 0) {
+      const updatedPenalties = { ...latePenalties, [currentUser.id]: penalty };
+      setLatePenalties(updatedPenalties);
+      await storage.set('latePenalties', JSON.stringify(updatedPenalties));
+    }
+
+    alert(isLate ? `Submitted! Late penalty applied: -${penalty} points` : 'Submitted successfully!');
+    setAnswers({});
+  };
+
+  const handleVote = async (qotWAnswerId) => {
+    if (!activeQ) return;
+
+    const newVote = {
+      questionnaireId: activeQ.id,
+      voterId: currentUser.id,
+      answerId: qotWAnswerId
+    };
+
+    const updatedVotes = [...qotWVotes.filter(v => !(v.questionnaireId === activeQ.id && v.voterId === currentUser.id)), newVote];
+    setQotWVotes(updatedVotes);
+    await storage.set('qotWVotes', JSON.stringify(updatedVotes));
+    alert('Vote submitted!');
+    setVotingFor(null);
+  };
+
+  if (!activeQ && archivedQuestionnaires.length === 0) {
+    return (
+      <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+        <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+          <FileText className="w-6 h-6" />
+          Weekly Questionnaire
+        </h2>
+        <p className="text-amber-200">No questionnaire available yet. Check back before the next episode!</p>
+      </div>
+    );
+  }
+
+  const allQotWSubmitted = activeQ ? players.every(p => {
+    const sub = submissions.find(s => s.questionnaireId === activeQ.id && s.playerId === p.id);
+    return sub && sub.answers[activeQ.qotw.id];
+  }) : false;
+
+  const qotwQuestion = activeQ?.qotw;
+  const myVote = activeQ ? qotWVotes.find(v => v.questionnaireId === activeQ.id && v.voterId === currentUser.id) : null;
+
+  if (votingFor === 'qotw' && allQotWSubmitted && activeQ) {
+    const qotwAnswers = submissions
+      .filter(s => s.questionnaireId === activeQ.id && s.answers[qotwQuestion.id])
+      .map(s => ({
+        playerId: s.playerId,
+        playerName: players.find(p => p.id === s.playerId)?.name,
+        answer: s.answers[qotwQuestion.id]
+      }))
+      .filter(a => a.playerId !== currentUser.id);
+
+    return (
+      <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
+        <h2 className="text-2xl font-bold text-purple-400 mb-4">⭐ Question of the Week Voting</h2>
+        <div className="bg-purple-900/30 p-4 rounded-lg border border-purple-600 mb-6">
+          <p className="text-purple-300 font-semibold mb-2">Question:</p>
+          <p className="text-white text-lg">{qotwQuestion.text}</p>
+        </div>
+
+        <div className="space-y-4">
+          {qotwAnswers.map((answer, idx) => (
+            <div key={idx} className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-4 rounded-lg border border-purple-600">
+              {!qotwQuestion.anonymous && (
+                <p className="text-purple-400 font-semibold mb-2">{answer.playerName}</p>
+              )}
+              <p className="text-white mb-3">{answer.answer}</p>
+              <button
+                onClick={() => handleVote(`${answer.playerId}-${qotwQuestion.id}`)}
+                disabled={myVote}
+                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded font-semibold hover:from-purple-500 hover:to-pink-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {myVote ? '✓ Vote Submitted' : 'Vote for This Answer'}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={() => setVotingFor(null)}
+          className="mt-6 px-6 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+        >
+          Back to Questionnaire
+        </button>
+      </div>
+    );
+  }
+
+  if (viewingArchived) {
+    const mySub = submissions.find(s => s.questionnaireId === viewingArchived.id && s.playerId === currentUser.id);
+    
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+          <button
+            onClick={() => setViewingArchived(null)}
+            className="mb-4 text-amber-300 hover:text-amber-200 flex items-center gap-2"
+          >
+            ← Back to Current Questionnaire
+          </button>
+
+          <h2 className="text-2xl font-bold text-amber-400 mb-4">{viewingArchived.title}</h2>
+          
+          <div className="bg-green-900/30 border border-green-600 p-4 rounded-lg mb-6">
+            <p className="text-green-300 font-semibold text-lg">Your Score: {mySub?.score || 0} points</p>
+            {mySub?.penalty > 0 && (
+              <p className="text-red-300 text-sm mt-1">Late Penalty: -{mySub.penalty} points</p>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {viewingArchived.questions.map((q, idx) => {
+              const myAnswer = mySub?.answers[q.id];
+              const correctAnswer = viewingArchived.correctAnswers[q.id];
+              const isCorrect = myAnswer === correctAnswer;
+              
+              return (
+                <div key={q.id} className={`p-4 rounded-lg border-2 ${
+                  isCorrect ? 'bg-green-900/20 border-green-600' : 'bg-red-900/20 border-red-600'
+                }`}>
+                  <p className="text-white font-semibold mb-2">
+                    {idx + 1}. {q.text}
+                  </p>
+                  <div className="space-y-1 text-sm">
+                    <p className="text-white">
+                      <span className="text-amber-300">Your Answer:</span> {myAnswer || '(no answer)'}
+                    </p>
+                    <p className="text-white">
+                      <span className="text-amber-300">Correct Answer:</span> {correctAnswer}
+                    </p>
+                    <p className={isCorrect ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
+                      {isCorrect ? '✓ Correct (+2)' : myAnswer ? (q.required ? '✗ Incorrect (0)' : '✗ Incorrect (-1)') : '(No answer: 0)'}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {activeQ && (
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-amber-400 flex items-center gap-2">
+              <FileText className="w-6 h-6" />
+              {activeQ.title}
+            </h2>
+            <div className="text-right">
+              <p className="text-amber-300 text-sm">Deadline:</p>
+              <p className="text-white font-semibold">{new Date(activeQ.deadline).toLocaleString()}</p>
+            </div>
+          </div>
+
+          {isLocked && (
+            <div className="bg-red-900/40 border border-red-600 p-4 rounded-lg mb-4">
+              <p className="text-red-200 font-semibold">⚠️ Questionnaire is locked!</p>
+              <p className="text-red-300 text-sm mt-1">The episode has started. Too much information may already be available.</p>
+            </div>
+          )}
+
+          {isLate && !isLocked && (
+            <div className="bg-yellow-900/40 border border-yellow-600 p-4 rounded-lg mb-4">
+              <p className="text-yellow-200 font-semibold">⚠️ Late Submission</p>
+              <p className="text-yellow-300 text-sm mt-1">You will receive a -{(latePenalties[currentUser.id] || 0) + 1} point penalty for submitting after the deadline.</p>
+            </div>
+          )}
+
+          {mySubmission && (
+            <div className="bg-green-900/30 border border-green-600 p-4 rounded-lg mb-4">
+              <p className="text-green-200 font-semibold">✓ You've submitted your answers!</p>
+              {mySubmission.penalty > 0 && (
+                <p className="text-green-300 text-sm mt-1">Late penalty applied: -{mySubmission.penalty} points</p>
+              )}
+              {activeQ.scoresReleased && (
+                <div className="mt-3">
+                  <p className="text-white font-semibold">Your Score: {mySubmission.score || 0} points</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!mySubmission && !isLocked && (
+            <div className="space-y-6">
+              {activeQ.questions.map((question, idx) => (
+                <div key={question.id} className="bg-gradient-to-r from-amber-900/40 to-orange-900/40 p-4 rounded-lg border border-amber-600">
+                  <p className="text-white font-semibold mb-3">
+                    {idx + 1}. {question.text} {question.required && <span className="text-red-400">*</span>}
+                  </p>
+
+                  {question.type === 'tribe-immunity' && (
+                    <select
+                      value={answers[question.id] || ''}
+                      onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
+                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                    >
+                      <option value="">Select a tribe...</option>
+                      {Array.from(new Set(contestants.map(c => c.tribe))).map(tribe => (
+                        <option key={tribe} value={tribe}>{tribe}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {question.type === 'individual-immunity' && (
+                    <select
+                      value={answers[question.id] || ''}
+                      onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
+                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                    >
+                      <option value="">Select a contestant...</option>
+                      {contestants.filter(c => !c.eliminated).map(contestant => (
+                        <option key={contestant.id} value={contestant.name}>{contestant.name}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {question.type === 'vote-out' && (
+                    <select
+                      value={answers[question.id] || ''}
+                      onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
+                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                    >
+                      <option value="">Select a contestant...</option>
+                      {contestants.filter(c => !c.eliminated).map(contestant => (
+                        <option key={contestant.id} value={contestant.name}>{contestant.name}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {question.type === 'multiple-choice' && (
+                    <div className="space-y-2">
+                      {question.options.map((option, optIdx) => (
+                        <label key={optIdx} className="flex items-center gap-3 p-3 bg-black/30 rounded cursor-pointer hover:bg-black/50 transition">
+                          <input
+                            type="radio"
+                            name={question.id}
+                            value={option}
+                            checked={answers[question.id] === option}
+                            onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-white">{option}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {question.type === 'true-false' && (
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-3 p-3 bg-black/30 rounded cursor-pointer hover:bg-black/50 transition flex-1">
+                        <input
+                          type="radio"
+                          name={question.id}
+                          value="true"
+                          checked={answers[question.id] === 'true'}
+                          onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-white">True</span>
+                      </label>
+                      <label className="flex items-center gap-3 p-3 bg-black/30 rounded cursor-pointer hover:bg-black/50 transition flex-1">
+                        <input
+                          type="radio"
+                          name={question.id}
+                          value="false"
+                          checked={answers[question.id] === 'false'}
+                          onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-white">False</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-4 rounded-lg border-2 border-purple-600">
+                <p className="text-purple-300 font-semibold mb-2">⭐ Question of the Week</p>
+                <p className="text-white font-semibold mb-3">{qotwQuestion.text}</p>
+                <textarea
+                  value={answers[qotwQuestion.id] || ''}
+                  onChange={(e) => setAnswers({...answers, [qotwQuestion.id]: e.target.value})}
+                  placeholder="Enter your answer..."
+                  rows={3}
+                  className="w-full px-4 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-400"
+                />
+              </div>
+
+              <button
+                onClick={handleSubmit}
+                className="w-full py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-lg font-semibold hover:from-amber-500 hover:to-orange-500 transition text-lg"
+              >
+                Submit Questionnaire
+              </button>
+            </div>
+          )}
+
+          {mySubmission && allQotWSubmitted && (
+            <button
+              onClick={() => setVotingFor('qotw')}
+              className="w-full mt-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:from-purple-500 hover:to-pink-500 transition"
+            >
+              {myVote ? '✓ Voted on Question of the Week' : 'Vote on Question of the Week'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {archivedQuestionnaires.length > 0 && !viewingArchived && (
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+          <h3 className="text-xl font-bold text-amber-400 mb-4">Previous Questionnaires</h3>
+          <div className="space-y-3">
+            {archivedQuestionnaires.map(q => {
+              const mySub = submissions.find(s => s.questionnaireId === q.id && s.playerId === currentUser.id);
+              return (
+                <button
+                  key={q.id}
+                  onClick={() => setViewingArchived(q)}
+                  className="w-full bg-gradient-to-r from-amber-900/40 to-orange-900/40 p-4 rounded-lg border border-amber-600 text-left hover:border-amber-400 transition"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-white font-semibold">{q.title}</p>
+                      <p className="text-amber-300 text-sm">Episode {q.episodeNumber}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-green-400 font-bold">{mySub?.score || 0} points</p>
+                      <ChevronRight className="w-5 h-5 text-amber-400 inline" />
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
