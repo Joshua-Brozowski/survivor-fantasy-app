@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, Crown, Target, FileText, Zap } from 'lucide-react';
+import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle } from 'lucide-react';
 import { storage } from './db.js';
 
 // Survivor 48 Cast
@@ -36,6 +36,19 @@ const INITIAL_PLAYERS = [
   { id: 9, name: "Sarah", phone: "1234567898", isAdmin: false }
 ];
 
+// Default Advantages Available for Purchase
+const DEFAULT_ADVANTAGES = [
+  { id: 'extra-vote', name: 'Extra Vote', description: 'Cast an additional vote on Question of the Week', cost: 5, type: 'qotw' },
+  { id: 'vote-steal', name: 'Vote Steal', description: "Steal another player's QOTW vote and use it yourself", cost: 8, type: 'qotw' },
+  { id: 'double-points', name: 'Double Points', description: 'Double your points on the next questionnaire', cost: 10, type: 'questionnaire' },
+  { id: 'immunity-idol', name: 'Immunity Idol', description: 'Protect yourself from negative points for one week', cost: 12, type: 'protection' },
+  { id: 'spy-network', name: 'Spy Network', description: "See another player's questionnaire answers before submitting", cost: 6, type: 'intel' },
+  { id: 'point-shield', name: 'Point Shield', description: 'Block one point deduction from any source', cost: 7, type: 'protection' },
+  { id: 'fortune-teller', name: 'Fortune Teller', description: 'Get a hint about the next questionnaire before it opens', cost: 9, type: 'intel' },
+  { id: 'risk-reward', name: 'Risk & Reward', description: 'Double or nothing on your next episode pick points', cost: 15, type: 'gamble' },
+  { id: 'legacy-advantage', name: 'Legacy Advantage', description: 'Transfer up to 10 points to another player', cost: 20, type: 'transfer' }
+];
+
 export default function SurvivorFantasyApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginView, setLoginView] = useState('login');
@@ -57,6 +70,10 @@ export default function SurvivorFantasyApp() {
   const [advantages, setAdvantages] = useState([]);
   const [episodes, setEpisodes] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [playerAdvantages, setPlayerAdvantages] = useState([]);
+  const [playerScores, setPlayerScores] = useState({});
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [expandedPlayer, setExpandedPlayer] = useState(null);
 
   // Load data from storage
   useEffect(() => {
@@ -77,6 +94,8 @@ export default function SurvivorFantasyApp() {
       const advantagesData = await storage.get('advantages');
       const episodesData = await storage.get('episodes');
       const notificationsData = await storage.get('notifications');
+      const playerAdvantagesData = await storage.get('playerAdvantages');
+      const playerScoresData = await storage.get('playerScores');
 
       setPlayers(playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS);
       setContestants(contestantsData ? JSON.parse(contestantsData.value) : SURVIVOR_48_CAST);
@@ -90,6 +109,8 @@ export default function SurvivorFantasyApp() {
       setAdvantages(advantagesData ? JSON.parse(advantagesData.value) : []);
       setEpisodes(episodesData ? JSON.parse(episodesData.value) : []);
       setNotifications(notificationsData ? JSON.parse(notificationsData.value) : []);
+      setPlayerAdvantages(playerAdvantagesData ? JSON.parse(playerAdvantagesData.value) : []);
+      setPlayerScores(playerScoresData ? JSON.parse(playerScoresData.value) : {});
     } catch (error) {
       console.error('Error loading data:', error);
       // First time setup - initialize with defaults
@@ -105,7 +126,9 @@ export default function SurvivorFantasyApp() {
       setAdvantages([]);
       setEpisodes([]);
       setNotifications([]);
-      
+      setPlayerAdvantages([]);
+      setPlayerScores({});
+
       // Save initial data
       await storage.set('players', JSON.stringify(INITIAL_PLAYERS));
       await storage.set('contestants', JSON.stringify(SURVIVOR_48_CAST));
@@ -119,6 +142,8 @@ export default function SurvivorFantasyApp() {
       await storage.set('advantages', JSON.stringify([]));
       await storage.set('episodes', JSON.stringify([]));
       await storage.set('notifications', JSON.stringify([]));
+      await storage.set('playerAdvantages', JSON.stringify([]));
+      await storage.set('playerScores', JSON.stringify({}));
     }
   };
 
@@ -232,15 +257,18 @@ export default function SurvivorFantasyApp() {
   const calculateTotalPoints = (playerId) => {
     let total = 0;
 
+    // Points from pick performance (episodes)
     const playerPickScores = pickScores.filter(ps => {
       const pick = picks.find(p => p.id === ps.pickId);
       return pick && pick.playerId === playerId;
     });
     total += playerPickScores.reduce((sum, ps) => sum + ps.points, 0);
 
+    // Points from questionnaires
     const playerSubmissions = submissions.filter(s => s.playerId === playerId && s.score !== undefined);
     total += playerSubmissions.reduce((sum, s) => sum + s.score, 0);
 
+    // Points from QOTW wins
     const qotwWins = questionnaires.filter(q => {
       if (!q.qotwWinner) return false;
       const winners = Array.isArray(q.qotwWinner) ? q.qotwWinner : [q.qotwWinner];
@@ -248,7 +276,91 @@ export default function SurvivorFantasyApp() {
     });
     total += qotwWins.length * 5;
 
+    // Points from playerScores breakdown (includes advantage purchases as negative)
+    if (playerScores[playerId]?.breakdown) {
+      total += playerScores[playerId].breakdown.reduce((sum, entry) => sum + entry.points, 0);
+    }
+
     return total;
+  };
+
+  const getPointBreakdown = (playerId) => {
+    const breakdown = [];
+
+    // Pick scores (episode performance)
+    const playerPickScoresData = pickScores.filter(ps => {
+      const pick = picks.find(p => p.id === ps.pickId);
+      return pick && pick.playerId === playerId;
+    });
+    playerPickScoresData.forEach(ps => {
+      breakdown.push({
+        description: ps.description || `Episode ${ps.episode} Pick Performance`,
+        points: ps.points,
+        date: ps.date || new Date().toISOString(),
+        type: 'episode'
+      });
+    });
+
+    // Questionnaire scores
+    const playerSubmissions = submissions.filter(s => s.playerId === playerId && s.score !== undefined);
+    playerSubmissions.forEach(sub => {
+      const q = questionnaires.find(qu => qu.id === sub.questionnaireId);
+      if (q) {
+        breakdown.push({
+          description: `${q.title} Score`,
+          points: sub.score,
+          date: sub.submittedAt,
+          type: 'questionnaire'
+        });
+      }
+    });
+
+    // QOTW wins
+    questionnaires.forEach(q => {
+      if (!q.qotwWinner) return;
+      const winners = Array.isArray(q.qotwWinner) ? q.qotwWinner : [q.qotwWinner];
+      if (winners.includes(playerId)) {
+        breakdown.push({
+          description: `QOTW Winner - ${q.title}`,
+          points: 5,
+          date: q.createdAt,
+          type: 'qotw'
+        });
+      }
+    });
+
+    // Custom scores from playerScores (advantages, etc.)
+    if (playerScores[playerId]?.breakdown) {
+      playerScores[playerId].breakdown.forEach(entry => {
+        breakdown.push({
+          ...entry,
+          type: entry.type || 'other'
+        });
+      });
+    }
+
+    // Sort by date descending
+    breakdown.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    return breakdown;
+  };
+
+  const updatePlayerScore = async (playerId, points, description, type = 'other') => {
+    const currentScores = { ...playerScores };
+    if (!currentScores[playerId]) {
+      currentScores[playerId] = { totalPoints: 0, breakdown: [] };
+    }
+
+    currentScores[playerId].breakdown.push({
+      description,
+      points,
+      date: new Date().toISOString(),
+      type
+    });
+    currentScores[playerId].totalPoints = currentScores[playerId].breakdown.reduce((sum, e) => sum + e.points, 0);
+
+    setPlayerScores(currentScores);
+    await storage.set('playerScores', JSON.stringify(currentScores));
   };
 
   const addNotification = async (notification) => {
@@ -261,6 +373,80 @@ export default function SurvivorFantasyApp() {
     const updated = [...notifications, newNotif];
     setNotifications(updated);
     await storage.set('notifications', JSON.stringify(updated));
+  };
+
+  const markNotificationRead = async (notifId) => {
+    const updated = notifications.map(n =>
+      n.id === notifId ? { ...n, read: true } : n
+    );
+    setNotifications(updated);
+    await storage.set('notifications', JSON.stringify(updated));
+  };
+
+  const markAllNotificationsRead = async () => {
+    const updated = notifications.map(n => {
+      if (n.targetPlayerId === currentUser?.id || !n.targetPlayerId) {
+        return { ...n, read: true };
+      }
+      return n;
+    });
+    setNotifications(updated);
+    await storage.set('notifications', JSON.stringify(updated));
+  };
+
+  const purchaseAdvantage = async (advantage) => {
+    const totalPoints = calculateTotalPoints(currentUser.id);
+    if (totalPoints < advantage.cost) {
+      alert('Insufficient points to purchase this advantage!');
+      return;
+    }
+
+    const newPlayerAdvantage = {
+      id: Date.now(),
+      playerId: currentUser.id,
+      advantageId: advantage.id,
+      name: advantage.name,
+      description: advantage.description,
+      type: advantage.type,
+      purchasedAt: new Date().toISOString(),
+      used: false
+    };
+
+    const updated = [...playerAdvantages, newPlayerAdvantage];
+    setPlayerAdvantages(updated);
+    await storage.set('playerAdvantages', JSON.stringify(updated));
+
+    // Deduct points
+    await updatePlayerScore(currentUser.id, -advantage.cost, `Purchased: ${advantage.name}`, 'advantage');
+
+    alert(`Successfully purchased ${advantage.name}!`);
+  };
+
+  const useAdvantage = async (playerAdvantageId, targetData = null) => {
+    const advantage = playerAdvantages.find(a => a.id === playerAdvantageId);
+    if (!advantage || advantage.used) {
+      alert('This advantage has already been used!');
+      return;
+    }
+
+    // Mark as used
+    const updated = playerAdvantages.map(a =>
+      a.id === playerAdvantageId ? { ...a, used: true, usedAt: new Date().toISOString(), targetData } : a
+    );
+    setPlayerAdvantages(updated);
+    await storage.set('playerAdvantages', JSON.stringify(updated));
+
+    // Add notification if there's a target
+    if (targetData?.targetPlayerId) {
+      await addNotification({
+        type: 'advantage_used',
+        message: `${currentUser.name} used ${advantage.name} on you!`,
+        targetPlayerId: targetData.targetPlayerId
+      });
+    }
+
+    alert(`${advantage.name} has been activated!`);
+    return true;
   };
 
   // Login Screen
@@ -373,8 +559,17 @@ export default function SurvivorFantasyApp() {
   const myFinalPick = picks.find(p => p.playerId === currentUser.id && p.type === 'final');
   const pickStatus = getInstinctPicksStatus();
   const myTotalPoints = calculateTotalPoints(currentUser.id);
-  const myAdvantages = advantages.filter(a => a.playerId === currentUser.id && !a.used && (!a.expiresEpisode || a.expiresEpisode > episodes.length));
+  const myAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used);
+  const myUsedAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && a.used);
   const unreadNotifications = notifications.filter(n => !n.read && (n.targetPlayerId === currentUser.id || !n.targetPlayerId));
+  const activeQuestionnaire = questionnaires.find(q => q.status === 'active');
+  const mySubmission = activeQuestionnaire ? submissions.find(s => s.questionnaireId === activeQuestionnaire.id && s.playerId === currentUser.id) : null;
+  const completedQuestionnaires = submissions.filter(s => s.playerId === currentUser.id).length;
+  const myQotwWins = questionnaires.filter(q => {
+    if (!q.qotwWinner) return false;
+    const winners = Array.isArray(q.qotwWinner) ? q.qotwWinner : [q.qotwWinner];
+    return winners.includes(currentUser.id);
+  }).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900">
@@ -394,14 +589,60 @@ export default function SurvivorFantasyApp() {
               <p className="text-white font-semibold">{currentUser.name}</p>
               <p className="text-amber-400 text-sm font-semibold">{myTotalPoints} points</p>
             </div>
-            {unreadNotifications.length > 0 && (
-              <div className="relative">
-                <Mail className="w-6 h-6 text-amber-300" />
-                <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {unreadNotifications.length}
-                </span>
-              </div>
-            )}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="p-2 hover:bg-white/10 rounded-full transition relative"
+              >
+                <Bell className="w-6 h-6 text-amber-300" />
+                {unreadNotifications.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {unreadNotifications.length}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="absolute right-0 top-12 w-80 bg-black/95 border-2 border-amber-600 rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto">
+                  <div className="p-3 border-b border-amber-600 flex items-center justify-between">
+                    <h3 className="text-amber-400 font-semibold">Notifications</h3>
+                    {unreadNotifications.length > 0 && (
+                      <button
+                        onClick={markAllNotificationsRead}
+                        className="text-xs text-amber-300 hover:text-amber-200"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="divide-y divide-amber-600/30">
+                    {notifications
+                      .filter(n => n.targetPlayerId === currentUser.id || !n.targetPlayerId)
+                      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                      .slice(0, 10)
+                      .map(notif => (
+                        <div
+                          key={notif.id}
+                          onClick={() => markNotificationRead(notif.id)}
+                          className={`p-3 cursor-pointer transition ${
+                            notif.read ? 'bg-transparent opacity-60' : 'bg-amber-900/30'
+                          } hover:bg-amber-900/50`}
+                        >
+                          <p className="text-white text-sm">{notif.message}</p>
+                          <p className="text-amber-400 text-xs mt-1">
+                            {new Date(notif.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      ))}
+                    {notifications.filter(n => n.targetPlayerId === currentUser.id || !n.targetPlayerId).length === 0 && (
+                      <div className="p-4 text-center text-amber-300 text-sm">
+                        No notifications yet
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             {currentUser.isAdmin && (
               <Crown className="w-6 h-6 text-yellow-400" title="Admin (Jeff)" />
             )}
@@ -418,30 +659,39 @@ export default function SurvivorFantasyApp() {
       {/* Navigation */}
       <nav className="bg-black/40 backdrop-blur-sm border-b border-amber-600/50">
         <div className="container mx-auto px-4">
-          <div className="flex gap-2 overflow-x-auto">
-            {['dashboard', 'picks', 'leaderboard', 'questionnaire', 'advantages'].map(view => (
+          <div className="flex gap-1 overflow-x-auto">
+            {[
+              { id: 'home', label: 'Home', icon: Home },
+              { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
+              { id: 'picks', label: 'Picks', icon: Target },
+              { id: 'questionnaire', label: 'Questionnaire', icon: FileText },
+              { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
+              { id: 'advantages', label: 'Advantages', icon: Gift }
+            ].map(({ id, label, icon: Icon }) => (
               <button
-                key={view}
-                onClick={() => setCurrentView(view)}
-                className={`px-6 py-3 font-semibold transition whitespace-nowrap ${
-                  currentView === view
+                key={id}
+                onClick={() => { setCurrentView(id); setShowNotifications(false); }}
+                className={`px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-2 ${
+                  currentView === id
                     ? 'text-amber-400 border-b-2 border-amber-400'
                     : 'text-amber-200 hover:text-amber-300'
                 }`}
               >
-                {view.charAt(0).toUpperCase() + view.slice(1)}
+                <Icon className="w-4 h-4" />
+                <span className="hidden sm:inline">{label}</span>
               </button>
             ))}
             {currentUser.isAdmin && (
               <button
-                onClick={() => setCurrentView('admin')}
-                className={`px-6 py-3 font-semibold transition whitespace-nowrap ${
+                onClick={() => { setCurrentView('admin'); setShowNotifications(false); }}
+                className={`px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-2 ${
                   currentView === 'admin'
                     ? 'text-yellow-400 border-b-2 border-yellow-400'
                     : 'text-yellow-300 hover:text-yellow-200'
                 }`}
               >
-                Jeff's Controls
+                <Crown className="w-4 h-4" />
+                <span className="hidden sm:inline">Jeff's Controls</span>
               </button>
             )}
           </div>
@@ -677,73 +927,123 @@ export default function SurvivorFantasyApp() {
               <Trophy className="w-6 h-6" />
               Leaderboard - Season 48
             </h2>
-            
+
             <div className="space-y-3">
               {[...players]
                 .sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))
                 .map((player, index) => {
                   const points = calculateTotalPoints(player.id);
                   const isCurrentUser = player.id === currentUser.id;
-                  
+                  const isExpanded = expandedPlayer === player.id;
+                  const breakdown = getPointBreakdown(player.id);
+
                   return (
-                    <div
-                      key={player.id}
-                      className={`bg-gradient-to-r from-amber-900/40 to-orange-900/40 p-4 rounded-lg border-2 transition ${
-                        isCurrentUser 
-                          ? 'border-yellow-400 shadow-lg shadow-yellow-400/30' 
-                          : 'border-amber-600'
-                      } flex items-center justify-between`}
-                    >
-                      <div className="flex items-center gap-4">
-                        {/* Rank Badge */}
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
-                          index === 0 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/50' :
-                          index === 1 ? 'bg-gray-400 text-black shadow-lg shadow-gray-400/50' :
-                          index === 2 ? 'bg-amber-700 text-white shadow-lg shadow-amber-700/50' :
-                          'bg-amber-600/50 text-white'
-                        }`}>
-                          {index + 1}
-                        </div>
-                        
-                        {/* Player Initial Circle */}
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-600 to-orange-600 flex items-center justify-center border-2 border-amber-400">
-                          <span className="text-white font-bold text-xl" style={{ fontFamily: 'Impact, fantasy' }}>
-                            {player.name.charAt(0).toUpperCase()}
-                          </span>
-                        </div>
-                        
-                        {/* Player Info */}
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="text-white font-bold text-lg">{player.name}</p>
-                            {player.isAdmin && (
-                              <Crown className="w-4 h-4 text-yellow-400" title="Game Master" />
-                            )}
-                            {isCurrentUser && (
-                              <span className="text-xs bg-amber-600 text-white px-2 py-1 rounded">YOU</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 text-sm">
-                            <span className="text-amber-300">{points} points</span>
-                            {index === 0 && points > 0 && (
-                              <span className="text-yellow-400 flex items-center gap-1">
-                                <Trophy className="w-3 h-3" />
-                                Leading
+                    <div key={player.id}>
+                      <div
+                        onClick={() => setExpandedPlayer(isExpanded ? null : player.id)}
+                        className={`bg-gradient-to-r from-amber-900/40 to-orange-900/40 p-4 rounded-lg border-2 transition cursor-pointer hover:bg-amber-900/50 ${
+                          isCurrentUser
+                            ? 'border-yellow-400 shadow-lg shadow-yellow-400/30'
+                            : 'border-amber-600'
+                        } ${isExpanded ? 'rounded-b-none' : ''}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            {/* Rank Badge */}
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
+                              index === 0 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/50' :
+                              index === 1 ? 'bg-gray-400 text-black shadow-lg shadow-gray-400/50' :
+                              index === 2 ? 'bg-amber-700 text-white shadow-lg shadow-amber-700/50' :
+                              'bg-amber-600/50 text-white'
+                            }`}>
+                              {index + 1}
+                            </div>
+
+                            {/* Player Initial Circle */}
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-600 to-orange-600 flex items-center justify-center border-2 border-amber-400">
+                              <span className="text-white font-bold text-xl" style={{ fontFamily: 'Impact, fantasy' }}>
+                                {player.name.charAt(0).toUpperCase()}
                               </span>
+                            </div>
+
+                            {/* Player Info */}
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-white font-bold text-lg">{player.name}</p>
+                                {player.isAdmin && (
+                                  <Crown className="w-4 h-4 text-yellow-400" title="Game Master" />
+                                )}
+                                {isCurrentUser && (
+                                  <span className="text-xs bg-amber-600 text-white px-2 py-1 rounded">YOU</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-sm">
+                                <span className="text-amber-300">{points} points</span>
+                                {index === 0 && points > 0 && (
+                                  <span className="text-yellow-400 flex items-center gap-1">
+                                    <Trophy className="w-3 h-3" />
+                                    Leading
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Points Display & Expand Button */}
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <div className="text-3xl font-bold text-amber-400">
+                                {points}
+                              </div>
+                              <div className="text-xs text-amber-300">
+                                total points
+                              </div>
+                            </div>
+                            {isExpanded ? (
+                              <ChevronUp className="w-5 h-5 text-amber-400" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5 text-amber-400" />
                             )}
                           </div>
                         </div>
                       </div>
-                      
-                      {/* Points Display */}
-                      <div className="text-right">
-                        <div className="text-3xl font-bold text-amber-400">
-                          {points}
+
+                      {/* Expanded Breakdown */}
+                      {isExpanded && (
+                        <div className={`bg-black/80 border-2 border-t-0 rounded-b-lg p-4 ${
+                          isCurrentUser ? 'border-yellow-400' : 'border-amber-600'
+                        }`}>
+                          <h4 className="text-amber-300 font-semibold mb-3">Point History</h4>
+                          {breakdown.length === 0 ? (
+                            <p className="text-gray-400 text-sm">No point history yet</p>
+                          ) : (
+                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                              {breakdown.map((entry, idx) => (
+                                <div key={idx} className="flex items-center justify-between text-sm py-1 border-b border-amber-900/30">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`w-2 h-2 rounded-full ${
+                                      entry.type === 'questionnaire' ? 'bg-green-400' :
+                                      entry.type === 'qotw' ? 'bg-purple-400' :
+                                      entry.type === 'episode' ? 'bg-blue-400' :
+                                      entry.type === 'advantage' ? 'bg-red-400' :
+                                      'bg-amber-400'
+                                    }`}></span>
+                                    <span className="text-white">{entry.description}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className={`font-bold ${entry.points >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                      {entry.points >= 0 ? '+' : ''}{entry.points}
+                                    </span>
+                                    <span className="text-gray-500 text-xs">
+                                      {new Date(entry.date).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <div className="text-xs text-amber-300">
-                          total points
-                        </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
@@ -838,19 +1138,338 @@ export default function SurvivorFantasyApp() {
           />
         )}
 
-        {/* Other views placeholder */}
-        {!['leaderboard', 'picks', 'questionnaire', 'admin'].includes(currentView) && (
-          <div className="bg-black/60 backdrop-blur-sm p-8 rounded-lg border-2 border-amber-600 text-center">
-            <h2 className="text-3xl font-bold text-amber-400 mb-4">🎉 Your App is Live!</h2>
-            <p className="text-white text-lg mb-2">Current View: <span className="text-amber-300">{currentView}</span></p>
-            <p className="text-amber-200 mb-4">This view is coming next!</p>
-            <p className="text-white">✅ Database Connected</p>
-            <p className="text-white">✅ Authentication Working</p>
-            <p className="text-white">✅ Deployed on Vercel</p>
-            <p className="text-white">✅ Leaderboard Complete!</p>
-            <p className="text-white">✅ Picks Interface Complete!</p>
-            <p className="text-white">✅ Questionnaire Complete!</p>
-            <p className="text-white">✅ Admin Panel Complete!</p>
+        {/* Home View - Cast Display */}
+        {currentView === 'home' && (
+          <div className="space-y-6">
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+              <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+                <Flame className="w-6 h-6" />
+                Welcome to Survivor Fantasy Season 48!
+              </h2>
+              <p className="text-amber-200 mb-4">
+                Compete with your friends by making picks, answering weekly questionnaires, and earning points throughout the season!
+              </p>
+              <div className="grid md:grid-cols-3 gap-4 text-center">
+                <div className="bg-amber-900/30 p-4 rounded-lg border border-amber-600">
+                  <p className="text-3xl font-bold text-amber-400">{players.length}</p>
+                  <p className="text-amber-200 text-sm">Players Competing</p>
+                </div>
+                <div className="bg-amber-900/30 p-4 rounded-lg border border-amber-600">
+                  <p className="text-3xl font-bold text-amber-400">{contestants.length}</p>
+                  <p className="text-amber-200 text-sm">Survivors</p>
+                </div>
+                <div className="bg-amber-900/30 p-4 rounded-lg border border-amber-600">
+                  <p className="text-3xl font-bold text-amber-400">{getActiveContestants().length}</p>
+                  <p className="text-amber-200 text-sm">Still in the Game</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Cast by Tribe */}
+            {['Manu', 'Loto', 'Moana'].map(tribe => {
+              const tribeColor = tribe === 'Manu' ? 'orange' : tribe === 'Loto' ? 'blue' : 'green';
+              const tribeContestants = contestants.filter(c => c.tribe === tribe);
+              return (
+                <div key={tribe} className={`bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-${tribeColor}-600`}>
+                  <h3 className={`text-xl font-bold text-${tribeColor}-400 mb-4 flex items-center gap-2`}>
+                    <Users className="w-5 h-5" />
+                    {tribe} Tribe
+                    <span className="text-sm font-normal text-gray-400">
+                      ({tribeContestants.filter(c => !c.eliminated).length} remaining)
+                    </span>
+                  </h3>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {tribeContestants.map(contestant => (
+                      <div
+                        key={contestant.id}
+                        className={`p-4 rounded-lg border ${
+                          contestant.eliminated
+                            ? 'bg-red-900/20 border-red-600 opacity-60'
+                            : `bg-${tribeColor}-900/20 border-${tribeColor}-600`
+                        }`}
+                      >
+                        <img
+                          src={contestant.image}
+                          alt={contestant.name}
+                          className="w-full h-40 object-cover rounded-lg mb-3"
+                          onError={(e) => { e.target.src = 'https://via.placeholder.com/150?text=No+Image'; }}
+                        />
+                        <h4 className="text-white font-bold">{contestant.name}</h4>
+                        <p className={`text-${tribeColor}-300 text-sm`}>{contestant.tribe}</p>
+                        {contestant.eliminated && (
+                          <p className="text-red-400 text-sm font-semibold mt-1">Eliminated</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Dashboard View */}
+        {currentView === 'dashboard' && (
+          <div className="space-y-6">
+            {/* Welcome & Points */}
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+              <h2 className="text-2xl font-bold text-amber-400 mb-2">
+                Welcome back, {currentUser.name}!
+              </h2>
+              <div className="mt-4 flex items-center gap-6">
+                <div className="bg-gradient-to-br from-amber-600 to-orange-600 p-6 rounded-xl">
+                  <p className="text-white text-sm opacity-80">Total Points</p>
+                  <p className="text-5xl font-bold text-white">{myTotalPoints}</p>
+                </div>
+                <div>
+                  <p className="text-amber-300">Current Rank</p>
+                  <p className="text-3xl font-bold text-white">
+                    #{[...players].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id)).findIndex(p => p.id === currentUser.id) + 1}
+                    <span className="text-lg text-amber-400 ml-2">of {players.length}</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Picks Status */}
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+                <h3 className="text-lg font-bold text-amber-400 mb-4 flex items-center gap-2">
+                  <Target className="w-5 h-5" />
+                  Your Picks
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-amber-900/30 rounded-lg">
+                    <div>
+                      <p className="text-amber-300 text-sm">Instinct Pick</p>
+                      <p className="text-white font-semibold">
+                        {myInstinctPick
+                          ? contestants.find(c => c.id === myInstinctPick.contestantId)?.name
+                          : 'Not submitted'}
+                      </p>
+                    </div>
+                    {myInstinctPick ? (
+                      <Check className="w-6 h-6 text-green-400" />
+                    ) : (
+                      <AlertCircle className="w-6 h-6 text-yellow-400" />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-purple-900/30 rounded-lg">
+                    <div>
+                      <p className="text-purple-300 text-sm">Final Pick</p>
+                      <p className="text-white font-semibold">
+                        {myFinalPick
+                          ? contestants.find(c => c.id === myFinalPick.contestantId)?.name
+                          : gamePhase === 'final-picks' || gamePhase === 'mid-season' || gamePhase === 'finale'
+                            ? 'Not submitted'
+                            : 'Available after merge'}
+                      </p>
+                    </div>
+                    {myFinalPick ? (
+                      <Check className="w-6 h-6 text-green-400" />
+                    ) : (
+                      <Clock className="w-6 h-6 text-purple-400" />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+                <h3 className="text-lg font-bold text-amber-400 mb-4 flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Questionnaires
+                </h3>
+                <div className="space-y-4">
+                  {activeQuestionnaire ? (
+                    <div className={`p-3 rounded-lg ${mySubmission ? 'bg-green-900/30' : 'bg-yellow-900/30'}`}>
+                      <p className={mySubmission ? 'text-green-300 text-sm' : 'text-yellow-300 text-sm'}>
+                        {mySubmission ? 'Submitted' : 'Current Questionnaire'}
+                      </p>
+                      <p className="text-white font-semibold">{activeQuestionnaire.title}</p>
+                      {!mySubmission && (
+                        <button
+                          onClick={() => setCurrentView('questionnaire')}
+                          className="mt-2 px-4 py-1 bg-amber-600 text-white rounded text-sm hover:bg-amber-500 transition"
+                        >
+                          Answer Now
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-gray-900/30 rounded-lg">
+                      <p className="text-gray-400">No active questionnaire</p>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-amber-900/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-amber-400">{completedQuestionnaires}</p>
+                      <p className="text-amber-300 text-xs">Completed</p>
+                    </div>
+                    <div className="p-3 bg-purple-900/20 rounded-lg text-center">
+                      <p className="text-2xl font-bold text-purple-400">{myQotwWins}</p>
+                      <p className="text-purple-300 text-xs">QOTW Wins</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Stats */}
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+              <h3 className="text-lg font-bold text-amber-400 mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" />
+                Quick Stats
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-gradient-to-br from-amber-900/40 to-orange-900/40 p-4 rounded-lg text-center">
+                  <p className="text-3xl font-bold text-amber-400">{myTotalPoints}</p>
+                  <p className="text-amber-200 text-sm">Total Points</p>
+                </div>
+                <div className="bg-gradient-to-br from-green-900/40 to-emerald-900/40 p-4 rounded-lg text-center">
+                  <p className="text-3xl font-bold text-green-400">{completedQuestionnaires}</p>
+                  <p className="text-green-200 text-sm">Questionnaires</p>
+                </div>
+                <div className="bg-gradient-to-br from-purple-900/40 to-pink-900/40 p-4 rounded-lg text-center">
+                  <p className="text-3xl font-bold text-purple-400">{myQotwWins}</p>
+                  <p className="text-purple-200 text-sm">QOTW Wins</p>
+                </div>
+                <div className="bg-gradient-to-br from-blue-900/40 to-indigo-900/40 p-4 rounded-lg text-center">
+                  <p className="text-3xl font-bold text-blue-400">{myAdvantages.length}</p>
+                  <p className="text-blue-200 text-sm">Advantages</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Advantages View */}
+        {currentView === 'advantages' && (
+          <div className="space-y-6">
+            {/* Your Advantages */}
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+              <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+                <Gift className="w-6 h-6" />
+                Your Advantages
+              </h2>
+
+              {myAdvantages.length === 0 && myUsedAdvantages.length === 0 ? (
+                <p className="text-amber-200 text-center py-8">
+                  You haven't purchased any advantages yet. Browse the shop below!
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {myAdvantages.length > 0 && (
+                    <div>
+                      <h3 className="text-lg text-green-400 font-semibold mb-3">Active Advantages</h3>
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {myAdvantages.map(adv => (
+                          <div key={adv.id} className="bg-gradient-to-br from-green-900/40 to-emerald-900/40 p-4 rounded-lg border-2 border-green-600">
+                            <h4 className="text-white font-bold text-lg">{adv.name}</h4>
+                            <p className="text-green-300 text-sm mb-3">{adv.description}</p>
+                            <p className="text-green-400 text-xs mb-3">
+                              Purchased: {new Date(adv.purchasedAt).toLocaleDateString()}
+                            </p>
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Use ${adv.name}? This action cannot be undone.`)) {
+                                  useAdvantage(adv.id);
+                                }
+                              }}
+                              className="w-full py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition"
+                            >
+                              Use Advantage
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {myUsedAdvantages.length > 0 && (
+                    <div>
+                      <h3 className="text-lg text-gray-400 font-semibold mb-3">Used Advantages</h3>
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {myUsedAdvantages.map(adv => (
+                          <div key={adv.id} className="bg-gray-900/40 p-4 rounded-lg border border-gray-600 opacity-60">
+                            <h4 className="text-gray-300 font-bold">{adv.name}</h4>
+                            <p className="text-gray-500 text-sm">{adv.description}</p>
+                            <p className="text-gray-500 text-xs mt-2">
+                              Used: {new Date(adv.usedAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Advantage Shop */}
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
+              <h2 className="text-2xl font-bold text-purple-400 mb-2 flex items-center gap-2">
+                <Star className="w-6 h-6" />
+                Advantage Shop
+              </h2>
+              <p className="text-purple-200 mb-6">
+                Spend your hard-earned points on powerful advantages! Your current balance: <span className="font-bold text-amber-400">{myTotalPoints} points</span>
+              </p>
+
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {DEFAULT_ADVANTAGES.map(adv => {
+                  const canAfford = myTotalPoints >= adv.cost;
+                  const alreadyOwned = playerAdvantages.some(pa => pa.playerId === currentUser.id && pa.advantageId === adv.id && !pa.used);
+
+                  return (
+                    <div
+                      key={adv.id}
+                      className={`p-4 rounded-lg border-2 ${
+                        alreadyOwned
+                          ? 'bg-gray-900/40 border-gray-600'
+                          : 'bg-gradient-to-br from-purple-900/40 to-pink-900/40 border-purple-600'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <h4 className="text-white font-bold text-lg">{adv.name}</h4>
+                        <span className={`px-2 py-1 rounded text-sm font-bold ${
+                          canAfford ? 'bg-amber-600 text-white' : 'bg-gray-600 text-gray-300'
+                        }`}>
+                          {adv.cost} pts
+                        </span>
+                      </div>
+                      <p className="text-purple-200 text-sm mb-4">{adv.description}</p>
+
+                      {alreadyOwned ? (
+                        <button
+                          disabled
+                          className="w-full py-2 bg-gray-600 text-gray-400 rounded font-semibold cursor-not-allowed"
+                        >
+                          Already Owned
+                        </button>
+                      ) : canAfford ? (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Purchase ${adv.name} for ${adv.cost} points?`)) {
+                              purchaseAdvantage(adv);
+                            }
+                          }}
+                          className="w-full py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded font-semibold hover:from-purple-500 hover:to-pink-500 transition"
+                        >
+                          Purchase
+                        </button>
+                      ) : (
+                        <button
+                          disabled
+                          className="w-full py-2 bg-gray-600 text-gray-400 rounded font-semibold cursor-not-allowed"
+                        >
+                          Insufficient Points
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
       </main>
@@ -870,7 +1489,7 @@ export default function SurvivorFantasyApp() {
   );
 }
 
-// Admin Panel Component  
+// Admin Panel Component
 function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, storage }) {
   const [adminView, setAdminView] = useState('main');
   const [newQ, setNewQ] = useState({
@@ -881,6 +1500,11 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   });
   const [scoringQ, setScoringQ] = useState(null);
   const [correctAnswers, setCorrectAnswers] = useState({});
+  const [episodeScoring, setEpisodeScoring] = useState({
+    episodeNumber: episodes.length + 1,
+    pickScoresData: {}
+  });
+  const [qotwManageQ, setQotwManageQ] = useState(null);
 
   const createQuestionnaire = async () => {
     if (!newQ.title || newQ.questions.length === 0 || !newQ.qotw.text) {
@@ -1036,6 +1660,118 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
       alert(`Game phase advanced to: ${newPhase}`);
     }
+  };
+
+  const submitEpisodeScoring = async () => {
+    const newScores = [];
+
+    Object.entries(episodeScoring.pickScoresData).forEach(([pickId, scoreData]) => {
+      let points = 0;
+      if (scoreData.survived) points += 1;
+      if (scoreData.foundIdol) points += 2;
+      if (scoreData.journey) points += 1;
+      if (scoreData.immunity) points += 1;
+      if (scoreData.reward) points += 1;
+      if (scoreData.votesReceived) points += scoreData.votesReceived;
+      if (scoreData.playedIdol) points += 1;
+      if (scoreData.incorrectVote) points -= 1;
+
+      if (points !== 0 || scoreData.survived) {
+        newScores.push({
+          id: Date.now() + parseInt(pickId),
+          pickId: parseInt(pickId),
+          episode: episodeScoring.episodeNumber,
+          points,
+          description: `Episode ${episodeScoring.episodeNumber} Pick Performance`,
+          date: new Date().toISOString(),
+          breakdown: scoreData
+        });
+      }
+    });
+
+    const updated = [...pickScores, ...newScores];
+    setPickScores(updated);
+    await storage.set('pickScores', JSON.stringify(updated));
+
+    // Record the episode
+    const newEpisode = {
+      number: episodeScoring.episodeNumber,
+      scoredAt: new Date().toISOString()
+    };
+    const updatedEpisodes = [...episodes, newEpisode];
+    setEpisodes(updatedEpisodes);
+    await storage.set('episodes', JSON.stringify(updatedEpisodes));
+
+    await addNotification({
+      type: 'episode_scored',
+      message: `Episode ${episodeScoring.episodeNumber} scores have been released!`,
+      targetPlayerId: null
+    });
+
+    alert(`Episode ${episodeScoring.episodeNumber} scores submitted!`);
+    setAdminView('main');
+    setEpisodeScoring({
+      episodeNumber: updatedEpisodes.length + 1,
+      pickScoresData: {}
+    });
+  };
+
+  const openQotwVoting = async (questionnaire) => {
+    const updated = questionnaires.map(q =>
+      q.id === questionnaire.id ? { ...q, qotwVotingOpen: true } : q
+    );
+    setQuestionnaires(updated);
+    await storage.set('questionnaires', JSON.stringify(updated));
+
+    await addNotification({
+      type: 'qotw_voting_open',
+      message: `QOTW voting is now open for ${questionnaire.title}!`,
+      targetPlayerId: null
+    });
+
+    alert('QOTW voting opened!');
+  };
+
+  const closeQotwVoting = async (questionnaire) => {
+    const updated = questionnaires.map(q =>
+      q.id === questionnaire.id ? { ...q, qotwVotingOpen: false, qotwVotingClosed: true } : q
+    );
+    setQuestionnaires(updated);
+    await storage.set('questionnaires', JSON.stringify(updated));
+    alert('QOTW voting closed!');
+  };
+
+  const awardQotwWinner = async (questionnaire) => {
+    const qotwVotesForThis = qotWVotes.filter(v => v.questionnaireId === questionnaire.id);
+    const voteCounts = {};
+    qotwVotesForThis.forEach(v => {
+      voteCounts[v.answerId] = (voteCounts[v.answerId] || 0) + 1;
+    });
+
+    if (Object.keys(voteCounts).length === 0) {
+      alert('No votes have been cast yet!');
+      return;
+    }
+
+    const maxVotes = Math.max(...Object.values(voteCounts));
+    const winners = Object.keys(voteCounts).filter(k => voteCounts[k] === maxVotes);
+    const winnerPlayerIds = winners.map(answerId => parseInt(answerId.split('-')[0]));
+
+    const updated = questionnaires.map(q =>
+      q.id === questionnaire.id ? { ...q, qotwWinner: winnerPlayerIds, qotwAwarded: true } : q
+    );
+    setQuestionnaires(updated);
+    await storage.set('questionnaires', JSON.stringify(updated));
+
+    const winnerNames = winnerPlayerIds.map(id => players.find(p => p.id === id)?.name).join(', ');
+    await addNotification({
+      type: 'qotw_winner',
+      message: `QOTW Winner${winnerPlayerIds.length > 1 ? 's' : ''} for ${questionnaire.title}: ${winnerNames} (+5 pts each)!`,
+      targetPlayerId: null
+    });
+
+    alert(`Winner${winnerPlayerIds.length > 1 ? 's' : ''} awarded: ${winnerNames} (+5 points each)!`);
+    setAdminView('main');
   };
 
   if (adminView === 'create-questionnaire') {
@@ -1338,6 +2074,233 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     );
   }
 
+  // Episode Scoring View
+  if (adminView === 'episode-scoring') {
+    // Get all players with picks
+    const playersWithPicks = players.filter(player => {
+      const hasInstinct = picks.some(p => p.playerId === player.id && p.type === 'instinct');
+      const hasFinal = picks.some(p => p.playerId === player.id && p.type === 'final');
+      return hasInstinct || hasFinal;
+    });
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-blue-600">
+          <h2 className="text-2xl font-bold text-blue-400 mb-6">Episode Scoring</h2>
+
+          <div className="mb-6">
+            <label className="block text-blue-300 mb-2">Episode Number</label>
+            <input
+              type="number"
+              value={episodeScoring.episodeNumber}
+              onChange={(e) => setEpisodeScoring({...episodeScoring, episodeNumber: parseInt(e.target.value)})}
+              className="w-32 px-4 py-2 rounded bg-black/50 text-white border border-blue-600 focus:outline-none focus:border-blue-400"
+            />
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-blue-300 font-semibold">Score Each Player's Picks</h3>
+
+            {playersWithPicks.map(player => {
+              const instinctPick = picks.find(p => p.playerId === player.id && p.type === 'instinct');
+              const finalPick = picks.find(p => p.playerId === player.id && p.type === 'final');
+
+              return (
+                <div key={player.id} className="bg-blue-900/20 border border-blue-600 p-4 rounded-lg">
+                  <h4 className="text-white font-bold mb-3">{player.name}</h4>
+
+                  {instinctPick && (
+                    <div className="mb-4 p-3 bg-amber-900/20 rounded-lg border border-amber-600">
+                      <p className="text-amber-300 font-semibold mb-2">
+                        Instinct Pick: {contestants.find(c => c.id === instinctPick.contestantId)?.name}
+                      </p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {[
+                          { key: 'survived', label: 'Survived (+1)' },
+                          { key: 'immunity', label: 'Won Immunity (+1)' },
+                          { key: 'reward', label: 'Won Reward (+1)' },
+                          { key: 'journey', label: 'Went on Journey (+1)' },
+                          { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
+                          { key: 'playedIdol', label: 'Played Idol (+1)' },
+                          { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
+                        ].map(({ key, label }) => (
+                          <label key={key} className="flex items-center gap-2 text-white text-sm">
+                            <input
+                              type="checkbox"
+                              checked={episodeScoring.pickScoresData[instinctPick.id]?.[key] || false}
+                              onChange={(e) => {
+                                const current = episodeScoring.pickScoresData[instinctPick.id] || {};
+                                setEpisodeScoring({
+                                  ...episodeScoring,
+                                  pickScoresData: {
+                                    ...episodeScoring.pickScoresData,
+                                    [instinctPick.id]: { ...current, [key]: e.target.checked }
+                                  }
+                                });
+                              }}
+                              className="w-4 h-4"
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {finalPick && (
+                    <div className="p-3 bg-purple-900/20 rounded-lg border border-purple-600">
+                      <p className="text-purple-300 font-semibold mb-2">
+                        Final Pick: {contestants.find(c => c.id === finalPick.contestantId)?.name}
+                      </p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {[
+                          { key: 'survived', label: 'Survived (+1)' },
+                          { key: 'immunity', label: 'Won Immunity (+1)' },
+                          { key: 'reward', label: 'Won Reward (+1)' },
+                          { key: 'journey', label: 'Went on Journey (+1)' },
+                          { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
+                          { key: 'playedIdol', label: 'Played Idol (+1)' },
+                          { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
+                        ].map(({ key, label }) => (
+                          <label key={key} className="flex items-center gap-2 text-white text-sm">
+                            <input
+                              type="checkbox"
+                              checked={episodeScoring.pickScoresData[finalPick.id]?.[key] || false}
+                              onChange={(e) => {
+                                const current = episodeScoring.pickScoresData[finalPick.id] || {};
+                                setEpisodeScoring({
+                                  ...episodeScoring,
+                                  pickScoresData: {
+                                    ...episodeScoring.pickScoresData,
+                                    [finalPick.id]: { ...current, [key]: e.target.checked }
+                                  }
+                                });
+                              }}
+                              className="w-4 h-4"
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex gap-4 mt-6">
+            <button
+              onClick={submitEpisodeScoring}
+              className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-blue-500 hover:to-indigo-500 transition"
+            >
+              Submit Episode Scores
+            </button>
+            <button
+              onClick={() => setAdminView('main')}
+              className="px-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // QOTW Management View
+  if (adminView === 'qotw-management') {
+    const gradedQuestionnaires = questionnaires.filter(q => q.scoresReleased && !q.qotwAwarded);
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
+          <h2 className="text-2xl font-bold text-purple-400 mb-6">QOTW Management</h2>
+
+          {gradedQuestionnaires.length === 0 ? (
+            <p className="text-purple-200">No questionnaires ready for QOTW management. Grade a questionnaire first!</p>
+          ) : (
+            <div className="space-y-4">
+              {gradedQuestionnaires.map(q => {
+                const qotwVotesForThis = qotWVotes.filter(v => v.questionnaireId === q.id);
+                const voteCounts = {};
+                qotwVotesForThis.forEach(v => {
+                  voteCounts[v.answerId] = (voteCounts[v.answerId] || 0) + 1;
+                });
+
+                const qotwSubmissions = submissions
+                  .filter(s => s.questionnaireId === q.id && s.answers[q.qotw.id])
+                  .map(s => ({
+                    playerId: s.playerId,
+                    playerName: players.find(p => p.id === s.playerId)?.name,
+                    answer: s.answers[q.qotw.id],
+                    votes: voteCounts[`${s.playerId}-${q.qotw.id}`] || 0
+                  }))
+                  .sort((a, b) => b.votes - a.votes);
+
+                return (
+                  <div key={q.id} className="bg-purple-900/20 border border-purple-600 p-4 rounded-lg">
+                    <h3 className="text-white font-bold mb-2">{q.title}</h3>
+                    <p className="text-purple-300 mb-4">QOTW: {q.qotw.text}</p>
+
+                    <div className="mb-4">
+                      <p className="text-purple-200 text-sm mb-2">Answers & Votes:</p>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {qotwSubmissions.map((sub, idx) => (
+                          <div key={idx} className="flex items-center justify-between bg-black/30 p-2 rounded">
+                            <div>
+                              <span className="text-purple-400">{sub.playerName}:</span>
+                              <span className="text-white ml-2">{sub.answer}</span>
+                            </div>
+                            <span className="text-purple-300 font-bold">{sub.votes} votes</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      {!q.qotwVotingOpen && !q.qotwVotingClosed && (
+                        <button
+                          onClick={() => openQotwVoting(q)}
+                          className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition"
+                        >
+                          Open Voting
+                        </button>
+                      )}
+                      {q.qotwVotingOpen && (
+                        <button
+                          onClick={() => closeQotwVoting(q)}
+                          className="px-4 py-2 bg-yellow-600 text-white rounded font-semibold hover:bg-yellow-500 transition"
+                        >
+                          Close Voting
+                        </button>
+                      )}
+                      {q.qotwVotingClosed && !q.qotwAwarded && (
+                        <button
+                          onClick={() => awardQotwWinner(q)}
+                          className="px-4 py-2 bg-purple-600 text-white rounded font-semibold hover:bg-purple-500 transition"
+                        >
+                          Award Winner (+5 pts)
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <button
+            onClick={() => setAdminView('main')}
+            className="mt-6 px-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+          >
+            Back to Controls
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-yellow-600">
@@ -1345,9 +2308,9 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
           <Crown className="w-6 h-6" />
           Jeff's Control Panel
         </h2>
-        
+
         <div className="grid md:grid-cols-2 gap-4">
-          <button 
+          <button
             onClick={() => setAdminView('create-questionnaire')}
             className="bg-gradient-to-r from-yellow-600 to-amber-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-yellow-500 hover:to-amber-500 transition text-left"
           >
@@ -1356,8 +2319,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               <ChevronRight className="w-5 h-5" />
             </div>
           </button>
-          
-          <button 
+
+          <button
             onClick={() => setAdminView('manage-cast')}
             className="bg-gradient-to-r from-yellow-600 to-amber-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-yellow-500 hover:to-amber-500 transition text-left"
           >
@@ -1366,8 +2329,28 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               <ChevronRight className="w-5 h-5" />
             </div>
           </button>
-          
-          <button 
+
+          <button
+            onClick={() => setAdminView('episode-scoring')}
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-blue-500 hover:to-indigo-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <span>Episode Scoring</span>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('qotw-management')}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-purple-500 hover:to-pink-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <span>QOTW Management</span>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
             onClick={advancePhase}
             className="bg-gradient-to-r from-yellow-600 to-amber-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-yellow-500 hover:to-amber-500 transition text-left"
           >
