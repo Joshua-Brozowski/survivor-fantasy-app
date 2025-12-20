@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle } from 'lucide-react';
+import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image } from 'lucide-react';
 import { storage } from './db.js';
 
 // Survivor 48 Cast
@@ -24,16 +24,51 @@ const SURVIVOR_48_CAST = [
   { id: 18, name: "Steven Lim", tribe: "Moana", image: "https://static.wikia.nocookie.net/survivor/images/thumb/c/c8/S48_Steven_Lim.jpg/250px-S48_Steven_Lim.jpg" }
 ];
 
+// Contestant bios (placeholder data for testing)
+const CONTESTANT_BIOS = {
+  1: "Alyssa is a 28-year-old marketing executive from Los Angeles. A former college volleyball player, she brings her competitive spirit and team-building skills to the island. She plans to form strong alliances early and adapt quickly to changing dynamics.",
+  2: "Brooklyn is a 25-year-old social media influencer from Miami. With over 500K followers, she's used to reading people and understanding what makes them tick. She believes her ability to connect with anyone will be her greatest asset.",
+  3: "Christine is a 34-year-old emergency room nurse from Chicago. She's seen it all in high-pressure situations and stays calm when others panic. Her strategy is to be the reliable one everyone trusts.",
+  4: "David is a 31-year-old software engineer from Seattle. A puzzle enthusiast and escape room champion, he's confident in his problem-solving abilities. He plans to lay low early while building genuine connections.",
+  5: "Kamilla is a 29-year-old attorney from New York City. Known for her persuasive arguments in the courtroom, she's ready to apply those same skills at Tribal Council. She's not afraid to make big moves.",
+  6: "Mitch is a 26-year-old personal trainer from Denver. His physical prowess makes him a challenge threat, but he's hoping his likeable personality will keep him safe. He's here to prove brains beat brawn.",
+  7: "Aysha is a 32-year-old nonprofit director from Atlanta. She's spent years building coalitions and advocating for her community. She believes Survivor is the ultimate test of her leadership skills.",
+  8: "Jerome is a 27-year-old chef from New Orleans. His creativity in the kitchen translates to creative gameplay. He plans to nourish his tribe while cooking up strategic moves behind the scenes.",
+  9: "Joe is a 35-year-old construction foreman from Texas. A natural leader on job sites, he knows how to motivate people and build things that last—including alliances. He's the provider type.",
+  10: "Mary is a 24-year-old graduate student studying marine biology from Hawaii. Growing up near the ocean has prepared her for island life. She's observant and plans to strike when the time is right.",
+  11: "Shauhin is a 30-year-old entrepreneur from San Francisco. He's built multiple successful startups and knows how to pivot when things go wrong. Adaptability is his game.",
+  12: "Tabitha is a 33-year-old high school teacher from Philadelphia. She's used to managing different personalities and keeping everyone focused. She plans to be the social glue of her tribe.",
+  13: "Hannah is a 23-year-old actress from Nashville. She's perfected the art of reading scripts—and people. Her plan is to play a character that everyone underestimates until the finale.",
+  14: "Kendra is a 28-year-old firefighter from Portland. She runs into burning buildings for a living and isn't afraid of any challenge. Her bravery and work ethic will carry her far.",
+  15: "Kishori is a 31-year-old physician from Boston. Her analytical mind helps her diagnose problems quickly, both medical and strategic. She's playing the long game.",
+  16: "Marco is a 29-year-old professional soccer player from Arizona. He's used to intense competition and performing under pressure. He hopes his athletic background won't make him an early target.",
+  17: "Silas is a 26-year-old musician from Austin. His easygoing nature makes him everyone's friend, but he's secretly competitive. He's here to prove artists can be strategic masterminds.",
+  18: "Steven is a 34-year-old financial analyst from New York. He's used to calculating risk and making data-driven decisions. He plans to treat Survivor like the ultimate investment opportunity."
+};
+
 const INITIAL_PLAYERS = [
-  { id: 1, name: "Joshua", phone: "1234567890", isAdmin: true },
-  { id: 2, name: "Charlie", phone: "1234567891", isAdmin: false },
-  { id: 3, name: "Emma", phone: "1234567892", isAdmin: false },
-  { id: 4, name: "Tyler", phone: "1234567893", isAdmin: false },
-  { id: 5, name: "Brayden", phone: "1234567894", isAdmin: false },
-  { id: 6, name: "Dakota", phone: "1234567895", isAdmin: false },
-  { id: 7, name: "Patia", phone: "1234567896", isAdmin: false },
-  { id: 8, name: "Kaleigh", phone: "1234567897", isAdmin: false },
-  { id: 9, name: "Sarah", phone: "1234567898", isAdmin: false }
+  { id: 1, name: "Joshua", isAdmin: true },
+  { id: 2, name: "Charlie", isAdmin: false },
+  { id: 3, name: "Emma", isAdmin: false },
+  { id: 4, name: "Tyler", isAdmin: false },
+  { id: 5, name: "Brayden", isAdmin: false },
+  { id: 6, name: "Dakota", isAdmin: false },
+  { id: 7, name: "Patia", isAdmin: false },
+  { id: 8, name: "Kaleigh", isAdmin: false },
+  { id: 9, name: "Sarah", isAdmin: false }
+];
+
+// Default password for all players
+const DEFAULT_PASSWORD = 'password123';
+
+// Security questions for password recovery
+const SECURITY_QUESTIONS = [
+  "What is your favorite Survivor season?",
+  "Who is your all-time favorite Survivor player?",
+  "What is the name of your first pet?",
+  "What city were you born in?",
+  "What is your mother's maiden name?",
+  "What was the name of your elementary school?"
 ];
 
 // Default Advantages Available for Purchase
@@ -52,9 +87,10 @@ const DEFAULT_ADVANTAGES = [
 export default function SurvivorFantasyApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginView, setLoginView] = useState('login');
-  const [loginForm, setLoginForm] = useState({ name: '', password: '' });
-  const [recoveryForm, setRecoveryForm] = useState({ phone: '', code: '' });
-  const [showRecoveryCode, setShowRecoveryCode] = useState(false);
+  const [loginForm, setLoginForm] = useState({ name: '', password: '', rememberMe: false });
+  const [recoveryForm, setRecoveryForm] = useState({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
+  const [recoveryStep, setRecoveryStep] = useState('name'); // 'name', 'answer', 'reset'
+  const [recoveryPlayer, setRecoveryPlayer] = useState(null);
   
   // Game state
   const [players, setPlayers] = useState([]);
@@ -74,11 +110,45 @@ export default function SurvivorFantasyApp() {
   const [playerScores, setPlayerScores] = useState({});
   const [showNotifications, setShowNotifications] = useState(false);
   const [expandedPlayer, setExpandedPlayer] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [securitySetup, setSecuritySetup] = useState({ question: '', answer: '' });
+  const [passwordChange, setPasswordChange] = useState({ current: '', new: '', confirm: '' });
+  const [hasSecurityQuestion, setHasSecurityQuestion] = useState(false);
+  const [currentSeason, setCurrentSeason] = useState(48);
+  const [seasonHistory, setSeasonHistory] = useState([]);
+  const [castAccordionOpen, setCastAccordionOpen] = useState(false);
+
+  // Check for remembered login on mount
+  useEffect(() => {
+    const remembered = localStorage.getItem('survivorFantasyUser');
+    if (remembered) {
+      try {
+        const userData = JSON.parse(remembered);
+        const player = INITIAL_PLAYERS.find(p => p.id === userData.id);
+        if (player) {
+          setCurrentUser(player);
+        }
+      } catch (e) {
+        localStorage.removeItem('survivorFantasyUser');
+      }
+    }
+  }, []);
 
   // Load data from storage
   useEffect(() => {
     loadGameData();
   }, []);
+
+  // Check if current user has security question
+  useEffect(() => {
+    const checkSecurityQuestion = async () => {
+      if (currentUser) {
+        const securityData = await storage.get(`security_${currentUser.id}`);
+        setHasSecurityQuestion(!!securityData);
+      }
+    };
+    checkSecurityQuestion();
+  }, [currentUser]);
 
   const loadGameData = async () => {
     try {
@@ -96,9 +166,13 @@ export default function SurvivorFantasyApp() {
       const notificationsData = await storage.get('notifications');
       const playerAdvantagesData = await storage.get('playerAdvantages');
       const playerScoresData = await storage.get('playerScores');
+      const currentSeasonData = await storage.get('currentSeason');
+      const seasonHistoryData = await storage.get('seasonHistory');
 
       setPlayers(playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS);
       setContestants(contestantsData ? JSON.parse(contestantsData.value) : SURVIVOR_48_CAST);
+      setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 48);
+      setSeasonHistory(seasonHistoryData ? JSON.parse(seasonHistoryData.value) : []);
       setPicks(picksData ? JSON.parse(picksData.value) : []);
       setGamePhase(gamePhaseData ? gamePhaseData.value : 'instinct-picks');
       setQuestionnaires(questionnairesData ? JSON.parse(questionnairesData.value) : []);
@@ -108,9 +182,33 @@ export default function SurvivorFantasyApp() {
       setPickScores(pickScoresData ? JSON.parse(pickScoresData.value) : []);
       setAdvantages(advantagesData ? JSON.parse(advantagesData.value) : []);
       setEpisodes(episodesData ? JSON.parse(episodesData.value) : []);
-      setNotifications(notificationsData ? JSON.parse(notificationsData.value) : []);
+      // Load notifications and clean up ones older than 7 days
+      if (notificationsData) {
+        const allNotifications = JSON.parse(notificationsData.value);
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const recentNotifications = allNotifications.filter(n =>
+          new Date(n.createdAt) > sevenDaysAgo
+        );
+        // If we removed any old notifications, save the cleaned list
+        if (recentNotifications.length !== allNotifications.length) {
+          await storage.set('notifications', JSON.stringify(recentNotifications));
+        }
+        setNotifications(recentNotifications);
+      } else {
+        setNotifications([]);
+      }
+
       setPlayerAdvantages(playerAdvantagesData ? JSON.parse(playerAdvantagesData.value) : []);
       setPlayerScores(playerScoresData ? JSON.parse(playerScoresData.value) : {});
+
+      // Initialize default passwords for any player that doesn't have one
+      for (const player of INITIAL_PLAYERS) {
+        const existingPassword = await storage.get(`password_${player.id}`);
+        if (!existingPassword) {
+          await storage.set(`password_${player.id}`, DEFAULT_PASSWORD);
+        }
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       // First time setup - initialize with defaults
@@ -128,6 +226,8 @@ export default function SurvivorFantasyApp() {
       setNotifications([]);
       setPlayerAdvantages([]);
       setPlayerScores({});
+      setCurrentSeason(48);
+      setSeasonHistory([]);
 
       // Save initial data
       await storage.set('players', JSON.stringify(INITIAL_PLAYERS));
@@ -144,6 +244,8 @@ export default function SurvivorFantasyApp() {
       await storage.set('notifications', JSON.stringify([]));
       await storage.set('playerAdvantages', JSON.stringify([]));
       await storage.set('playerScores', JSON.stringify({}));
+      await storage.set('currentSeason', '48');
+      await storage.set('seasonHistory', JSON.stringify([]));
     }
   };
 
@@ -153,61 +255,256 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
-    const player = players.find(p => 
+    const player = players.find(p =>
       p.name.toLowerCase() === loginForm.name.toLowerCase()
     );
-    
+
     if (player) {
       try {
         const storedPassword = await storage.get(`password_${player.id}`);
-        
+
         if (!storedPassword) {
-          await storage.set(`password_${player.id}`, loginForm.password);
-          setCurrentUser(player);
+          // First time - set default password and check against it
+          await storage.set(`password_${player.id}`, DEFAULT_PASSWORD);
+          if (loginForm.password === DEFAULT_PASSWORD) {
+            setCurrentUser(player);
+            if (loginForm.rememberMe) {
+              localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
+            }
+          } else {
+            alert('Incorrect password');
+          }
         } else if (storedPassword.value === loginForm.password) {
           setCurrentUser(player);
+          if (loginForm.rememberMe) {
+            localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
+          }
         } else {
           alert('Incorrect password');
         }
       } catch (error) {
-        await storage.set(`password_${player.id}`, loginForm.password);
-        setCurrentUser(player);
+        // On error, try default password
+        if (loginForm.password === DEFAULT_PASSWORD) {
+          await storage.set(`password_${player.id}`, DEFAULT_PASSWORD);
+          setCurrentUser(player);
+          if (loginForm.rememberMe) {
+            localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
+          }
+        } else {
+          alert('Incorrect password');
+        }
       }
     } else {
-      alert('Player not found');
+      alert('Player not found. Valid players: ' + players.map(p => p.name).join(', '));
     }
   };
 
-  const handleForgotPassword = async () => {
-    const player = players.find(p => p.phone === recoveryForm.phone);
-    if (player) {
-      const code = Math.floor(100 + Math.random() * 900).toString();
-      await storage.set(`recovery_${player.id}`, code);
-      setShowRecoveryCode(true);
-      alert(`Recovery code sent: ${code} (In production, this would be SMS)`);
-    } else {
-      alert('Phone number not found');
+  const handleFindPlayer = async () => {
+    if (!recoveryForm.name) {
+      alert('Please enter your name');
+      return;
     }
-  };
 
-  const handleRecoveryLogin = async () => {
-    const player = players.find(p => p.phone === recoveryForm.phone);
+    const player = players.find(p =>
+      p.name.toLowerCase() === recoveryForm.name.toLowerCase()
+    );
+
     if (player) {
-      const storedCode = await storage.get(`recovery_${player.id}`);
-      if (storedCode && storedCode.value === recoveryForm.code) {
-        setCurrentUser(player);
-        await storage.delete(`recovery_${player.id}`);
+      // Check if they have a security question set up
+      const securityData = await storage.get(`security_${player.id}`);
+      if (securityData) {
+        setRecoveryPlayer({ ...player, securityQuestion: JSON.parse(securityData.value).question });
+        setRecoveryStep('answer');
       } else {
-        alert('Invalid recovery code');
+        // No security question set up - let them set one up now
+        alert('No security question found. Please contact the admin (Joshua) to reset your password.');
+      }
+    } else {
+      alert('Player not found. Valid players: ' + players.map(p => p.name).join(', '));
+    }
+  };
+
+  const handleVerifySecurityAnswer = async () => {
+    if (!recoveryForm.securityAnswer) {
+      alert('Please enter your security answer');
+      return;
+    }
+
+    const securityData = await storage.get(`security_${recoveryPlayer.id}`);
+    if (securityData) {
+      const { answer } = JSON.parse(securityData.value);
+      if (recoveryForm.securityAnswer.toLowerCase().trim() === answer.toLowerCase().trim()) {
+        setRecoveryStep('reset');
+      } else {
+        alert('Incorrect answer. Please try again.');
       }
     }
+  };
+
+  const handleResetPassword = async () => {
+    if (!recoveryForm.newPassword || !recoveryForm.confirmPassword) {
+      alert('Please fill in both password fields');
+      return;
+    }
+
+    if (recoveryForm.newPassword !== recoveryForm.confirmPassword) {
+      alert('Passwords do not match');
+      return;
+    }
+
+    if (recoveryForm.newPassword.length < 4) {
+      alert('Password must be at least 4 characters');
+      return;
+    }
+
+    await storage.set(`password_${recoveryPlayer.id}`, recoveryForm.newPassword);
+    alert('Password reset successfully! You can now login with your new password.');
+
+    // Reset and go back to login
+    setRecoveryForm({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
+    setRecoveryStep('name');
+    setRecoveryPlayer(null);
+    setLoginView('login');
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setLoginForm({ name: '', password: '' });
-    setRecoveryForm({ phone: '', code: '' });
-    setShowRecoveryCode(false);
+    setLoginForm({ name: '', password: '', rememberMe: false });
+    setRecoveryForm({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
+    setRecoveryStep('name');
+    setRecoveryPlayer(null);
+    localStorage.removeItem('survivorFantasyUser');
+  };
+
+  const setupSecurityQuestion = async (question, answer) => {
+    if (!currentUser) return;
+    await storage.set(`security_${currentUser.id}`, JSON.stringify({ question, answer }));
+  };
+
+  const changePassword = async (currentPassword, newPassword) => {
+    if (!currentUser) return false;
+
+    const storedPassword = await storage.get(`password_${currentUser.id}`);
+    if (storedPassword && storedPassword.value === currentPassword) {
+      await storage.set(`password_${currentUser.id}`, newPassword);
+      return true;
+    }
+    return false;
+  };
+
+  // Cast Management Functions
+  const updateContestant = async (contestantId, updates) => {
+    const updated = contestants.map(c =>
+      c.id === contestantId ? { ...c, ...updates } : c
+    );
+    setContestants(updated);
+    await storage.set('contestants', JSON.stringify(updated));
+  };
+
+  const addContestant = async (newContestant) => {
+    const maxId = Math.max(...contestants.map(c => c.id), 0);
+    const contestant = {
+      id: maxId + 1,
+      name: newContestant.name || 'New Contestant',
+      tribe: newContestant.tribe || 'TBD',
+      image: newContestant.image || '',
+      eliminated: false
+    };
+    const updated = [...contestants, contestant];
+    setContestants(updated);
+    await storage.set('contestants', JSON.stringify(updated));
+    return contestant;
+  };
+
+  const removeContestant = async (contestantId) => {
+    // Check if any picks reference this contestant
+    const picksWithContestant = picks.filter(p => p.contestantId === contestantId);
+    if (picksWithContestant.length > 0) {
+      alert('Cannot remove contestant - they have been picked by players. Mark as eliminated instead.');
+      return false;
+    }
+    const updated = contestants.filter(c => c.id !== contestantId);
+    setContestants(updated);
+    await storage.set('contestants', JSON.stringify(updated));
+    return true;
+  };
+
+  const updateTribeName = async (oldTribeName, newTribeName) => {
+    const updated = contestants.map(c =>
+      c.tribe === oldTribeName ? { ...c, tribe: newTribeName } : c
+    );
+    setContestants(updated);
+    await storage.set('contestants', JSON.stringify(updated));
+  };
+
+  // Season Management Functions
+  const archiveCurrentSeason = async () => {
+    const seasonData = {
+      season: currentSeason,
+      archivedAt: new Date().toISOString(),
+      contestants: [...contestants],
+      picks: [...picks],
+      questionnaires: [...questionnaires],
+      submissions: [...submissions],
+      pickScores: [...pickScores],
+      qotWVotes: [...qotWVotes],
+      episodes: [...episodes],
+      gamePhase,
+      finalStandings: [...players]
+        .map(p => ({ ...p, points: calculateTotalPoints(p.id) }))
+        .sort((a, b) => b.points - a.points)
+    };
+
+    const updatedHistory = [...seasonHistory, seasonData];
+    setSeasonHistory(updatedHistory);
+    await storage.set('seasonHistory', JSON.stringify(updatedHistory));
+    await storage.set(`season_${currentSeason}_archive`, JSON.stringify(seasonData));
+
+    return seasonData;
+  };
+
+  const startNewSeason = async (newSeasonNumber, newCast = null) => {
+    // Archive current season first
+    await archiveCurrentSeason();
+
+    // Reset all game data for new season
+    const defaultCast = newCast || contestants.map(c => ({
+      ...c,
+      eliminated: false,
+      id: c.id
+    }));
+
+    setCurrentSeason(newSeasonNumber);
+    setContestants(defaultCast);
+    setPicks([]);
+    setQuestionnaires([]);
+    setSubmissions([]);
+    setQotWVotes([]);
+    setPickScores([]);
+    setEpisodes([]);
+    setGamePhase('instinct-picks');
+    setPlayerAdvantages([]);
+    // Keep playerScores - they carry over between seasons or reset based on your preference
+    // For now, let's keep them to maintain the economy
+
+    await storage.set('currentSeason', newSeasonNumber.toString());
+    await storage.set('contestants', JSON.stringify(defaultCast));
+    await storage.set('picks', JSON.stringify([]));
+    await storage.set('questionnaires', JSON.stringify([]));
+    await storage.set('submissions', JSON.stringify([]));
+    await storage.set('qotWVotes', JSON.stringify([]));
+    await storage.set('pickScores', JSON.stringify([]));
+    await storage.set('episodes', JSON.stringify([]));
+    await storage.set('gamePhase', 'instinct-picks');
+    await storage.set('playerAdvantages', JSON.stringify([]));
+
+    await addNotification({
+      type: 'new_season',
+      message: `Season ${newSeasonNumber} has begun! Time to make your Instinct Picks!`,
+      targetPlayerId: null
+    });
+
+    return true;
   };
 
   const submitInstinctPick = async (contestantId) => {
@@ -394,6 +691,18 @@ export default function SurvivorFantasyApp() {
     await storage.set('notifications', JSON.stringify(updated));
   };
 
+  const deleteNotification = async (notifId) => {
+    const updated = notifications.filter(n => n.id !== notifId);
+    setNotifications(updated);
+    await storage.set('notifications', JSON.stringify(updated));
+  };
+
+  const clearAllNotifications = async () => {
+    if (!window.confirm('Delete all notifications? This cannot be undone.')) return;
+    setNotifications([]);
+    await storage.set('notifications', JSON.stringify([]));
+  };
+
   const purchaseAdvantage = async (advantage) => {
     const totalPoints = calculateTotalPoints(currentUser.id);
     if (totalPoints < advantage.cost) {
@@ -458,7 +767,7 @@ export default function SurvivorFantasyApp() {
             <Flame className="w-12 h-12 text-orange-500 mr-3" />
             <h1 className="text-3xl font-bold text-amber-400">Survivor Fantasy</h1>
           </div>
-          
+
           {loginView === 'login' ? (
             <div className="space-y-4">
               <div>
@@ -483,6 +792,15 @@ export default function SurvivorFantasyApp() {
                   placeholder="Enter password"
                 />
               </div>
+              <label className="flex items-center gap-2 text-amber-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={loginForm.rememberMe}
+                  onChange={(e) => setLoginForm({...loginForm, rememberMe: e.target.checked})}
+                  className="w-4 h-4 rounded border-amber-600 text-amber-600 focus:ring-amber-500"
+                />
+                Remember me
+              </label>
               <button
                 onClick={handleLogin}
                 type="button"
@@ -497,51 +815,101 @@ export default function SurvivorFantasyApp() {
               >
                 Forgot Password?
               </button>
+              <p className="text-amber-400/60 text-xs text-center mt-4">
+                Default password: password123
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
-              <div>
-                <label className="block text-amber-200 mb-2">Phone Number</label>
-                <input
-                  type="tel"
-                  value={recoveryForm.phone}
-                  onChange={(e) => setRecoveryForm({...recoveryForm, phone: e.target.value})}
-                  className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
-                  placeholder="1234567890"
-                />
-              </div>
-              {showRecoveryCode && (
-                <div>
-                  <label className="block text-amber-200 mb-2">Recovery Code</label>
-                  <input
-                    type="text"
-                    value={recoveryForm.code}
-                    onChange={(e) => setRecoveryForm({...recoveryForm, code: e.target.value})}
-                    className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
-                    placeholder="Enter 3-digit code"
-                  />
-                </div>
+              <h2 className="text-xl font-semibold text-amber-300 text-center mb-4">Password Recovery</h2>
+
+              {recoveryStep === 'name' && (
+                <>
+                  <div>
+                    <label className="block text-amber-200 mb-2">Enter Your Name</label>
+                    <input
+                      type="text"
+                      value={recoveryForm.name}
+                      onChange={(e) => setRecoveryForm({...recoveryForm, name: e.target.value})}
+                      onKeyPress={(e) => e.key === 'Enter' && handleFindPlayer()}
+                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                      placeholder="Your player name"
+                    />
+                  </div>
+                  <button
+                    onClick={handleFindPlayer}
+                    className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-3 rounded font-semibold hover:from-amber-500 hover:to-orange-500 transition"
+                  >
+                    Find My Account
+                  </button>
+                </>
               )}
-              {!showRecoveryCode ? (
-                <button
-                  onClick={handleForgotPassword}
-                  className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-3 rounded font-semibold hover:from-amber-500 hover:to-orange-500 transition"
-                >
-                  Send Recovery Code
-                </button>
-              ) : (
-                <button
-                  onClick={handleRecoveryLogin}
-                  className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-3 rounded font-semibold hover:from-amber-500 hover:to-orange-500 transition"
-                >
-                  Login with Code
-                </button>
+
+              {recoveryStep === 'answer' && recoveryPlayer && (
+                <>
+                  <p className="text-amber-200 text-sm">Hi {recoveryPlayer.name}! Answer your security question:</p>
+                  <div className="bg-amber-900/30 border border-amber-600 p-3 rounded">
+                    <p className="text-amber-300 font-semibold">{recoveryPlayer.securityQuestion}</p>
+                  </div>
+                  <div>
+                    <label className="block text-amber-200 mb-2">Your Answer</label>
+                    <input
+                      type="text"
+                      value={recoveryForm.securityAnswer}
+                      onChange={(e) => setRecoveryForm({...recoveryForm, securityAnswer: e.target.value})}
+                      onKeyPress={(e) => e.key === 'Enter' && handleVerifySecurityAnswer()}
+                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                      placeholder="Enter your answer"
+                    />
+                  </div>
+                  <button
+                    onClick={handleVerifySecurityAnswer}
+                    className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-3 rounded font-semibold hover:from-amber-500 hover:to-orange-500 transition"
+                  >
+                    Verify Answer
+                  </button>
+                </>
               )}
+
+              {recoveryStep === 'reset' && recoveryPlayer && (
+                <>
+                  <p className="text-green-400 text-sm text-center">Verified! Create your new password:</p>
+                  <div>
+                    <label className="block text-amber-200 mb-2">New Password</label>
+                    <input
+                      type="password"
+                      value={recoveryForm.newPassword}
+                      onChange={(e) => setRecoveryForm({...recoveryForm, newPassword: e.target.value})}
+                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                      placeholder="New password"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-amber-200 mb-2">Confirm Password</label>
+                    <input
+                      type="password"
+                      value={recoveryForm.confirmPassword}
+                      onChange={(e) => setRecoveryForm({...recoveryForm, confirmPassword: e.target.value})}
+                      onKeyPress={(e) => e.key === 'Enter' && handleResetPassword()}
+                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                      placeholder="Confirm password"
+                    />
+                  </div>
+                  <button
+                    onClick={handleResetPassword}
+                    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3 rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition"
+                  >
+                    Reset Password
+                  </button>
+                </>
+              )}
+
               <button
                 onClick={() => {
                   setLoginView('login');
-                  setShowRecoveryCode(false);
-                  setRecoveryForm({ phone: '', code: '' });
+                  setRecoveryStep('name');
+                  setRecoveryPlayer(null);
+                  setRecoveryForm({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
                 }}
                 className="w-full text-amber-300 text-sm hover:text-amber-200 transition"
               >
@@ -574,7 +942,7 @@ export default function SurvivorFantasyApp() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900">
       {/* Header */}
-      <header className="bg-black/60 backdrop-blur-sm border-b-2 border-amber-600">
+      <header className="bg-black/60 backdrop-blur-sm border-b-2 border-amber-600 relative z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Flame className="w-8 h-8 text-orange-500" />
@@ -647,6 +1015,13 @@ export default function SurvivorFantasyApp() {
               <Crown className="w-6 h-6 text-yellow-400" title="Admin (Jeff)" />
             )}
             <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 hover:bg-white/10 rounded-full transition"
+              title="Settings"
+            >
+              <Settings className="w-5 h-5 text-amber-300" />
+            </button>
+            <button
               onClick={handleLogout}
               className="p-2 hover:bg-white/10 rounded-full transition"
             >
@@ -655,6 +1030,152 @@ export default function SurvivorFantasyApp() {
           </div>
         </div>
       </header>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-gray-900 to-black border-2 border-amber-600 rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-amber-400 flex items-center gap-2">
+                  <Settings className="w-6 h-6" />
+                  Account Settings
+                </h2>
+                <button
+                  onClick={() => setShowSettings(false)}
+                  className="p-2 hover:bg-white/10 rounded-full transition"
+                >
+                  <X className="w-5 h-5 text-amber-300" />
+                </button>
+              </div>
+
+              {/* Security Question Setup */}
+              <div className="mb-6 p-4 bg-purple-900/30 border border-purple-600 rounded-lg">
+                <h3 className="text-lg font-semibold text-purple-300 mb-3 flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5" />
+                  Security Question
+                  {hasSecurityQuestion && <span className="text-green-400 text-sm">(Set)</span>}
+                </h3>
+                {!hasSecurityQuestion && (
+                  <p className="text-purple-200 text-sm mb-3">
+                    Set up a security question to recover your password if you forget it.
+                  </p>
+                )}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-purple-200 text-sm mb-1">Select a Question</label>
+                    <select
+                      value={securitySetup.question}
+                      onChange={(e) => setSecuritySetup({...securitySetup, question: e.target.value})}
+                      className="w-full px-3 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-400"
+                    >
+                      <option value="">Choose a security question...</option>
+                      {SECURITY_QUESTIONS.map((q, idx) => (
+                        <option key={idx} value={q}>{q}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-purple-200 text-sm mb-1">Your Answer</label>
+                    <input
+                      type="text"
+                      value={securitySetup.answer}
+                      onChange={(e) => setSecuritySetup({...securitySetup, answer: e.target.value})}
+                      placeholder="Enter your answer"
+                      className="w-full px-3 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!securitySetup.question || !securitySetup.answer) {
+                        alert('Please select a question and enter an answer');
+                        return;
+                      }
+                      await setupSecurityQuestion(securitySetup.question, securitySetup.answer);
+                      setHasSecurityQuestion(true);
+                      setSecuritySetup({ question: '', answer: '' });
+                      alert('Security question saved!');
+                    }}
+                    className="w-full py-2 bg-purple-600 text-white rounded font-semibold hover:bg-purple-500 transition"
+                  >
+                    {hasSecurityQuestion ? 'Update Security Question' : 'Save Security Question'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Change Password */}
+              <div className="p-4 bg-amber-900/30 border border-amber-600 rounded-lg">
+                <h3 className="text-lg font-semibold text-amber-300 mb-3">Change Password</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-amber-200 text-sm mb-1">Current Password</label>
+                    <input
+                      type="password"
+                      value={passwordChange.current}
+                      onChange={(e) => setPasswordChange({...passwordChange, current: e.target.value})}
+                      placeholder="Enter current password"
+                      className="w-full px-3 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-amber-200 text-sm mb-1">New Password</label>
+                    <input
+                      type="password"
+                      value={passwordChange.new}
+                      onChange={(e) => setPasswordChange({...passwordChange, new: e.target.value})}
+                      placeholder="Enter new password"
+                      className="w-full px-3 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-amber-200 text-sm mb-1">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={passwordChange.confirm}
+                      onChange={(e) => setPasswordChange({...passwordChange, confirm: e.target.value})}
+                      placeholder="Confirm new password"
+                      className="w-full px-3 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!passwordChange.current || !passwordChange.new || !passwordChange.confirm) {
+                        alert('Please fill in all fields');
+                        return;
+                      }
+                      if (passwordChange.new !== passwordChange.confirm) {
+                        alert('New passwords do not match');
+                        return;
+                      }
+                      if (passwordChange.new.length < 4) {
+                        alert('Password must be at least 4 characters');
+                        return;
+                      }
+                      const success = await changePassword(passwordChange.current, passwordChange.new);
+                      if (success) {
+                        alert('Password changed successfully!');
+                        setPasswordChange({ current: '', new: '', confirm: '' });
+                      } else {
+                        alert('Current password is incorrect');
+                      }
+                    }}
+                    className="w-full py-2 bg-amber-600 text-white rounded font-semibold hover:bg-amber-500 transition"
+                  >
+                    Change Password
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowSettings(false)}
+                className="w-full mt-4 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="bg-black/40 backdrop-blur-sm border-b border-amber-600/50">
@@ -1112,7 +1633,7 @@ export default function SurvivorFantasyApp() {
         )}
 
         {currentView === 'admin' && currentUser.isAdmin && (
-          <AdminPanel 
+          <AdminPanel
             currentUser={currentUser}
             players={players}
             setPlayers={setPlayers}
@@ -1134,13 +1655,25 @@ export default function SurvivorFantasyApp() {
             setEpisodes={setEpisodes}
             qotWVotes={qotWVotes}
             addNotification={addNotification}
+            notifications={notifications}
+            deleteNotification={deleteNotification}
+            clearAllNotifications={clearAllNotifications}
             storage={storage}
+            currentSeason={currentSeason}
+            updateContestant={updateContestant}
+            addContestant={addContestant}
+            removeContestant={removeContestant}
+            updateTribeName={updateTribeName}
+            startNewSeason={startNewSeason}
+            archiveCurrentSeason={archiveCurrentSeason}
+            seasonHistory={seasonHistory}
           />
         )}
 
         {/* Home View - Cast Display */}
         {currentView === 'home' && (
           <div className="space-y-6">
+            {/* Welcome Section */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
               <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
                 <Flame className="w-6 h-6" />
@@ -1165,46 +1698,115 @@ export default function SurvivorFantasyApp() {
               </div>
             </div>
 
-            {/* Cast by Tribe */}
-            {['Manu', 'Loto', 'Moana'].map(tribe => {
-              const tribeColor = tribe === 'Manu' ? 'orange' : tribe === 'Loto' ? 'blue' : 'green';
-              const tribeContestants = contestants.filter(c => c.tribe === tribe);
-              return (
-                <div key={tribe} className={`bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-${tribeColor}-600`}>
-                  <h3 className={`text-xl font-bold text-${tribeColor}-400 mb-4 flex items-center gap-2`}>
-                    <Users className="w-5 h-5" />
-                    {tribe} Tribe
-                    <span className="text-sm font-normal text-gray-400">
-                      ({tribeContestants.filter(c => !c.eliminated).length} remaining)
-                    </span>
-                  </h3>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {tribeContestants.map(contestant => (
-                      <div
-                        key={contestant.id}
-                        className={`p-4 rounded-lg border ${
-                          contestant.eliminated
-                            ? 'bg-red-900/20 border-red-600 opacity-60'
-                            : `bg-${tribeColor}-900/20 border-${tribeColor}-600`
-                        }`}
-                      >
-                        <img
-                          src={contestant.image}
-                          alt={contestant.name}
-                          className="w-full h-40 object-cover rounded-lg mb-3"
-                          onError={(e) => { e.target.src = 'https://via.placeholder.com/150?text=No+Image'; }}
-                        />
-                        <h4 className="text-white font-bold">{contestant.name}</h4>
-                        <p className={`text-${tribeColor}-300 text-sm`}>{contestant.tribe}</p>
-                        {contestant.eliminated && (
-                          <p className="text-red-400 text-sm font-semibold mt-1">Eliminated</p>
-                        )}
-                      </div>
-                    ))}
+            {/* How to Play Section */}
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+              <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+                <Star className="w-5 h-5" />
+                How to Play
+              </h3>
+              <div className="space-y-4 text-amber-200">
+                <p>
+                  Navigate through the app using the tabs above to manage your fantasy game experience:
+                </p>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Dashboard</h4>
+                    </div>
+                    <p className="text-sm">Your personal hub showing your total points, current rank, pick status, and quick access to pending tasks like questionnaires.</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Target className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Picks</h4>
+                    </div>
+                    <p className="text-sm">Select your Instinct Pick before the season starts and your Final Pick after the merge. Earn points based on how your picks perform!</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Questionnaire</h4>
+                    </div>
+                    <p className="text-sm">Answer weekly prediction questions about the upcoming episode. Get points for correct answers and compete in Question of the Week!</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Trophy className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Leaderboard</h4>
+                    </div>
+                    <p className="text-sm">See how you stack up against the competition! View everyone's total points, rankings, and detailed score breakdowns.</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Gift className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Advantages</h4>
+                    </div>
+                    <p className="text-sm">View and activate special advantages you've earned. These powerful bonuses can steal points, double your score, or protect you from penalties!</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Bell className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Notifications</h4>
+                    </div>
+                    <p className="text-sm">Stay updated with alerts for new questionnaires, score releases, phase changes, and when you receive advantages. Check the bell icon!</p>
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            </div>
+
+            {/* Cast Accordion */}
+            <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
+              <button
+                onClick={() => setCastAccordionOpen(!castAccordionOpen)}
+                className="w-full p-6 flex items-center justify-between hover:bg-amber-900/20 transition"
+              >
+                <h3 className="text-xl font-bold text-amber-400 flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Check Out This Season's Cast
+                </h3>
+                {castAccordionOpen ? (
+                  <ChevronUp className="w-6 h-6 text-amber-400" />
+                ) : (
+                  <ChevronDown className="w-6 h-6 text-amber-400" />
+                )}
+              </button>
+
+              {castAccordionOpen && (
+                <div className="px-6 pb-6">
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {contestants.map(contestant => {
+                      const tribeColor = contestant.tribe === 'Manu' ? 'orange' : contestant.tribe === 'Loto' ? 'blue' : 'green';
+                      return (
+                        <div
+                          key={contestant.id}
+                          className={`p-4 rounded-lg border ${
+                            contestant.eliminated
+                              ? 'bg-red-900/20 border-red-600 opacity-60'
+                              : `bg-${tribeColor}-900/30 border-${tribeColor}-500`
+                          }`}
+                        >
+                          <img
+                            src={contestant.image}
+                            alt={contestant.name}
+                            className="w-full h-40 object-cover rounded-lg mb-3"
+                            onError={(e) => { e.target.src = 'https://via.placeholder.com/150?text=No+Image'; }}
+                          />
+                          <h5 className="text-white font-bold">{contestant.name}</h5>
+                          <p className={`text-${tribeColor}-300 text-sm mb-2`}>{contestant.tribe}</p>
+                          <p className="text-gray-300 text-sm leading-relaxed">
+                            {CONTESTANT_BIOS[contestant.id] || 'Bio coming soon...'}
+                          </p>
+                          {contestant.eliminated && (
+                            <p className="text-red-400 text-sm font-semibold mt-2">Eliminated</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1490,7 +2092,7 @@ export default function SurvivorFantasyApp() {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, storage }) {
+function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory }) {
   const [adminView, setAdminView] = useState('main');
   const [newQ, setNewQ] = useState({
     title: '',
@@ -1505,6 +2107,32 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     pickScoresData: {}
   });
   const [qotwManageQ, setQotwManageQ] = useState(null);
+  const [editingContestant, setEditingContestant] = useState(null);
+  const [newContestantForm, setNewContestantForm] = useState({ name: '', tribe: '', image: '' });
+  const [editTribeForm, setEditTribeForm] = useState({ oldName: '', newName: '' });
+  const [newSeasonForm, setNewSeasonForm] = useState({ seasonNumber: currentSeason + 1 });
+  const [dragOverNew, setDragOverNew] = useState(false);
+  const [dragOverEdit, setDragOverEdit] = useState(null);
+  const [notificationForm, setNotificationForm] = useState({ selectedPlayers: [], message: '', sendToAll: false });
+
+  // Helper function to convert image file to Base64
+  const handleImageFile = (file, callback) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please drop an image file (PNG, JPG, etc.)');
+      return;
+    }
+    // Limit to 500KB for MongoDB storage
+    if (file.size > 500000) {
+      alert('Image too large. Please use an image under 500KB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      callback(reader.result); // Base64 data URL
+    };
+    reader.readAsDataURL(file);
+  };
 
   const createQuestionnaire = async () => {
     if (!newQ.title || newQ.questions.length === 0 || !newQ.qotw.text) {
@@ -1555,8 +2183,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
       id: `q${Date.now()}`,
       type,
       text: '',
-      required: type === 'tribe-immunity' || type === 'individual-immunity' || type === 'vote-out',
-      options: type === 'multiple-choice' ? ['', '', '', ''] : []
+      required: false,
+      options: type === 'multiple-choice' ? ['', ''] : []
     };
     setNewQ({...newQ, questions: [...newQ.questions, question]});
   };
@@ -1642,11 +2270,12 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     alert('Contestant marked as eliminated');
   };
 
+  const GAME_PHASES = ['instinct-picks', 'early-season', 'final-picks', 'mid-season', 'finale'];
+
   const advancePhase = async () => {
-    const phases = ['instinct-picks', 'early-season', 'final-picks', 'mid-season', 'finale'];
-    const currentIndex = phases.indexOf(gamePhase);
-    if (currentIndex < phases.length - 1) {
-      const newPhase = phases[currentIndex + 1];
+    const currentIndex = GAME_PHASES.indexOf(gamePhase);
+    if (currentIndex < GAME_PHASES.length - 1) {
+      const newPhase = GAME_PHASES[currentIndex + 1];
       setGamePhase(newPhase);
       await storage.set('gamePhase', newPhase);
 
@@ -1658,8 +2287,43 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
         });
       }
 
-      alert(`Game phase advanced to: ${newPhase}`);
+      alert(`Game phase advanced to: ${newPhase.replace('-', ' ')}`);
+    } else {
+      alert('Already at the final phase!');
     }
+  };
+
+  const regressPhase = async () => {
+    const currentIndex = GAME_PHASES.indexOf(gamePhase);
+    if (currentIndex > 0) {
+      const newPhase = GAME_PHASES[currentIndex - 1];
+      if (!window.confirm(`Go back to "${newPhase.replace('-', ' ')}" phase? This should only be used to fix mistakes.`)) {
+        return;
+      }
+      setGamePhase(newPhase);
+      await storage.set('gamePhase', newPhase);
+      alert(`Game phase reverted to: ${newPhase.replace('-', ' ')}`);
+    } else {
+      alert('Already at the first phase!');
+    }
+  };
+
+  const setPhaseDirectly = async (newPhase) => {
+    if (!window.confirm(`Change phase to "${newPhase.replace('-', ' ')}"?`)) {
+      return;
+    }
+    setGamePhase(newPhase);
+    await storage.set('gamePhase', newPhase);
+
+    if (newPhase === 'final-picks') {
+      await addNotification({
+        type: 'final_picks_open',
+        message: 'Final Picks are now open! Submit your pick before the deadline.',
+        targetPlayerId: null
+      });
+    }
+
+    alert(`Game phase set to: ${newPhase.replace('-', ' ')}`);
   };
 
   const submitEpisodeScoring = async () => {
@@ -1805,64 +2469,92 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
             <div>
               <label className="block text-yellow-300 mb-2">Questions</label>
               <div className="space-y-3">
-                {newQ.questions.map((q, idx) => (
-                  <div key={q.id} className="bg-yellow-900/20 p-4 rounded border border-yellow-600">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-yellow-300 font-semibold">
-                        Question {idx + 1} ({q.type}) {q.required && '(Required)'}
-                      </span>
-                      <button
-                        onClick={() => setNewQ({...newQ, questions: newQ.questions.filter((_, i) => i !== idx)})}
-                        className="text-red-400 hover:text-red-300"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <input
-                      type="text"
-                      value={q.text}
-                      onChange={(e) => {
-                        const updated = [...newQ.questions];
-                        updated[idx].text = e.target.value;
-                        setNewQ({...newQ, questions: updated});
-                      }}
-                      placeholder="Enter question text..."
-                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-yellow-600 focus:outline-none focus:border-yellow-400 mb-2"
-                    />
-                    {q.type === 'multiple-choice' && (
-                      <div className="space-y-2">
-                        {q.options.map((opt, optIdx) => (
-                          <input
-                            key={optIdx}
-                            type="text"
-                            value={opt}
-                            onChange={(e) => {
+                {newQ.questions.map((q, idx) => {
+                  const typeLabel = q.type === 'multiple-choice' ? 'Multiple Choice'
+                    : q.type === 'cast-dropdown' ? 'Dropdown (Remaining Cast)'
+                    : q.type === 'true-false' ? 'True/False'
+                    : q.type;
+                  return (
+                    <div key={q.id} className="bg-yellow-900/20 p-4 rounded border border-yellow-600">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-yellow-300 font-semibold">
+                          Question {idx + 1} - {typeLabel}
+                        </span>
+                        <button
+                          onClick={() => setNewQ({...newQ, questions: newQ.questions.filter((_, i) => i !== idx)})}
+                          className="text-red-400 hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={q.text}
+                        onChange={(e) => {
+                          const updated = [...newQ.questions];
+                          updated[idx].text = e.target.value;
+                          setNewQ({...newQ, questions: updated});
+                        }}
+                        placeholder="Enter question text..."
+                        className="w-full px-4 py-2 rounded bg-black/50 text-white border border-yellow-600 focus:outline-none focus:border-yellow-400 mb-2"
+                      />
+                      {q.type === 'multiple-choice' && (
+                        <div className="space-y-2">
+                          {q.options.map((opt, optIdx) => (
+                            <div key={optIdx} className="flex gap-2">
+                              <input
+                                type="text"
+                                value={opt}
+                                onChange={(e) => {
+                                  const updated = [...newQ.questions];
+                                  updated[idx].options[optIdx] = e.target.value;
+                                  setNewQ({...newQ, questions: updated});
+                                }}
+                                placeholder={`Option ${optIdx + 1}`}
+                                className="flex-1 px-4 py-2 rounded bg-black/50 text-white border border-yellow-600 focus:outline-none focus:border-yellow-400"
+                              />
+                              {q.options.length > 2 && (
+                                <button
+                                  onClick={() => {
+                                    const updated = [...newQ.questions];
+                                    updated[idx].options = updated[idx].options.filter((_, i) => i !== optIdx);
+                                    setNewQ({...newQ, questions: updated});
+                                  }}
+                                  className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button
+                            onClick={() => {
                               const updated = [...newQ.questions];
-                              updated[idx].options[optIdx] = e.target.value;
+                              updated[idx].options = [...updated[idx].options, ''];
                               setNewQ({...newQ, questions: updated});
                             }}
-                            placeholder={`Option ${optIdx + 1}`}
-                            className="w-full px-4 py-2 rounded bg-black/50 text-white border border-yellow-600 focus:outline-none focus:border-yellow-400"
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                            className="px-3 py-2 bg-yellow-700 text-white rounded text-sm hover:bg-yellow-600"
+                          >
+                            + Add Option
+                          </button>
+                        </div>
+                      )}
+                      {q.type === 'cast-dropdown' && (
+                        <p className="text-yellow-400 text-sm mt-2">
+                          Players will see a dropdown of all non-eliminated contestants
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                <button onClick={() => addQuestion('tribe-immunity')} className="px-3 py-2 bg-yellow-700 text-white rounded text-sm hover:bg-yellow-600">
-                  + Tribe Immunity
-                </button>
-                <button onClick={() => addQuestion('individual-immunity')} className="px-3 py-2 bg-yellow-700 text-white rounded text-sm hover:bg-yellow-600">
-                  + Individual Immunity
-                </button>
-                <button onClick={() => addQuestion('vote-out')} className="px-3 py-2 bg-yellow-700 text-white rounded text-sm hover:bg-yellow-600">
-                  + Vote Out
-                </button>
                 <button onClick={() => addQuestion('multiple-choice')} className="px-3 py-2 bg-yellow-700 text-white rounded text-sm hover:bg-yellow-600">
                   + Multiple Choice
+                </button>
+                <button onClick={() => addQuestion('cast-dropdown')} className="px-3 py-2 bg-yellow-700 text-white rounded text-sm hover:bg-yellow-600">
+                  + Dropdown (Remaining Cast)
                 </button>
                 <button onClick={() => addQuestion('true-false')} className="px-3 py-2 bg-yellow-700 text-white rounded text-sm hover:bg-yellow-600">
                   + True/False
@@ -1931,16 +2623,6 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                   {idx + 1}. {q.text} {q.required && <span className="text-green-400">(Required)</span>}
                 </p>
 
-                {(q.type === 'tribe-immunity' || q.type === 'individual-immunity' || q.type === 'vote-out') && (
-                  <input
-                    type="text"
-                    value={correctAnswers[q.id] || ''}
-                    onChange={(e) => setCorrectAnswers({...correctAnswers, [q.id]: e.target.value})}
-                    placeholder="Enter correct answer..."
-                    className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
-                  />
-                )}
-
                 {q.type === 'multiple-choice' && (
                   <select
                     value={correctAnswers[q.id] || ''}
@@ -1950,6 +2632,19 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                     <option value="">Select correct answer...</option>
                     {q.options.map((opt, optIdx) => (
                       <option key={optIdx} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                )}
+
+                {q.type === 'cast-dropdown' && (
+                  <select
+                    value={correctAnswers[q.id] || ''}
+                    onChange={(e) => setCorrectAnswers({...correctAnswers, [q.id]: e.target.value})}
+                    className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                  >
+                    <option value="">Select correct answer...</option>
+                    {contestants.map(contestant => (
+                      <option key={contestant.id} value={contestant.name}>{contestant.name}</option>
                     ))}
                   </select>
                 )}
@@ -2301,31 +2996,776 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     );
   }
 
+  // Cast Editor View
+  if (adminView === 'cast-editor') {
+    const tribes = [...new Set(contestants.map(c => c.tribe))];
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-green-600">
+          <h2 className="text-2xl font-bold text-green-400 mb-6 flex items-center gap-2">
+            <Edit3 className="w-6 h-6" />
+            Edit Cast - Season {currentSeason}
+          </h2>
+
+          {/* Add New Contestant */}
+          <div className="mb-6 p-4 bg-green-900/30 border border-green-600 rounded-lg">
+            <h3 className="text-green-300 font-semibold mb-3 flex items-center gap-2">
+              <Plus className="w-5 h-5" />
+              Add New Contestant
+            </h3>
+            <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-3 items-start">
+              <input
+                type="text"
+                value={newContestantForm.name}
+                onChange={(e) => setNewContestantForm({...newContestantForm, name: e.target.value})}
+                placeholder="Name"
+                className="px-3 py-2 rounded bg-black/50 text-white border border-green-600 focus:outline-none focus:border-green-400"
+              />
+              <select
+                value={newContestantForm.tribe}
+                onChange={(e) => setNewContestantForm({...newContestantForm, tribe: e.target.value})}
+                className="px-3 py-2 rounded bg-black/50 text-white border border-green-600 focus:outline-none focus:border-green-400"
+              >
+                <option value="">Select Tribe</option>
+                {tribes.map(t => <option key={t} value={t}>{t}</option>)}
+                <option value="new">+ New Tribe</option>
+              </select>
+              {/* Image: URL input OR drag-and-drop */}
+              <div className="lg:col-span-2">
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={newContestantForm.image}
+                    onChange={(e) => setNewContestantForm({...newContestantForm, image: e.target.value})}
+                    placeholder="Image URL"
+                    className="flex-1 px-3 py-2 rounded bg-black/50 text-white border border-green-600 focus:outline-none focus:border-green-400"
+                  />
+                  <label className="px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-500 flex items-center gap-1">
+                    <Upload className="w-4 h-4" />
+                    <span className="hidden sm:inline">Browse</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        handleImageFile(e.target.files[0], (base64) => {
+                          setNewContestantForm({...newContestantForm, image: base64});
+                        });
+                      }}
+                    />
+                  </label>
+                </div>
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragOverNew(true); }}
+                  onDragLeave={() => setDragOverNew(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverNew(false);
+                    handleImageFile(e.dataTransfer.files[0], (base64) => {
+                      setNewContestantForm({...newContestantForm, image: base64});
+                    });
+                  }}
+                  className={`border-2 border-dashed rounded p-3 text-center text-sm transition ${
+                    dragOverNew
+                      ? 'border-green-400 bg-green-900/40 text-green-300'
+                      : 'border-gray-600 text-gray-400 hover:border-green-600'
+                  }`}
+                >
+                  {newContestantForm.image ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <img
+                        src={newContestantForm.image}
+                        alt="Preview"
+                        className="w-10 h-10 rounded-full object-cover"
+                        onError={(e) => { e.target.src = 'https://via.placeholder.com/40?text=?'; }}
+                      />
+                      <span className="text-green-400">Image loaded</span>
+                      <button
+                        onClick={() => setNewContestantForm({...newContestantForm, image: ''})}
+                        className="text-red-400 hover:text-red-300"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2">
+                      <Image className="w-4 h-4" />
+                      Drop image here
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!newContestantForm.name) {
+                    alert('Please enter a name');
+                    return;
+                  }
+                  const tribe = newContestantForm.tribe === 'new'
+                    ? prompt('Enter new tribe name:')
+                    : newContestantForm.tribe || 'TBD';
+                  if (tribe) {
+                    await addContestant({ ...newContestantForm, tribe });
+                    setNewContestantForm({ name: '', tribe: '', image: '' });
+                  }
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add
+              </button>
+            </div>
+          </div>
+
+          {/* Rename Tribe */}
+          <div className="mb-6 p-4 bg-amber-900/30 border border-amber-600 rounded-lg">
+            <h3 className="text-amber-300 font-semibold mb-3">Rename Tribe</h3>
+            <div className="flex gap-3">
+              <select
+                value={editTribeForm.oldName}
+                onChange={(e) => setEditTribeForm({...editTribeForm, oldName: e.target.value})}
+                className="flex-1 px-3 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+              >
+                <option value="">Select Tribe to Rename</option>
+                {tribes.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <input
+                type="text"
+                value={editTribeForm.newName}
+                onChange={(e) => setEditTribeForm({...editTribeForm, newName: e.target.value})}
+                placeholder="New Name"
+                className="flex-1 px-3 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+              />
+              <button
+                onClick={async () => {
+                  if (editTribeForm.oldName && editTribeForm.newName) {
+                    await updateTribeName(editTribeForm.oldName, editTribeForm.newName);
+                    setEditTribeForm({ oldName: '', newName: '' });
+                  }
+                }}
+                className="px-4 py-2 bg-amber-600 text-white rounded font-semibold hover:bg-amber-500 transition"
+              >
+                Rename
+              </button>
+            </div>
+          </div>
+
+          {/* Cast List by Tribe */}
+          {tribes.map(tribe => (
+            <div key={tribe} className="mb-6">
+              <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                {tribe} Tribe ({contestants.filter(c => c.tribe === tribe).length})
+              </h3>
+              <div className="space-y-2">
+                {contestants.filter(c => c.tribe === tribe).map(contestant => (
+                  <div
+                    key={contestant.id}
+                    className={`p-3 rounded-lg border ${contestant.eliminated ? 'bg-red-900/20 border-red-600 opacity-60' : 'bg-green-900/20 border-green-600'}`}
+                  >
+                    {editingContestant === contestant.id ? (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <img
+                            src={document.getElementById(`image-${contestant.id}`)?.value || contestant.image || 'https://via.placeholder.com/50?text=?'}
+                            alt=""
+                            className="w-12 h-12 rounded-full object-cover"
+                            onError={(e) => { e.target.src = 'https://via.placeholder.com/50?text=?'; }}
+                          />
+                          <input
+                            type="text"
+                            defaultValue={contestant.name}
+                            id={`name-${contestant.id}`}
+                            placeholder="Name"
+                            className="flex-1 min-w-[150px] px-3 py-2 rounded bg-black/50 text-white border border-green-600"
+                          />
+                          <select
+                            defaultValue={contestant.tribe}
+                            id={`tribe-${contestant.id}`}
+                            className="px-3 py-2 rounded bg-black/50 text-white border border-green-600"
+                          >
+                            {tribes.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        {/* Image section with drag-and-drop */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="text"
+                            defaultValue={contestant.image}
+                            id={`image-${contestant.id}`}
+                            placeholder="Image URL"
+                            className="flex-1 min-w-[200px] px-3 py-2 rounded bg-black/50 text-white border border-green-600"
+                          />
+                          <label className="px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-500 flex items-center gap-1">
+                            <Upload className="w-4 h-4" />
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                handleImageFile(e.target.files[0], (base64) => {
+                                  document.getElementById(`image-${contestant.id}`).value = base64;
+                                  setDragOverEdit(null); // trigger re-render
+                                });
+                              }}
+                            />
+                          </label>
+                          <div
+                            onDragOver={(e) => { e.preventDefault(); setDragOverEdit(contestant.id); }}
+                            onDragLeave={() => setDragOverEdit(null)}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setDragOverEdit(null);
+                              handleImageFile(e.dataTransfer.files[0], (base64) => {
+                                document.getElementById(`image-${contestant.id}`).value = base64;
+                              });
+                            }}
+                            className={`flex-1 min-w-[120px] border-2 border-dashed rounded p-2 text-center text-sm transition ${
+                              dragOverEdit === contestant.id
+                                ? 'border-green-400 bg-green-900/40 text-green-300'
+                                : 'border-gray-600 text-gray-400'
+                            }`}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <Image className="w-4 h-4" />
+                              Drop image
+                            </div>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const name = document.getElementById(`name-${contestant.id}`).value;
+                              const tribe = document.getElementById(`tribe-${contestant.id}`).value;
+                              const image = document.getElementById(`image-${contestant.id}`).value;
+                              await updateContestant(contestant.id, { name, tribe, image });
+                              setEditingContestant(null);
+                            }}
+                            className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-500"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setEditingContestant(null)}
+                            className="px-3 py-2 bg-gray-600 text-white rounded hover:bg-gray-500"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={contestant.image || 'https://via.placeholder.com/50?text=?'}
+                            alt=""
+                            className="w-12 h-12 rounded-full object-cover border-2 border-green-500"
+                            onError={(e) => { e.target.src = 'https://via.placeholder.com/50?text=?'; }}
+                          />
+                          <div>
+                            <p className="text-white font-semibold">{contestant.name}</p>
+                            <p className="text-green-300 text-sm">{contestant.tribe}</p>
+                            {contestant.eliminated && <span className="text-red-400 text-xs">Eliminated</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setEditingContestant(contestant.id)}
+                            className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-500"
+                            title="Edit"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (window.confirm(`Remove ${contestant.name} from the cast? This cannot be undone if they have picks.`)) {
+                                await removeContestant(contestant.id);
+                              }
+                            }}
+                            className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+                            title="Remove"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <button
+            onClick={() => setAdminView('main')}
+            className="mt-4 px-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+          >
+            Back to Controls
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Season Management View
+  if (adminView === 'season-management') {
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-cyan-600">
+          <h2 className="text-2xl font-bold text-cyan-400 mb-6 flex items-center gap-2">
+            <Archive className="w-6 h-6" />
+            Season Management
+          </h2>
+
+          {/* Current Season Info */}
+          <div className="mb-6 p-4 bg-cyan-900/30 border border-cyan-600 rounded-lg">
+            <h3 className="text-cyan-300 font-semibold mb-3">Current Season: {currentSeason}</h3>
+            <div className="grid md:grid-cols-4 gap-4 text-center">
+              <div className="bg-black/30 p-3 rounded">
+                <p className="text-2xl font-bold text-white">{contestants.length}</p>
+                <p className="text-cyan-300 text-sm">Total Cast</p>
+              </div>
+              <div className="bg-black/30 p-3 rounded">
+                <p className="text-2xl font-bold text-white">{contestants.filter(c => !c.eliminated).length}</p>
+                <p className="text-cyan-300 text-sm">Remaining</p>
+              </div>
+              <div className="bg-black/30 p-3 rounded">
+                <p className="text-2xl font-bold text-white">{questionnaires.length}</p>
+                <p className="text-cyan-300 text-sm">Questionnaires</p>
+              </div>
+              <div className="bg-black/30 p-3 rounded">
+                <p className="text-2xl font-bold text-white capitalize">{gamePhase.replace('-', ' ')}</p>
+                <p className="text-cyan-300 text-sm">Current Phase</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Start New Season */}
+          <div className="mb-6 p-4 bg-green-900/30 border border-green-600 rounded-lg">
+            <h3 className="text-green-300 font-semibold mb-3 flex items-center gap-2">
+              <RefreshCw className="w-5 h-5" />
+              Start New Season
+            </h3>
+            <p className="text-green-200 text-sm mb-4">
+              This will archive the current season data and reset the game for a new season.
+              All picks, questionnaires, and scores will be saved to history.
+            </p>
+            <div className="flex items-center gap-4">
+              <div>
+                <label className="block text-green-200 text-sm mb-1">New Season Number</label>
+                <input
+                  type="number"
+                  value={newSeasonForm.seasonNumber}
+                  onChange={(e) => setNewSeasonForm({ seasonNumber: parseInt(e.target.value) })}
+                  className="w-24 px-3 py-2 rounded bg-black/50 text-white border border-green-600"
+                />
+              </div>
+              <button
+                onClick={async () => {
+                  if (window.confirm(`Start Season ${newSeasonForm.seasonNumber}? This will archive Season ${currentSeason} and reset all game data.`)) {
+                    // Create empty cast for new season
+                    const emptyCast = [];
+                    await startNewSeason(newSeasonForm.seasonNumber, emptyCast);
+                    alert(`Season ${newSeasonForm.seasonNumber} has begun! Add your new cast in the Cast Editor.`);
+                    setAdminView('cast-editor');
+                  }
+                }}
+                className="px-6 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition mt-5"
+              >
+                Start Season {newSeasonForm.seasonNumber}
+              </button>
+            </div>
+          </div>
+
+          {/* Season History */}
+          <div className="p-4 bg-purple-900/30 border border-purple-600 rounded-lg">
+            <h3 className="text-purple-300 font-semibold mb-3 flex items-center gap-2">
+              <Trophy className="w-5 h-5" />
+              Season History
+            </h3>
+            {seasonHistory.length === 0 ? (
+              <p className="text-purple-200 text-sm">No archived seasons yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {seasonHistory.map((season, idx) => (
+                  <div key={idx} className="bg-black/30 p-4 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-white font-semibold">Season {season.season}</h4>
+                      <span className="text-purple-300 text-sm">
+                        Archived: {new Date(season.archivedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="text-sm text-purple-200 mb-2">
+                      {season.contestants?.length || 0} contestants • {season.questionnaires?.length || 0} questionnaires
+                    </div>
+                    {season.finalStandings && (
+                      <div className="mt-2">
+                        <p className="text-purple-300 text-sm mb-1">Final Standings:</p>
+                        <div className="flex flex-wrap gap-2">
+                          {season.finalStandings.slice(0, 3).map((player, rank) => (
+                            <span key={player.id} className={`px-2 py-1 rounded text-xs ${
+                              rank === 0 ? 'bg-yellow-600 text-white' :
+                              rank === 1 ? 'bg-gray-400 text-black' :
+                              'bg-amber-700 text-white'
+                            }`}>
+                              #{rank + 1} {player.name} ({player.points} pts)
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setAdminView('main')}
+            className="mt-6 px-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+          >
+            Back to Controls
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (adminView === 'phase-control') {
+    const currentIndex = GAME_PHASES.indexOf(gamePhase);
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-yellow-600">
+          <h2 className="text-2xl font-bold text-yellow-400 mb-6 flex items-center gap-2">
+            <RefreshCw className="w-6 h-6" />
+            Phase Control
+          </h2>
+
+          {/* Current Phase Display */}
+          <div className="bg-yellow-900/30 p-4 rounded-lg border border-yellow-600 mb-6">
+            <p className="text-yellow-300 text-sm mb-1">Current Phase</p>
+            <p className="text-2xl font-bold text-white capitalize">{gamePhase.replace('-', ' ')}</p>
+            <p className="text-yellow-400 text-sm mt-1">Phase {currentIndex + 1} of {GAME_PHASES.length}</p>
+          </div>
+
+          {/* Phase Navigation */}
+          <div className="flex gap-4 mb-6">
+            <button
+              onClick={regressPhase}
+              disabled={currentIndex === 0}
+              className={`flex-1 py-3 rounded-lg font-semibold transition flex items-center justify-center gap-2 ${
+                currentIndex === 0
+                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-orange-600 to-red-600 text-white hover:from-orange-500 hover:to-red-500'
+              }`}
+            >
+              <ChevronLeft className="w-5 h-5" />
+              Previous Phase
+            </button>
+            <button
+              onClick={advancePhase}
+              disabled={currentIndex === GAME_PHASES.length - 1}
+              className={`flex-1 py-3 rounded-lg font-semibold transition flex items-center justify-center gap-2 ${
+                currentIndex === GAME_PHASES.length - 1
+                  ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-500 hover:to-emerald-500'
+              }`}
+            >
+              Next Phase
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* All Phases Grid */}
+          <div>
+            <p className="text-yellow-300 font-semibold mb-3">Jump to Phase</p>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+              {GAME_PHASES.map((phase, idx) => (
+                <button
+                  key={phase}
+                  onClick={() => phase !== gamePhase && setPhaseDirectly(phase)}
+                  className={`p-3 rounded-lg border text-sm font-semibold transition ${
+                    phase === gamePhase
+                      ? 'bg-yellow-600 border-yellow-400 text-white'
+                      : 'bg-yellow-900/20 border-yellow-600/50 text-yellow-200 hover:bg-yellow-900/40'
+                  }`}
+                >
+                  <p className="capitalize">{phase.replace('-', ' ')}</p>
+                  <p className="text-xs opacity-70 mt-1">Phase {idx + 1}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Phase Descriptions */}
+          <div className="mt-6 bg-yellow-900/20 p-4 rounded-lg border border-yellow-600/50">
+            <p className="text-yellow-300 font-semibold mb-2">Phase Guide</p>
+            <div className="space-y-2 text-sm">
+              <p className="text-yellow-200"><span className="text-yellow-400">Instinct Picks:</span> Pre-season, players select their first pick</p>
+              <p className="text-yellow-200"><span className="text-yellow-400">Early Season:</span> Episodes 1-4, picks are locked</p>
+              <p className="text-yellow-200"><span className="text-yellow-400">Final Picks:</span> Post-merge, players select their final pick</p>
+              <p className="text-yellow-200"><span className="text-yellow-400">Mid Season:</span> Merge to near-finale</p>
+              <p className="text-yellow-200"><span className="text-yellow-400">Finale:</span> Final episodes of the season</p>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setAdminView('main')}
+          className="w-full py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+        >
+          Back to Controls
+        </button>
+      </div>
+    );
+  }
+
+  if (adminView === 'tree-mail') {
+    const togglePlayer = (playerId) => {
+      if (notificationForm.selectedPlayers.includes(playerId)) {
+        setNotificationForm({
+          ...notificationForm,
+          selectedPlayers: notificationForm.selectedPlayers.filter(id => id !== playerId)
+        });
+      } else {
+        setNotificationForm({
+          ...notificationForm,
+          selectedPlayers: [...notificationForm.selectedPlayers, playerId]
+        });
+      }
+    };
+
+    const handleSendNotification = async () => {
+      if (!notificationForm.message.trim()) {
+        alert('Please enter a message');
+        return;
+      }
+
+      if (!notificationForm.sendToAll && notificationForm.selectedPlayers.length === 0) {
+        alert('Please select at least one player or choose "Send to All"');
+        return;
+      }
+
+      if (notificationForm.sendToAll) {
+        await addNotification({
+          type: 'admin_message',
+          message: notificationForm.message,
+          targetPlayerId: null
+        });
+      } else {
+        for (const playerId of notificationForm.selectedPlayers) {
+          await addNotification({
+            type: 'admin_message',
+            message: notificationForm.message,
+            targetPlayerId: playerId
+          });
+        }
+      }
+
+      const recipientCount = notificationForm.sendToAll ? players.length : notificationForm.selectedPlayers.length;
+      alert(`Notification sent to ${recipientCount} player${recipientCount > 1 ? 's' : ''}!`);
+      setNotificationForm({ selectedPlayers: [], message: '', sendToAll: false });
+    };
+
+    const getRecipientName = (notif) => {
+      if (!notif.targetPlayerId) return 'Everyone';
+      const player = players.find(p => p.id === notif.targetPlayerId);
+      return player ? player.name : 'Unknown';
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Send New Notification */}
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-orange-600">
+          <h2 className="text-2xl font-bold text-orange-400 mb-6 flex items-center gap-2">
+            <Mail className="w-6 h-6" />
+            Tree Mail
+          </h2>
+
+          <div className="space-y-4">
+            <h3 className="text-orange-300 font-semibold">Send New Notification</h3>
+
+            {/* Send to All Toggle */}
+            <label className="flex items-center gap-3 p-3 bg-orange-900/30 rounded-lg border border-orange-600 cursor-pointer hover:bg-orange-900/50 transition">
+              <input
+                type="checkbox"
+                checked={notificationForm.sendToAll}
+                onChange={(e) => setNotificationForm({
+                  ...notificationForm,
+                  sendToAll: e.target.checked,
+                  selectedPlayers: e.target.checked ? [] : notificationForm.selectedPlayers
+                })}
+                className="w-5 h-5"
+              />
+              <div>
+                <span className="text-white font-semibold">Send to All Players</span>
+                <p className="text-orange-300 text-sm">Broadcast to everyone</p>
+              </div>
+            </label>
+
+            {/* Individual Player Selection */}
+            {!notificationForm.sendToAll && (
+              <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                {players.map(player => (
+                  <label
+                    key={player.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-sm ${
+                      notificationForm.selectedPlayers.includes(player.id)
+                        ? 'bg-orange-600 border-orange-400 text-white'
+                        : 'bg-orange-900/20 border-orange-600/50 text-orange-200 hover:bg-orange-900/40'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={notificationForm.selectedPlayers.includes(player.id)}
+                      onChange={() => togglePlayer(player.id)}
+                      className="w-3 h-3"
+                    />
+                    <span>{player.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* Message Input */}
+            <textarea
+              value={notificationForm.message}
+              onChange={(e) => setNotificationForm({...notificationForm, message: e.target.value})}
+              placeholder="Enter your notification message..."
+              rows={3}
+              className="w-full px-4 py-3 rounded-lg bg-black/50 text-white border border-orange-600 focus:outline-none focus:border-orange-400 resize-none"
+            />
+
+            <button
+              onClick={handleSendNotification}
+              className="w-full py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg font-semibold hover:from-orange-500 hover:to-red-500 transition flex items-center justify-center gap-2"
+            >
+              <Mail className="w-5 h-5" />
+              Send Tree Mail
+            </button>
+          </div>
+        </div>
+
+        {/* Manage Existing Notifications */}
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-orange-600">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-bold text-orange-400">Current Notifications ({notifications.length})</h3>
+            {notifications.length > 0 && (
+              <button
+                onClick={clearAllNotifications}
+                className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-500 transition"
+              >
+                Clear All
+              </button>
+            )}
+          </div>
+
+          {notifications.length === 0 ? (
+            <p className="text-orange-300 text-center py-4">No notifications currently active</p>
+          ) : (
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {notifications
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                .map(notif => (
+                  <div
+                    key={notif.id}
+                    className="flex items-start justify-between gap-3 p-3 bg-orange-900/20 rounded-lg border border-orange-600/50"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm">{notif.message}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-orange-400 text-xs">
+                          To: {getRecipientName(notif)}
+                        </span>
+                        <span className="text-orange-400/60 text-xs">
+                          {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </span>
+                        <span className={`text-xs ${notif.read ? 'text-green-400' : 'text-yellow-400'}`}>
+                          {notif.read ? 'Read' : 'Unread'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteNotification(notif.id)}
+                      className="text-red-400 hover:text-red-300 p-1 transition flex-shrink-0"
+                      title="Delete notification"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => {
+            setNotificationForm({ selectedPlayers: [], message: '', sendToAll: false });
+            setAdminView('main');
+          }}
+          className="w-full py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+        >
+          Back to Controls
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Season Header */}
+      <div className="bg-gradient-to-r from-amber-900/60 to-orange-900/60 p-4 rounded-lg border-2 border-amber-600 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-amber-400">Season {currentSeason}</h2>
+          <p className="text-amber-200 text-sm capitalize">{gamePhase.replace('-', ' ')}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-amber-300 text-sm">{contestants.filter(c => !c.eliminated).length}/{contestants.length} remaining</span>
+        </div>
+      </div>
+
       <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-yellow-600">
         <h2 className="text-2xl font-bold text-yellow-400 mb-6 flex items-center gap-2">
           <Crown className="w-6 h-6" />
           Jeff's Control Panel
         </h2>
 
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           <button
             onClick={() => setAdminView('create-questionnaire')}
             className="bg-gradient-to-r from-yellow-600 to-amber-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-yellow-500 hover:to-amber-500 transition text-left"
           >
             <div className="flex items-center justify-between">
-              <span>Create Questionnaire</span>
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                <span>Create Questionnaire</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('cast-editor')}
+            className="bg-gradient-to-r from-green-600 to-emerald-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-green-500 hover:to-emerald-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5" />
+                <span>Edit Cast</span>
+              </div>
               <ChevronRight className="w-5 h-5" />
             </div>
           </button>
 
           <button
             onClick={() => setAdminView('manage-cast')}
-            className="bg-gradient-to-r from-yellow-600 to-amber-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-yellow-500 hover:to-amber-500 transition text-left"
+            className="bg-gradient-to-r from-red-600 to-rose-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-red-500 hover:to-rose-500 transition text-left"
           >
             <div className="flex items-center justify-between">
-              <span>Manage Cast</span>
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                <span>Eliminations</span>
+              </div>
               <ChevronRight className="w-5 h-5" />
             </div>
           </button>
@@ -2335,7 +3775,10 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
             className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-blue-500 hover:to-indigo-500 transition text-left"
           >
             <div className="flex items-center justify-between">
-              <span>Episode Scoring</span>
+              <div className="flex items-center gap-2">
+                <Award className="w-5 h-5" />
+                <span>Episode Scoring</span>
+              </div>
               <ChevronRight className="w-5 h-5" />
             </div>
           </button>
@@ -2345,17 +3788,49 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
             className="bg-gradient-to-r from-purple-600 to-pink-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-purple-500 hover:to-pink-500 transition text-left"
           >
             <div className="flex items-center justify-between">
-              <span>QOTW Management</span>
+              <div className="flex items-center gap-2">
+                <Star className="w-5 h-5" />
+                <span>QOTW Management</span>
+              </div>
               <ChevronRight className="w-5 h-5" />
             </div>
           </button>
 
           <button
-            onClick={advancePhase}
+            onClick={() => setAdminView('phase-control')}
             className="bg-gradient-to-r from-yellow-600 to-amber-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-yellow-500 hover:to-amber-500 transition text-left"
           >
             <div className="flex items-center justify-between">
-              <span>Advance Game Phase</span>
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-5 h-5" />
+                <span>Phase Control</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('season-management')}
+            className="bg-gradient-to-r from-cyan-600 to-teal-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-cyan-500 hover:to-teal-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Archive className="w-5 h-5" />
+                <span>Season Management</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('tree-mail')}
+            className="bg-gradient-to-r from-orange-600 to-red-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-orange-500 hover:to-red-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Mail className="w-5 h-5" />
+                <span>Tree Mail</span>
+              </div>
               <ChevronRight className="w-5 h-5" />
             </div>
           </button>
@@ -2658,33 +4133,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
                     {idx + 1}. {question.text} {question.required && <span className="text-red-400">*</span>}
                   </p>
 
-                  {question.type === 'tribe-immunity' && (
-                    <select
-                      value={answers[question.id] || ''}
-                      onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
-                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
-                    >
-                      <option value="">Select a tribe...</option>
-                      {Array.from(new Set(contestants.map(c => c.tribe))).map(tribe => (
-                        <option key={tribe} value={tribe}>{tribe}</option>
-                      ))}
-                    </select>
-                  )}
-
-                  {question.type === 'individual-immunity' && (
-                    <select
-                      value={answers[question.id] || ''}
-                      onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
-                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
-                    >
-                      <option value="">Select a contestant...</option>
-                      {contestants.filter(c => !c.eliminated).map(contestant => (
-                        <option key={contestant.id} value={contestant.name}>{contestant.name}</option>
-                      ))}
-                    </select>
-                  )}
-
-                  {question.type === 'vote-out' && (
+                  {question.type === 'cast-dropdown' && (
                     <select
                       value={answers[question.id] || ''}
                       onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}

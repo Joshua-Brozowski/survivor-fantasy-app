@@ -14,7 +14,7 @@ A full-stack web application for running a fantasy game based on the TV show Sur
 ```
 survivor-fantasy-app/
 ├── src/
-│   ├── App.jsx           # Main application component
+│   ├── app.jsx           # Main application component (all views & logic)
 │   ├── main.jsx          # React entry point
 │   └── db.js             # Storage API wrapper
 ├── api/
@@ -30,21 +30,34 @@ survivor-fantasy-app/
 
 ### 1. Authentication
 - Simple name/password login system
-- Password recovery with 3-digit SMS simulation
+- Password recovery with security questions
 - Passwords stored in MongoDB per player
+- "Remember me" option using localStorage
 
 ### 2. Player Roles
 - **Players**: 9 friends competing in the league
-- **Admin (Jeff)**: Has special controls panel, also plays as a contestant
+- **Admin (Jeff/Joshua)**: Has special controls panel, also plays as a contestant
 
 ### 3. Game Phases
+5 sequential phases controlled by admin:
 - `instinct-picks` - Pre-season pick selection
 - `early-season` - Episodes 1-4
-- `final-picks` - Post-merge pick selection (triggered by admin)
+- `final-picks` - Post-merge pick selection
 - `mid-season` - Merge to finale
 - `finale` - Final episodes
 
-### 4. Picks System
+**Phase Control**: Admin can move forward OR backward through phases (with confirmation for going back).
+
+### 4. Home Page
+- Welcome message with season stats (players, contestants, remaining)
+- **"How to Play" section** - Explains each tab with icons
+- **Cast Accordion** - Collapsible section titled "Check Out This Season's Cast"
+  - Default collapsed
+  - Shows all 18 contestants with photos and bio paragraphs
+  - Tribe color-coded borders (orange/blue/green)
+  - Eliminated contestants marked
+
+### 5. Picks System
 **Instinct Pick** (Pre-season):
 - Select one contestant before Episode 1
 - Earns bonus points: +1 per episode survived, +5 for making merge
@@ -71,80 +84,111 @@ survivor-fantasy-app/
 - Final 3: +15
 - Sole Survivor: +20
 
-### 5. Weekly Questionnaire
+### 6. Weekly Questionnaire
+**Question Types** (Simplified):
+- **Multiple Choice** - Admin enters custom answer options (add/remove as needed)
+- **Dropdown (Remaining Cast)** - Auto-populates with non-eliminated contestants
+- **True/False** - Simple true or false options
+- **Question of the Week** - Always short answer (text response)
+
 **Creation** (Admin):
 - Title, episode number
-- Question types: Tribe Immunity, Individual Immunity, Vote Out, Multiple Choice, True/False
-- Question of the Week (text response)
+- Add questions with "+ Multiple Choice", "+ Dropdown (Remaining Cast)", or "+ True/False"
+- Question of the Week text (can be anonymous during voting)
 - Auto-deadline: Next Wednesday 7:59 PM EST
 - Auto-lock: Wednesday 9:00 PM EST (episode start)
 
 **Submission** (Players):
-- Answer required questions (immunity, vote-out)
-- Optional prop-bet questions
+- Answer questions before deadline
 - Question of the Week (required text response)
 - Late penalties: -1, -2, -3... (cumulative per season)
 
 **Scoring**:
 - Correct answer: +2
-- Incorrect required: 0
-- Incorrect optional: -1
-- No answer on optional: 0
+- Incorrect: -1 (optional questions) or 0 (required)
 - Late penalty: Variable based on offense count
+- QotW Winner: +5 points
 
-**Question of the Week**:
-- All players vote on best answer (after all submit)
-- Cannot vote for yourself
-- Winner(s) get +5 points
-- Ties: all tied players get +5
-- Can be anonymous or named (admin choice)
-
-### 6. Leaderboard
+### 7. Leaderboard
 - Real-time rankings
 - Medal badges (gold, silver, bronze)
 - Player initials in Survivor-style circles
 - Total points from picks + questionnaires + QotW wins
-- Stats: Leader, your rank, average score
+- Expandable player details
 
-### 7. Admin Controls (Jeff's Panel)
+### 8. Admin Controls (Jeff's Panel)
 
 **Create Questionnaire**:
-- Build weekly questionnaire with multiple question types
+- Build weekly questionnaire with 3 question types
 - Auto-archives previous questionnaires
 - Sends notifications to all players
 
 **Score Questionnaire**:
 - View all player submissions
-- Enter correct answers for each question
+- Select correct answers from dropdowns
 - Preview scores before releasing
 - Auto-calculates QotW winner from votes
 - Release scores with one click
 
-**Manage Cast**:
+**Edit Cast**:
+- Add/remove contestants
+- Edit contestant names, tribes, images
+- Drag & drop image upload support
+
+**Eliminations**:
 - Mark contestants as eliminated
 - Eliminated contestants removed from questionnaire dropdowns
-- Visual indicators for eliminated status
+- Visual indicators (red, opacity reduced)
 
-**Advance Game Phase**:
-- Progress through season phases
-- Opens final picks when ready
-- Sends notifications to players
+**Episode Scoring**:
+- Score pick performance per episode
+- Track immunity wins, advantages found, etc.
 
-### 8. Advantages System
+**QOTW Management**:
+- Manage Question of the Week voting
+- View/set winners manually if needed
+
+**Phase Control**:
+- Visual display of current phase (1 of 5)
+- Previous/Next phase buttons
+- Jump directly to any phase
+- Phase guide with descriptions
+- Confirmation required for going backward
+
+**Season Management**:
+- Archive current season
+- Start new season
+- View season history
+
+**Tree Mail** (Notifications):
+- Send notifications to specific players or broadcast to all
+- View all current notifications with recipient info
+- See read/unread status
+- Delete individual notifications or clear all
+- 7-day auto-expiry (old notifications cleaned on load)
+
+### 9. Notifications System
+- Bell icon in header shows unread count
+- Dropdown shows latest 10 notifications
+- Click to mark as read
+- "Mark all read" button
+- **Auto-expiry**: Notifications older than 7 days are automatically deleted on page load
+
+**Notification Types**:
+- New questionnaire available
+- Scores released
+- Final picks opening
+- Phase changes
+- Admin custom messages (Tree Mail)
+
+### 10. Advantages System
 **Types**: Custom advantages created by admin
-- Examples: "Thief in Shadows" (steal points), "Double Trouble" (double points)
+- Examples: "Extra Vote", "Vote Steal", "Double Points"
 - Can require target player
 - Optional expiration by episode number
 - One-time use
 
 **Usage**: Players activate from their Advantages tab
-
-### 9. Notifications
-In-app notification badge shows:
-- New questionnaire available
-- Scores released
-- Final picks opening
-- Advantages received
 
 ## Database Schema
 
@@ -163,9 +207,11 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 - `pickScores` - Array of pick scoring events
 - `advantages` - Array of advantage objects
 - `episodes` - Array of episode recaps
-- `notifications` - Array of notification objects
+- `notifications` - Array of notification objects (auto-cleaned after 7 days)
 - `password_{playerId}` - Individual player passwords
-- `recovery_{playerId}` - Temporary recovery codes
+- `security_{playerId}` - Security questions for password recovery
+- `currentSeason` - Current season number
+- `seasonHistory` - Archived season data
 
 ### Key Data Structures
 
@@ -174,7 +220,6 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 {
   id: number,
   name: string,
-  phone: string,
   isAdmin: boolean
 }
 ```
@@ -190,44 +235,26 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 }
 ```
 
-**Pick**:
+**Question**:
 ```javascript
 {
-  id: number,
-  playerId: number,
-  contestantId: number,
-  type: 'instinct' | 'final',
-  timestamp: number
+  id: string,
+  type: 'multiple-choice' | 'cast-dropdown' | 'true-false',
+  text: string,
+  required: boolean,
+  options: string[]  // For multiple-choice only
 }
 ```
 
-**Questionnaire**:
+**Notification**:
 ```javascript
 {
   id: number,
-  title: string,
-  episodeNumber: number,
-  questions: Question[],
-  qotw: { id: string, text: string, anonymous: boolean },
-  deadline: ISO_string,
-  lockedAt: ISO_string,
-  status: 'active' | 'archived',
-  scoresReleased: boolean,
-  correctAnswers: object,
-  qotwWinner?: number[]
-}
-```
-
-**Submission**:
-```javascript
-{
-  id: number,
-  questionnaireId: number,
-  playerId: number,
-  answers: object,
-  submittedAt: ISO_string,
-  penalty: number,
-  score?: number
+  type: string,
+  message: string,
+  targetPlayerId: number | null,  // null = broadcast to all
+  createdAt: ISO_string,
+  read: boolean
 }
 ```
 
@@ -263,9 +290,10 @@ npm run dev
 ```
 
 ### Production Deployment
-1. Push to GitHub main branch
-2. Vercel auto-deploys in ~2 minutes
-3. Live at: `https://survivor-fantasy-app.vercel.app`
+1. Work on `dev` branch
+2. When ready, merge to `main` branch
+3. Vercel auto-deploys in ~2 minutes
+4. Live at: `https://survivor-fantasy-app.vercel.app`
 
 ## Current Players
 1. Joshua (Admin/Jeff)
@@ -280,42 +308,42 @@ npm run dev
 
 ## Survivor 48 Cast
 18 contestants across 3 tribes:
-- **Manu** (6 contestants)
-- **Loto** (6 contestants)
-- **Moana** (6 contestants)
+- **Manu** (6 contestants) - Orange theme
+- **Loto** (6 contestants) - Blue theme
+- **Moana** (6 contestants) - Green theme
 
-Cast loaded from Survivor Wiki with images.
+Cast includes placeholder bios for each contestant (to be updated with real info).
 
 ## Development Guidelines
 
 ### Adding New Features
-1. Update state management in `App.jsx`
+1. Update state management in `app.jsx`
 2. Create component function if needed
 3. Add to navigation if user-facing
 4. Update storage schema if persisting data
 5. Test locally with `npm run dev`
-6. Push to GitHub for auto-deploy
+6. Commit to `dev` branch
+7. Merge to `main` when ready to deploy
 
 ### Common Tasks
 
 **Add a new player**:
 ```javascript
 // In INITIAL_PLAYERS array
-{ id: 10, name: "NewPlayer", phone: "1234567899", isAdmin: false }
+{ id: 10, name: "NewPlayer", isAdmin: false }
 ```
 
 **Change game phase**:
-- Use "Advance Game Phase" button in Jeff's Controls
-- Or manually update `gamePhase` in storage
+- Use "Phase Control" in Jeff's Controls
+- Can go forward or backward with confirmation
 
 **Reset for new season**:
-- Update `SURVIVOR_48_CAST` with new contestants
-- Reset picks, questionnaires, submissions in database
-- Set `gamePhase` back to 'instinct-picks'
+- Use "Season Management" in Jeff's Controls
+- Archives current season and resets data
 
-**Modify scoring rules**:
-- Update `calculateTotalPoints()` function
-- Update `calculateScores()` in AdminPanel
+**Update contestant bios**:
+- Edit `CONTESTANT_BIOS` object in app.jsx
+- Key is contestant ID, value is bio text
 
 ## Troubleshooting
 
@@ -331,32 +359,35 @@ Cast loaded from Survivor Wiki with images.
 
 **Images not loading**:
 - Survivor Wiki images may expire
-- Replace with stable image URLs
-- Consider hosting images in `/public` folder
+- Replace with stable image URLs or base64
+- Drag & drop images in Cast Editor
 
-**Late penalty not applying**:
-- Verify system time vs deadline time
-- Check `latePenalties` object in database
-- Ensure `isLate` calculation is correct
+**Notification dropdown hidden**:
+- Header has z-50 to ensure dropdown appears on top
 
 ## Future Enhancements
 
+### Completed Features
+- [x] Dashboard with stats overview
+- [x] Advantages activation interface
+- [x] Phase control (forward & backward)
+- [x] Tree Mail notification management
+- [x] Cast bios and accordion display
+- [x] Simplified questionnaire types
+
 ### Planned Features
-- [ ] Dashboard with stats overview
-- [ ] Advantages activation interface
 - [ ] Episode recap auto-generation (AI)
 - [ ] Pick scoring automation
-- [ ] Email notifications (vs in-app only)
-- [ ] Historical season tracking
+- [ ] Email/SMS notifications
+- [ ] Historical season comparisons
 - [ ] Export standings to PDF/Excel
 - [ ] Mobile app version
 
 ### Known Limitations
-- No real SMS for password recovery (simulated)
-- No email notifications (in-app only)
+- No real SMS for password recovery (uses security questions)
+- No email notifications (in-app only via Tree Mail)
 - Admin must manually score picks each episode
-- No undo for eliminated contestants
-- Single season support (no multi-season tracking)
+- Single active season (past seasons archived)
 
 ## Contact & Credits
 Created for Joshua's annual Survivor Fantasy League with college friends.
@@ -369,4 +400,4 @@ Built with assistance from Claude (Anthropic) - December 2024.
 
 ---
 
-*For Claude/AI assistants working on this codebase*: This app is fully functional and deployed. The main component is in `App.jsx` with all game logic, views, and state management. The admin panel has full CRUD operations for questionnaires and game management. MongoDB handles all persistence through the `/api/storage` serverless function. Focus on maintaining the existing architecture when adding features.
+*For Claude/AI assistants working on this codebase*: This app is fully functional and deployed. The main component is in `app.jsx` with all game logic, views, and state management. The admin panel has full CRUD operations for questionnaires, cast management, phase control, and notifications. MongoDB handles all persistence through the `/api/storage` serverless function. Focus on maintaining the existing architecture when adding features. Always test with `npm run build` before recommending merge to main.
