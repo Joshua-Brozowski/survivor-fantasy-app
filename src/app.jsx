@@ -87,7 +87,7 @@ const DEFAULT_ADVANTAGES = [
 export default function SurvivorFantasyApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginView, setLoginView] = useState('login');
-  const [loginForm, setLoginForm] = useState({ name: '', password: '', rememberMe: false });
+  const [loginForm, setLoginForm] = useState({ name: '', password: '', rememberMe: true });
   const [recoveryForm, setRecoveryForm] = useState({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
   const [recoveryStep, setRecoveryStep] = useState('name'); // 'name', 'answer', 'reset'
   const [recoveryPlayer, setRecoveryPlayer] = useState(null);
@@ -369,7 +369,7 @@ export default function SurvivorFantasyApp() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setLoginForm({ name: '', password: '', rememberMe: false });
+    setLoginForm({ name: '', password: '', rememberMe: true });
     setRecoveryForm({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
     setRecoveryStep('name');
     setRecoveryPlayer(null);
