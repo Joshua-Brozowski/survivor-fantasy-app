@@ -274,7 +274,7 @@ Returns JSON: `{ key, value }` or `{ keys, prefix }`
 
 ### Local (.env)
 ```
-MONGODB_URI=mongodb+srv://survivoradmin:survivor50db@survivorfantasy.ynlkjbr.mongodb.net/survivor_fantasy?retryWrites=true&w=majority&appName=SurvivorFantasy
+MONGODB_URI=<your-mongodb-connection-string>
 ```
 
 ### Vercel Dashboard
