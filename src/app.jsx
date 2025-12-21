@@ -80,16 +80,14 @@ const SURVIVOR_WORDS = [
 ];
 
 // Default Advantages Available for Purchase
+// SCARCITY RULE: Only ONE of each advantage can exist in the game at a time
+// Once purchased, no one else can buy it. Once PLAYED, it returns to the shop.
 const DEFAULT_ADVANTAGES = [
-  { id: 'extra-vote', name: 'Extra Vote', description: 'Cast an additional vote on Question of the Week', cost: 5, type: 'qotw' },
-  { id: 'vote-steal', name: 'Vote Steal', description: "Steal another player's QOTW vote and use it yourself", cost: 8, type: 'qotw' },
-  { id: 'double-points', name: 'Double Points', description: 'Double your points on the next questionnaire', cost: 10, type: 'questionnaire' },
-  { id: 'immunity-idol', name: 'Immunity Idol', description: 'Protect yourself from negative points for one week', cost: 12, type: 'protection' },
-  { id: 'spy-network', name: 'Spy Network', description: "See another player's questionnaire answers before submitting", cost: 6, type: 'intel' },
-  { id: 'point-shield', name: 'Point Shield', description: 'Block one point deduction from any source', cost: 7, type: 'protection' },
-  { id: 'fortune-teller', name: 'Fortune Teller', description: 'Get a hint about the next questionnaire before it opens', cost: 9, type: 'intel' },
-  { id: 'risk-reward', name: 'Risk & Reward', description: 'Double or nothing on your next episode pick points', cost: 15, type: 'gamble' },
-  { id: 'legacy-advantage', name: 'Legacy Advantage', description: 'Transfer up to 10 points to another player', cost: 20, type: 'transfer' }
+  { id: 'extra-vote', name: 'Extra Vote', description: 'Cast an additional vote for another player\'s Question of the Week answer', cost: 15, type: 'qotw' },
+  { id: 'vote-steal', name: 'Vote Steal', description: 'Steal a vote from another player (prevents them from voting) and auto-apply it to yourself', cost: 20, type: 'qotw' },
+  { id: 'double-trouble', name: 'Double Trouble', description: 'Double ALL your points for the week (questionnaire, picks, QOTW) when scores are released', cost: 25, type: 'multiplier' },
+  { id: 'immunity-idol', name: 'Immunity Idol', description: 'Negate all your negative points for the week when scores are released', cost: 30, type: 'protection' },
+  { id: 'knowledge-is-power', name: 'Knowledge is Power', description: 'Steal another player\'s advantage (if they have none, the advantage is wasted)', cost: 35, type: 'steal' }
 ];
 
 export default function SurvivorFantasyApp() {
@@ -129,6 +127,14 @@ export default function SurvivorFantasyApp() {
   // Wordle Challenge state
   const [challenges, setChallenges] = useState([]);
   const [challengeAttempts, setChallengeAttempts] = useState([]);
+
+  // Advantage play modal state
+  const [advantageModal, setAdvantageModal] = useState({ show: false, advantage: null, step: 'confirm' });
+  const [advantageTarget, setAdvantageTarget] = useState(null);
+
+  // Banner notification tracking - IDs of banners currently visible on Home tab
+  const [visibleBannerIds, setVisibleBannerIds] = useState([]);
+  const [previousView, setPreviousView] = useState('home');
 
   // Check for remembered login on mount
   useEffect(() => {
@@ -176,6 +182,33 @@ export default function SurvivorFantasyApp() {
     };
     checkSecurityQuestion();
   }, [currentUser]);
+
+  // Mark banner notifications as seen when leaving Home tab
+  useEffect(() => {
+    // Only run when view changes FROM 'home' to something else
+    if (previousView === 'home' && currentView !== 'home' && visibleBannerIds.length > 0) {
+      // Mark all visible banners as seen for this user
+      visibleBannerIds.forEach(notifId => {
+        markNotificationSeen(notifId);
+      });
+      setVisibleBannerIds([]);
+    }
+    setPreviousView(currentView);
+  }, [currentView]);
+
+  // Auto-mark banners as seen after 30 seconds on Home tab
+  useEffect(() => {
+    if (currentView === 'home' && visibleBannerIds.length > 0) {
+      const timer = setTimeout(() => {
+        visibleBannerIds.forEach(notifId => {
+          markNotificationSeen(notifId);
+        });
+        setVisibleBannerIds([]);
+      }, 30000); // 30 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [currentView, visibleBannerIds.join(',')]);
 
   const loadGameData = async () => {
     try {
@@ -696,7 +729,8 @@ export default function SurvivorFantasyApp() {
       id: Date.now(),
       ...notification,
       createdAt: new Date().toISOString(),
-      read: false
+      readBy: [], // Array of user IDs who have read this notification
+      seenBy: [] // Array of user IDs who have seen the banner (per-user tracking)
     };
     const updated = [...notifications, newNotif];
     setNotifications(updated);
@@ -704,9 +738,29 @@ export default function SurvivorFantasyApp() {
   };
 
   const markNotificationRead = async (notifId) => {
-    const updated = notifications.map(n =>
-      n.id === notifId ? { ...n, read: true } : n
-    );
+    const updated = notifications.map(n => {
+      if (n.id === notifId) {
+        const readBy = n.readBy || [];
+        if (!readBy.includes(currentUser.id)) {
+          return { ...n, readBy: [...readBy, currentUser.id] };
+        }
+      }
+      return n;
+    });
+    setNotifications(updated);
+    await storage.set('notifications', JSON.stringify(updated));
+  };
+
+  const markNotificationSeen = async (notifId) => {
+    const updated = notifications.map(n => {
+      if (n.id === notifId) {
+        const seenBy = n.seenBy || [];
+        if (!seenBy.includes(currentUser.id)) {
+          return { ...n, seenBy: [...seenBy, currentUser.id] };
+        }
+      }
+      return n;
+    });
     setNotifications(updated);
     await storage.set('notifications', JSON.stringify(updated));
   };
@@ -714,7 +768,10 @@ export default function SurvivorFantasyApp() {
   const markAllNotificationsRead = async () => {
     const updated = notifications.map(n => {
       if (n.targetPlayerId === currentUser?.id || !n.targetPlayerId) {
-        return { ...n, read: true };
+        const readBy = n.readBy || [];
+        if (!readBy.includes(currentUser.id)) {
+          return { ...n, readBy: [...readBy, currentUser.id] };
+        }
       }
       return n;
     });
@@ -734,10 +791,21 @@ export default function SurvivorFantasyApp() {
     await storage.set('notifications', JSON.stringify([]));
   };
 
+  // Check if an advantage is available to purchase (no one owns it unused)
+  const isAdvantageAvailable = (advantageId) => {
+    return !playerAdvantages.some(pa => pa.advantageId === advantageId && !pa.used);
+  };
+
   const purchaseAdvantage = async (advantage) => {
     const totalPoints = calculateTotalPoints(currentUser.id);
     if (totalPoints < advantage.cost) {
       alert('Insufficient points to purchase this advantage!');
+      return;
+    }
+
+    // Check global scarcity - only one of each can exist at a time
+    if (!isAdvantageAvailable(advantage.id)) {
+      alert('This advantage has already been purchased by another player!');
       return;
     }
 
@@ -749,7 +817,10 @@ export default function SurvivorFantasyApp() {
       description: advantage.description,
       type: advantage.type,
       purchasedAt: new Date().toISOString(),
-      used: false
+      used: false,
+      activated: false, // For tracking if effect should apply
+      targetPlayerId: null, // For vote steal, knowledge is power
+      linkedQuestionnaireId: null // For tracking which questionnaire the effect applies to
     };
 
     const updated = [...playerAdvantages, newPlayerAdvantage];
@@ -758,6 +829,13 @@ export default function SurvivorFantasyApp() {
 
     // Deduct points
     await updatePlayerScore(currentUser.id, -advantage.cost, `Purchased: ${advantage.name}`, 'advantage');
+
+    // Send anonymous notification to all players
+    await addNotification({
+      type: 'advantage_purchased',
+      message: `An advantage has been purchased! One less available in the shop.`,
+      targetPlayerId: null // Broadcast to all
+    });
 
     alert(`Successfully purchased ${advantage.name}!`);
   };
@@ -769,23 +847,241 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
-    // Mark as used
+    // Mark as used and store any target data
     const updated = playerAdvantages.map(a =>
-      a.id === playerAdvantageId ? { ...a, used: true, usedAt: new Date().toISOString(), targetData } : a
+      a.id === playerAdvantageId
+        ? {
+            ...a,
+            used: true,
+            usedAt: new Date().toISOString(),
+            activated: true,
+            targetPlayerId: targetData?.targetPlayerId || null,
+            linkedQuestionnaireId: targetData?.questionnaireId || null
+          }
+        : a
     );
     setPlayerAdvantages(updated);
     await storage.set('playerAdvantages', JSON.stringify(updated));
 
-    // Add notification if there's a target
-    if (targetData?.targetPlayerId) {
+    // Send anonymous notification that advantage was played and returned to game
+    await addNotification({
+      type: 'advantage_played',
+      message: `An advantage has been played and returned to the game!`,
+      targetPlayerId: null // Broadcast to all
+    });
+
+    // Add specific notification if there's a target player (for Vote Steal, Knowledge is Power)
+    if (targetData?.targetPlayerId && targetData?.notifyTarget) {
+      const targetPlayer = players.find(p => p.id === targetData.targetPlayerId);
       await addNotification({
-        type: 'advantage_used',
-        message: `${currentUser.name} used ${advantage.name} on you!`,
+        type: 'advantage_used_on_you',
+        message: targetData.targetMessage || `An advantage was used targeting you!`,
         targetPlayerId: targetData.targetPlayerId
       });
     }
 
-    alert(`${advantage.name} has been activated!`);
+    return true;
+  };
+
+  // Execute Knowledge is Power - steal advantage from target
+  const executeKnowledgeIsPower = async (playerAdvantageId, targetPlayerId) => {
+    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
+    if (!myAdvantage || myAdvantage.used) {
+      alert('This advantage has already been used!');
+      return;
+    }
+
+    // Find target's unused advantage
+    const targetAdvantage = playerAdvantages.find(
+      a => a.playerId === targetPlayerId && !a.used
+    );
+
+    if (targetAdvantage) {
+      // Steal the advantage - transfer ownership
+      const updated = playerAdvantages.map(a => {
+        if (a.id === myAdvantage.id) {
+          // Mark Knowledge is Power as used
+          return { ...a, used: true, usedAt: new Date().toISOString(), activated: true, targetPlayerId };
+        }
+        if (a.id === targetAdvantage.id) {
+          // Transfer to current user
+          return { ...a, playerId: currentUser.id, stolenFrom: targetPlayerId, stolenAt: new Date().toISOString() };
+        }
+        return a;
+      });
+      setPlayerAdvantages(updated);
+      await storage.set('playerAdvantages', JSON.stringify(updated));
+
+      // Notify the target that their advantage was stolen
+      const targetPlayer = players.find(p => p.id === targetPlayerId);
+      await addNotification({
+        type: 'advantage_stolen',
+        message: `Your ${targetAdvantage.name} was stolen by another player using Knowledge is Power!`,
+        targetPlayerId: targetPlayerId
+      });
+
+      // Anonymous broadcast
+      await addNotification({
+        type: 'advantage_played',
+        message: `An advantage has been played and returned to the game!`,
+        targetPlayerId: null
+      });
+
+      alert(`Success! You stole ${targetAdvantage.name} from ${targetPlayer?.name || 'another player'}!`);
+    } else {
+      // Target has no advantage - wasted
+      const updated = playerAdvantages.map(a => {
+        if (a.id === myAdvantage.id) {
+          return { ...a, used: true, usedAt: new Date().toISOString(), activated: true, targetPlayerId, wasted: true };
+        }
+        return a;
+      });
+      setPlayerAdvantages(updated);
+      await storage.set('playerAdvantages', JSON.stringify(updated));
+
+      // Anonymous broadcast
+      await addNotification({
+        type: 'advantage_played',
+        message: `An advantage has been played and returned to the game!`,
+        targetPlayerId: null
+      });
+
+      const targetPlayer = players.find(p => p.id === targetPlayerId);
+      alert(`${targetPlayer?.name || 'That player'} had no advantage to steal. Knowledge is Power was wasted and returned to the game.`);
+    }
+  };
+
+  // Execute Vote Steal - block target from voting and auto-vote for self
+  const executeVoteSteal = async (playerAdvantageId, targetPlayerId, questionnaireId) => {
+    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
+    if (!myAdvantage || myAdvantage.used) {
+      alert('This advantage has already been used!');
+      return;
+    }
+
+    // Mark advantage as used with target info
+    const updated = playerAdvantages.map(a => {
+      if (a.id === myAdvantage.id) {
+        return {
+          ...a,
+          used: true,
+          usedAt: new Date().toISOString(),
+          activated: true,
+          targetPlayerId,
+          linkedQuestionnaireId: questionnaireId
+        };
+      }
+      return a;
+    });
+    setPlayerAdvantages(updated);
+    await storage.set('playerAdvantages', JSON.stringify(updated));
+
+    // Find current user's submission for this questionnaire to get their QOTW answer ID
+    const mySubmission = submissions.find(s => s.questionnaireId === questionnaireId && s.playerId === currentUser.id);
+    const questionnaire = questionnaires.find(q => q.id === questionnaireId);
+
+    if (mySubmission && questionnaire?.qotw?.id) {
+      // Auto-add a "stolen vote" for the current user
+      const stolenVote = {
+        questionnaireId: questionnaireId,
+        voterId: `stolen-from-${targetPlayerId}`,
+        answerId: `${currentUser.id}-${questionnaire.qotw.id}`,
+        isStolen: true,
+        stolenFrom: targetPlayerId,
+        stolenBy: currentUser.id
+      };
+
+      const updatedVotes = [...qotWVotes, stolenVote];
+      setQotWVotes(updatedVotes);
+      await storage.set('qotWVotes', JSON.stringify(updatedVotes));
+    }
+
+    // Notify target that their vote was stolen
+    const targetPlayer = players.find(p => p.id === targetPlayerId);
+    await addNotification({
+      type: 'vote_stolen',
+      message: `Your QOTW vote was stolen! You cannot vote on this week's Question of the Week.`,
+      targetPlayerId: targetPlayerId
+    });
+
+    // Anonymous broadcast
+    await addNotification({
+      type: 'advantage_played',
+      message: `An advantage has been played and returned to the game!`,
+      targetPlayerId: null
+    });
+
+    alert(`Vote Steal activated! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you!`);
+  };
+
+  // Activate Extra Vote - allows additional QOTW vote
+  const activateExtraVote = async (playerAdvantageId, questionnaireId) => {
+    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
+    if (!myAdvantage || myAdvantage.used) {
+      alert('This advantage has already been used!');
+      return;
+    }
+
+    // Mark advantage as used
+    const updated = playerAdvantages.map(a => {
+      if (a.id === myAdvantage.id) {
+        return {
+          ...a,
+          used: true,
+          usedAt: new Date().toISOString(),
+          activated: true,
+          linkedQuestionnaireId: questionnaireId
+        };
+      }
+      return a;
+    });
+    setPlayerAdvantages(updated);
+    await storage.set('playerAdvantages', JSON.stringify(updated));
+
+    // Anonymous broadcast
+    await addNotification({
+      type: 'advantage_played',
+      message: `An advantage has been played and returned to the game!`,
+      targetPlayerId: null
+    });
+
+    alert(`Extra Vote activated! You can now cast an additional vote in QOTW voting.`);
+    return true;
+  };
+
+  // Activate Double Trouble or Immunity Idol (effect applies when scores are released)
+  const activateWeeklyAdvantage = async (playerAdvantageId, questionnaireId) => {
+    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
+    if (!myAdvantage || myAdvantage.used) {
+      alert('This advantage has already been used!');
+      return;
+    }
+
+    // Mark advantage as used and link to questionnaire
+    const updated = playerAdvantages.map(a => {
+      if (a.id === myAdvantage.id) {
+        return {
+          ...a,
+          used: true,
+          usedAt: new Date().toISOString(),
+          activated: true,
+          linkedQuestionnaireId: questionnaireId
+        };
+      }
+      return a;
+    });
+    setPlayerAdvantages(updated);
+    await storage.set('playerAdvantages', JSON.stringify(updated));
+
+    // Anonymous broadcast
+    await addNotification({
+      type: 'advantage_played',
+      message: `An advantage has been played and returned to the game!`,
+      targetPlayerId: null
+    });
+
+    const advantageName = myAdvantage.name;
+    alert(`${advantageName} activated! The effect will apply when this week's scores are released.`);
     return true;
   };
 
@@ -1236,7 +1532,12 @@ export default function SurvivorFantasyApp() {
   const myTotalPoints = calculateTotalPoints(currentUser.id);
   const myAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used);
   const myUsedAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && a.used);
-  const unreadNotifications = notifications.filter(n => !n.read && (n.targetPlayerId === currentUser.id || !n.targetPlayerId));
+  const unreadNotifications = notifications.filter(n => {
+    const isForMe = n.targetPlayerId === currentUser.id || !n.targetPlayerId;
+    const readBy = n.readBy || [];
+    const isRead = readBy.includes(currentUser.id) || n.read; // Support legacy 'read' field
+    return !isRead && isForMe;
+  });
   const activeQuestionnaire = questionnaires.find(q => q.status === 'active');
   const mySubmission = activeQuestionnaire ? submissions.find(s => s.questionnaireId === activeQuestionnaire.id && s.playerId === currentUser.id) : null;
   const completedQuestionnaires = submissions.filter(s => s.playerId === currentUser.id).length;
@@ -1924,7 +2225,7 @@ export default function SurvivorFantasyApp() {
         )}
 
         {currentView === 'questionnaire' && (
-          <QuestionnaireView 
+          <QuestionnaireView
             currentUser={currentUser}
             questionnaires={questionnaires}
             submissions={submissions}
@@ -1936,6 +2237,7 @@ export default function SurvivorFantasyApp() {
             setQotWVotes={setQotWVotes}
             players={players}
             storage={storage}
+            playerAdvantages={playerAdvantages}
           />
         )}
 
@@ -1985,6 +2287,14 @@ export default function SurvivorFantasyApp() {
         {/* Home View - Cast Display */}
         {currentView === 'home' && (
           <div className="space-y-6">
+            {/* Banner Notifications */}
+            <NotificationBanners
+              notifications={notifications}
+              currentUser={currentUser}
+              markNotificationSeen={markNotificationSeen}
+              onVisibleNotifications={setVisibleBannerIds}
+            />
+
             {/* Combined Welcome Section */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
               <h2 className="text-2xl font-bold text-amber-400 mb-2 flex items-center gap-2">
@@ -2206,6 +2516,223 @@ export default function SurvivorFantasyApp() {
 
         {currentView === 'advantages' && (
           <div className="space-y-6">
+            {/* Advantage Play Modal */}
+            {advantageModal.show && advantageModal.advantage && (
+              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-lg border-2 border-amber-600 max-w-md w-full">
+                  <h3 className="text-xl font-bold text-amber-400 mb-4">Play {advantageModal.advantage.name}</h3>
+
+                  {/* Knowledge is Power - Select target player */}
+                  {advantageModal.advantage.advantageId === 'knowledge-is-power' && (
+                    <div>
+                      <p className="text-amber-200 mb-4">Select a player to steal their advantage from. If they have no advantage, this will be wasted!</p>
+                      <div className="space-y-2 mb-4">
+                        {players.filter(p => p.id !== currentUser.id).map(player => (
+                          <button
+                            key={player.id}
+                            onClick={() => setAdvantageTarget(player.id)}
+                            className={`w-full p-3 rounded-lg border-2 transition ${
+                              advantageTarget === player.id
+                                ? 'border-amber-500 bg-amber-900/40 text-white'
+                                : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:border-amber-600'
+                            }`}
+                          >
+                            {player.name}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); setAdvantageTarget(null); }}
+                          className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (advantageTarget) {
+                              executeKnowledgeIsPower(advantageModal.advantage.id, advantageTarget);
+                              setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
+                              setAdvantageTarget(null);
+                            }
+                          }}
+                          disabled={!advantageTarget}
+                          className="flex-1 py-2 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded font-semibold hover:from-amber-500 hover:to-orange-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Steal Advantage
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Vote Steal - Select target player */}
+                  {advantageModal.advantage.advantageId === 'vote-steal' && (
+                    <div>
+                      <p className="text-amber-200 mb-4">Select a player to steal their QOTW vote. They will be blocked from voting, and a vote will automatically be added for you!</p>
+                      {!activeQuestionnaire?.qotwVotingOpen ? (
+                        <div>
+                          <p className="text-red-400 mb-4">QOTW voting is not currently open. Wait until voting opens to use this advantage.</p>
+                          <button
+                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); setAdvantageTarget(null); }}
+                            className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="space-y-2 mb-4">
+                            {players.filter(p => p.id !== currentUser.id).map(player => (
+                              <button
+                                key={player.id}
+                                onClick={() => setAdvantageTarget(player.id)}
+                                className={`w-full p-3 rounded-lg border-2 transition ${
+                                  advantageTarget === player.id
+                                    ? 'border-amber-500 bg-amber-900/40 text-white'
+                                    : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:border-amber-600'
+                                }`}
+                              >
+                                {player.name}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); setAdvantageTarget(null); }}
+                              className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (advantageTarget && activeQuestionnaire) {
+                                  executeVoteSteal(advantageModal.advantage.id, advantageTarget, activeQuestionnaire.id);
+                                  setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
+                                  setAdvantageTarget(null);
+                                }
+                              }}
+                              disabled={!advantageTarget}
+                              className="flex-1 py-2 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded font-semibold hover:from-red-500 hover:to-pink-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Steal Vote
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Extra Vote - Activate for QOTW voting */}
+                  {advantageModal.advantage.advantageId === 'extra-vote' && (
+                    <div>
+                      <p className="text-amber-200 mb-4">Activate Extra Vote to cast an additional vote in Question of the Week voting.</p>
+                      {!activeQuestionnaire?.qotwVotingOpen ? (
+                        <div>
+                          <p className="text-red-400 mb-4">QOTW voting is not currently open. Wait until voting opens to use this advantage.</p>
+                          <button
+                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
+                            className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
+                            className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await activateExtraVote(advantageModal.advantage.id, activeQuestionnaire.id);
+                              setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
+                            }}
+                            className="flex-1 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition"
+                          >
+                            Activate Extra Vote
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Double Trouble - Activate for current week */}
+                  {advantageModal.advantage.advantageId === 'double-trouble' && (
+                    <div>
+                      <p className="text-amber-200 mb-4">Activate Double Trouble to double ALL your points for the current week when scores are released (questionnaire, picks, and QOTW).</p>
+                      {!activeQuestionnaire ? (
+                        <div>
+                          <p className="text-red-400 mb-4">No active questionnaire. Wait for a new questionnaire to use this advantage.</p>
+                          <button
+                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
+                            className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
+                            className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await activateWeeklyAdvantage(advantageModal.advantage.id, activeQuestionnaire.id);
+                              setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
+                            }}
+                            className="flex-1 py-2 bg-gradient-to-r from-yellow-600 to-amber-600 text-white rounded font-semibold hover:from-yellow-500 hover:to-amber-500 transition"
+                          >
+                            Activate Double Trouble
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Immunity Idol - Activate for current week */}
+                  {advantageModal.advantage.advantageId === 'immunity-idol' && (
+                    <div>
+                      <p className="text-amber-200 mb-4">Activate Immunity Idol to negate all negative points for the current week when scores are released.</p>
+                      {!activeQuestionnaire ? (
+                        <div>
+                          <p className="text-red-400 mb-4">No active questionnaire. Wait for a new questionnaire to use this advantage.</p>
+                          <button
+                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
+                            className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
+                            className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await activateWeeklyAdvantage(advantageModal.advantage.id, activeQuestionnaire.id);
+                              setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
+                            }}
+                            className="flex-1 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded font-semibold hover:from-blue-500 hover:to-cyan-500 transition"
+                          >
+                            Activate Immunity Idol
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Your Advantages */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
               <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
@@ -2221,7 +2748,7 @@ export default function SurvivorFantasyApp() {
                 <div className="space-y-4">
                   {myAdvantages.length > 0 && (
                     <div>
-                      <h3 className="text-lg text-green-400 font-semibold mb-3">Active Advantages</h3>
+                      <h3 className="text-lg text-green-400 font-semibold mb-3">Active Advantages (Ready to Play)</h3>
                       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {myAdvantages.map(adv => (
                           <div key={adv.id} className="bg-gradient-to-br from-green-900/40 to-emerald-900/40 p-4 rounded-lg border-2 border-green-600">
@@ -2231,14 +2758,11 @@ export default function SurvivorFantasyApp() {
                               Purchased: {new Date(adv.purchasedAt).toLocaleDateString()}
                             </p>
                             <button
-                              onClick={() => {
-                                if (window.confirm(`Use ${adv.name}? This action cannot be undone.`)) {
-                                  useAdvantage(adv.id);
-                                }
-                              }}
-                              className="w-full py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition"
+                              onClick={() => setAdvantageModal({ show: true, advantage: adv, step: 'confirm' })}
+                              className="w-full py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition flex items-center justify-center gap-2"
                             >
-                              Use Advantage
+                              <Zap className="w-4 h-4" />
+                              Play Advantage
                             </button>
                           </div>
                         ))}
@@ -2256,6 +2780,7 @@ export default function SurvivorFantasyApp() {
                             <p className="text-gray-500 text-sm">{adv.description}</p>
                             <p className="text-gray-500 text-xs mt-2">
                               Used: {new Date(adv.usedAt).toLocaleDateString()}
+                              {adv.wasted && <span className="text-red-400 ml-2">(Wasted)</span>}
                             </p>
                           </div>
                         ))}
@@ -2272,40 +2797,55 @@ export default function SurvivorFantasyApp() {
                 <Star className="w-6 h-6" />
                 Advantage Shop
               </h2>
-              <p className="text-purple-200 mb-6">
+              <p className="text-purple-200 mb-2">
                 Spend your hard-earned points on powerful advantages! Your current balance: <span className="font-bold text-amber-400">{myTotalPoints} points</span>
+              </p>
+              <p className="text-purple-300 text-sm mb-6 italic">
+                ⚠️ Scarcity Rule: Only ONE of each advantage can exist in the game at a time. Once played, it returns to the shop!
               </p>
 
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {DEFAULT_ADVANTAGES.map(adv => {
                   const canAfford = myTotalPoints >= adv.cost;
                   const alreadyOwned = playerAdvantages.some(pa => pa.playerId === currentUser.id && pa.advantageId === adv.id && !pa.used);
+                  const ownedByOther = !isAdvantageAvailable(adv.id) && !alreadyOwned;
 
                   return (
                     <div
                       key={adv.id}
                       className={`p-4 rounded-lg border-2 ${
                         alreadyOwned
-                          ? 'bg-gray-900/40 border-gray-600'
+                          ? 'bg-green-900/30 border-green-600'
+                          : ownedByOther
+                          ? 'bg-red-900/20 border-red-800'
                           : 'bg-gradient-to-br from-purple-900/40 to-pink-900/40 border-purple-600'
                       }`}
                     >
                       <div className="flex items-start justify-between mb-2">
                         <h4 className="text-white font-bold text-lg">{adv.name}</h4>
                         <span className={`px-2 py-1 rounded text-sm font-bold ${
+                          alreadyOwned ? 'bg-green-600 text-white' :
+                          ownedByOther ? 'bg-red-800 text-red-200' :
                           canAfford ? 'bg-amber-600 text-white' : 'bg-gray-600 text-gray-300'
                         }`}>
                           {adv.cost} pts
                         </span>
                       </div>
-                      <p className="text-purple-200 text-sm mb-4">{adv.description}</p>
+                      <p className={`text-sm mb-4 ${ownedByOther ? 'text-red-200' : 'text-purple-200'}`}>{adv.description}</p>
 
                       {alreadyOwned ? (
                         <button
                           disabled
-                          className="w-full py-2 bg-gray-600 text-gray-400 rounded font-semibold cursor-not-allowed"
+                          className="w-full py-2 bg-green-700 text-green-200 rounded font-semibold cursor-not-allowed"
                         >
-                          Already Owned
+                          ✓ You Own This
+                        </button>
+                      ) : ownedByOther ? (
+                        <button
+                          disabled
+                          className="w-full py-2 bg-red-900/60 text-red-300 rounded font-semibold cursor-not-allowed"
+                        >
+                          Someone Has Purchased This
                         </button>
                       ) : canAfford ? (
                         <button
@@ -2501,10 +3041,25 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     qotwVotesForThis.forEach(v => {
       voteCounts[v.answerId] = (voteCounts[v.answerId] || 0) + 1;
     });
-    
+
     const maxVotes = Math.max(...Object.values(voteCounts), 0);
     const winners = Object.keys(voteCounts).filter(k => voteCounts[k] === maxVotes);
     const winnerPlayerIds = winners.map(answerId => parseInt(answerId.split('-')[0]));
+
+    // Check for Double Trouble and Immunity Idol advantages
+    const doubleTroubleAdvantages = playerAdvantages.filter(
+      a => a.advantageId === 'double-trouble' &&
+           a.used &&
+           a.activated &&
+           a.linkedQuestionnaireId === scoringQ.id
+    );
+
+    const immunityIdolAdvantages = playerAdvantages.filter(
+      a => a.advantageId === 'immunity-idol' &&
+           a.used &&
+           a.activated &&
+           a.linkedQuestionnaireId === scoringQ.id
+    );
 
     const updatedSubmissions = submissions.map(s => {
       if (s.questionnaireId === scoringQ.id) {
@@ -2524,6 +3079,52 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     await storage.set('questionnaires', JSON.stringify(updatedQuestionnaires));
     setSubmissions(updatedSubmissions);
     setQuestionnaires(updatedQuestionnaires);
+
+    // Apply Double Trouble effect - double the player's weekly points
+    for (const dtAdv of doubleTroubleAdvantages) {
+      const baseScore = scores[dtAdv.playerId] || 0;
+      const qotwBonus = winnerPlayerIds.includes(dtAdv.playerId) ? 5 : 0;
+      const totalWeeklyPoints = baseScore + qotwBonus;
+
+      // Add the doubled amount as a bonus (so they get 2x total)
+      if (totalWeeklyPoints !== 0) {
+        await updatePlayerScore(
+          dtAdv.playerId,
+          totalWeeklyPoints, // Add same amount again to double it
+          `Double Trouble Bonus (${scoringQ.title})`,
+          'advantage'
+        );
+
+        const playerName = players.find(p => p.id === dtAdv.playerId)?.name;
+        await addNotification({
+          type: 'double_trouble_applied',
+          message: `${playerName} used Double Trouble and doubled their weekly points! (+${totalWeeklyPoints} bonus)`,
+          targetPlayerId: null
+        });
+      }
+    }
+
+    // Apply Immunity Idol effect - negate negative points
+    for (const iiAdv of immunityIdolAdvantages) {
+      const baseScore = scores[iiAdv.playerId] || 0;
+
+      // If the questionnaire score is negative, add points to offset it to 0
+      if (baseScore < 0) {
+        await updatePlayerScore(
+          iiAdv.playerId,
+          Math.abs(baseScore), // Add enough to offset to 0
+          `Immunity Idol Protection (${scoringQ.title})`,
+          'advantage'
+        );
+
+        const playerName = players.find(p => p.id === iiAdv.playerId)?.name;
+        await addNotification({
+          type: 'immunity_idol_applied',
+          message: `${playerName} used Immunity Idol and negated ${Math.abs(baseScore)} negative points!`,
+          targetPlayerId: null
+        });
+      }
+    }
 
     await addNotification({
       type: 'scores_released',
@@ -4301,7 +4902,134 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     </div>
   );
 }
-function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmissions, contestants, latePenalties, setLatePenalties, qotWVotes, setQotWVotes, players, storage }) {
+
+// Notification Banners Component - Shows unseen notifications as dismissible banners
+// Banners are marked as "seen" when user leaves the Home tab (handled by parent)
+function NotificationBanners({ notifications, currentUser, markNotificationSeen, onVisibleNotifications }) {
+  const [dismissedIds, setDismissedIds] = useState(new Set());
+
+  // Get unseen notifications for this user (broadcast or targeted to them)
+  // Uses seenBy array for per-user tracking
+  const unseenNotifications = notifications.filter(n => {
+    const isForMe = n.targetPlayerId === currentUser.id || !n.targetPlayerId;
+    const seenBy = n.seenBy || [];
+    const hasSeen = seenBy.includes(currentUser.id) || n.seen; // Support legacy 'seen' field
+    return !hasSeen && !dismissedIds.has(n.id) && isForMe;
+  }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // Newest first
+
+  // Report visible notification IDs to parent (for marking as seen when leaving tab)
+  useEffect(() => {
+    const visibleIds = unseenNotifications.slice(0, 5).map(n => n.id);
+    if (onVisibleNotifications) {
+      onVisibleNotifications(visibleIds);
+    }
+  }, [unseenNotifications.map(n => n.id).join(',')]);
+
+  const dismissNotification = (notifId) => {
+    markNotificationSeen(notifId);
+    setDismissedIds(prev => new Set([...prev, notifId]));
+  };
+
+  // Get color scheme based on notification type
+  const getNotificationStyle = (type) => {
+    switch (type) {
+      case 'scores_released':
+        return 'from-green-600 to-emerald-600 border-green-400';
+      case 'qotw_voting_open':
+      case 'qotw_winner':
+        return 'from-purple-600 to-pink-600 border-purple-400';
+      case 'advantage_purchased':
+      case 'advantage_played':
+        return 'from-amber-600 to-orange-600 border-amber-400';
+      case 'advantage_stolen':
+      case 'vote_stolen':
+      case 'advantage_used_on_you':
+        return 'from-red-600 to-rose-600 border-red-400';
+      case 'double_trouble_applied':
+        return 'from-yellow-500 to-amber-500 border-yellow-400';
+      case 'immunity_idol_applied':
+        return 'from-blue-600 to-cyan-600 border-blue-400';
+      case 'final_picks_open':
+        return 'from-indigo-600 to-purple-600 border-indigo-400';
+      case 'new_questionnaire':
+        return 'from-teal-600 to-cyan-600 border-teal-400';
+      case 'tree_mail':
+        return 'from-orange-600 to-red-600 border-orange-400';
+      default:
+        return 'from-gray-600 to-gray-700 border-gray-400';
+    }
+  };
+
+  // Get icon based on notification type
+  const getNotificationIcon = (type) => {
+    switch (type) {
+      case 'scores_released':
+        return '📊';
+      case 'qotw_voting_open':
+        return '🗳️';
+      case 'qotw_winner':
+        return '🏆';
+      case 'advantage_purchased':
+        return '🛒';
+      case 'advantage_played':
+        return '🎮';
+      case 'advantage_stolen':
+      case 'vote_stolen':
+        return '🚨';
+      case 'advantage_used_on_you':
+        return '⚠️';
+      case 'double_trouble_applied':
+        return '✨';
+      case 'immunity_idol_applied':
+        return '🛡️';
+      case 'final_picks_open':
+        return '🎯';
+      case 'new_questionnaire':
+        return '📝';
+      case 'tree_mail':
+        return '📬';
+      default:
+        return '🔔';
+    }
+  };
+
+  if (unseenNotifications.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {unseenNotifications.slice(0, 5).map((notif) => (
+        <div
+          key={notif.id}
+          className={`notification-banner bg-gradient-to-r ${getNotificationStyle(notif.type)} p-4 rounded-lg border-2 shadow-lg flex items-center justify-between gap-4`}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{getNotificationIcon(notif.type)}</span>
+            <div>
+              <p className="text-white font-semibold">{notif.message}</p>
+              <p className="text-white/70 text-xs">
+                {new Date(notif.createdAt).toLocaleString()}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => dismissNotification(notif.id)}
+            className="text-white/80 hover:text-white p-1 hover:bg-white/20 rounded transition"
+            title="Dismiss"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      ))}
+      {unseenNotifications.length > 5 && (
+        <p className="text-amber-300 text-center text-sm">
+          +{unseenNotifications.length - 5} more notifications (check the bell icon)
+        </p>
+      )}
+    </div>
+  );
+}
+
+function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmissions, contestants, latePenalties, setLatePenalties, qotWVotes, setQotWVotes, players, storage, playerAdvantages }) {
   const activeQ = questionnaires.find(q => q.status === 'active');
   const mySubmission = activeQ ? submissions.find(s => s.questionnaireId === activeQ.id && s.playerId === currentUser.id) : null;
   const [answers, setAnswers] = useState({});
@@ -4313,6 +5041,32 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
   const isLate = activeQ && new Date() > new Date(activeQ.deadline) && new Date() < new Date(activeQ.lockedAt);
 
   const archivedQuestionnaires = questionnaires.filter(q => q.status === 'archived' && q.scoresReleased);
+
+  // Check if current user's vote was stolen for this questionnaire
+  const voteWasStolen = activeQ && playerAdvantages?.some(
+    a => a.advantageId === 'vote-steal' &&
+         a.used &&
+         a.linkedQuestionnaireId === activeQ.id &&
+         a.targetPlayerId === currentUser.id
+  );
+
+  // Check if current user has an active Extra Vote for this questionnaire
+  const hasExtraVote = activeQ && playerAdvantages?.some(
+    a => a.advantageId === 'extra-vote' &&
+         a.used &&
+         a.activated &&
+         a.linkedQuestionnaireId === activeQ.id &&
+         a.playerId === currentUser.id
+  );
+
+  // Count how many votes the user has cast for this questionnaire
+  const myVoteCount = activeQ ? qotWVotes.filter(
+    v => v.questionnaireId === activeQ.id && v.voterId === currentUser.id
+  ).length : 0;
+
+  // Can cast another vote? (1 normally, 2 with Extra Vote)
+  const maxVotes = hasExtraVote ? 2 : 1;
+  const canVoteAgain = myVoteCount < maxVotes;
 
   const handleSubmit = async () => {
     if (!activeQ) return;
@@ -4392,6 +5146,26 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
   const myVote = activeQ ? qotWVotes.find(v => v.questionnaireId === activeQ.id && v.voterId === currentUser.id) : null;
 
   if (votingFor === 'qotw' && allQotWSubmitted && activeQ) {
+    // Check if vote was stolen
+    if (voteWasStolen) {
+      return (
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-red-600">
+          <h2 className="text-2xl font-bold text-red-400 mb-4">⭐ Question of the Week Voting</h2>
+          <div className="bg-red-900/30 p-6 rounded-lg border border-red-600 text-center">
+            <p className="text-red-300 text-xl mb-4">🚫 Your Vote Was Stolen!</p>
+            <p className="text-red-200">Another player used the Vote Steal advantage on you. You cannot vote on this week's Question of the Week.</p>
+            <p className="text-red-400 text-sm mt-4">The stolen vote was automatically applied to the player who stole it.</p>
+          </div>
+          <button
+            onClick={() => setVotingFor(null)}
+            className="mt-6 px-6 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+          >
+            Back to Questionnaire
+          </button>
+        </div>
+      );
+    }
+
     const qotwAnswers = submissions
       .filter(s => s.questionnaireId === activeQ.id && s.answers[qotwQuestion.id])
       .map(s => ({
@@ -4404,6 +5178,15 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
     return (
       <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
         <h2 className="text-2xl font-bold text-purple-400 mb-4">⭐ Question of the Week Voting</h2>
+
+        {/* Extra Vote indicator */}
+        {hasExtraVote && (
+          <div className="bg-green-900/30 p-3 rounded-lg border border-green-600 mb-4">
+            <p className="text-green-300 font-semibold">🎯 Extra Vote Active! You can cast {maxVotes} votes this week.</p>
+            <p className="text-green-400 text-sm">Votes used: {myVoteCount}/{maxVotes}</p>
+          </div>
+        )}
+
         <div className="bg-purple-900/30 p-4 rounded-lg border border-purple-600 mb-6">
           <p className="text-purple-300 font-semibold mb-2">Question:</p>
           <p className="text-white text-lg">{qotwQuestion.text}</p>
@@ -4418,10 +5201,10 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
               <p className="text-white mb-3">{answer.answer}</p>
               <button
                 onClick={() => handleVote(`${answer.playerId}-${qotwQuestion.id}`)}
-                disabled={myVote}
+                disabled={!canVoteAgain}
                 className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded font-semibold hover:from-purple-500 hover:to-pink-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {myVote ? '✓ Vote Submitted' : 'Vote for This Answer'}
+                {!canVoteAgain ? `✓ All Votes Used (${myVoteCount}/${maxVotes})` : 'Vote for This Answer'}
               </button>
             </div>
           ))}
@@ -4625,12 +5408,26 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
           )}
 
           {mySubmission && allQotWSubmitted && (
-            <button
-              onClick={() => setVotingFor('qotw')}
-              className="w-full mt-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:from-purple-500 hover:to-pink-500 transition"
-            >
-              {myVote ? '✓ Voted on Question of the Week' : 'Vote on Question of the Week'}
-            </button>
+            voteWasStolen ? (
+              <button
+                onClick={() => setVotingFor('qotw')}
+                className="w-full mt-4 py-3 bg-gradient-to-r from-red-800 to-red-900 text-red-200 rounded-lg font-semibold cursor-pointer"
+              >
+                🚫 Your Vote Was Stolen
+              </button>
+            ) : (
+              <button
+                onClick={() => setVotingFor('qotw')}
+                className="w-full mt-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:from-purple-500 hover:to-pink-500 transition"
+              >
+                {!canVoteAgain
+                  ? `✓ All Votes Used (${myVoteCount}/${maxVotes})`
+                  : hasExtraVote
+                  ? `Vote on QOTW (${myVoteCount}/${maxVotes} votes used)`
+                  : 'Vote on Question of the Week'
+                }
+              </button>
+            )
           )}
         </div>
       )}

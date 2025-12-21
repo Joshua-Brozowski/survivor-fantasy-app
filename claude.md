@@ -168,11 +168,23 @@ survivor-fantasy-app/
 - 7-day auto-expiry (old notifications cleaned on load)
 
 ### 9. Notifications System
-- Bell icon in header shows unread count
+
+**Bell Icon (Header)**:
+- Shows unread count badge
 - Dropdown shows latest 10 notifications
 - Click to mark as read
 - "Mark all read" button
 - **Auto-expiry**: Notifications older than 7 days are automatically deleted on page load
+
+**Banner Notifications (Home Page)**:
+- Unseen notifications display as color-coded banners at top of Home page
+- Per-user tracking: each player has independent seen/unseen status
+- Banners marked as "seen" when:
+  - User switches away from Home tab
+  - User stays on Home tab for 30 seconds
+  - User clicks X to dismiss manually
+- Color-coded by type (green=scores, purple=QOTW, red=stolen, etc.)
+- Shows max 5 banners at once
 
 **Notification Types**:
 - New questionnaire available
@@ -180,15 +192,41 @@ survivor-fantasy-app/
 - Final picks opening
 - Phase changes
 - Admin custom messages (Tree Mail)
+- Advantage purchased/played (anonymous broadcasts)
+- Vote/advantage stolen (targeted alerts)
+- Double Trouble/Immunity Idol applied
 
 ### 10. Advantages System
-**Types**: Custom advantages created by admin
-- Examples: "Extra Vote", "Vote Steal", "Double Points"
-- Can require target player
-- Optional expiration by episode number
-- One-time use
 
-**Usage**: Players activate from their Advantages tab
+**Scarcity Rule**: Only ONE of each advantage can exist in the game at a time. Once purchased, no one else can buy it. Once PLAYED, it returns to the shop for others to purchase.
+
+**Available Advantages**:
+
+| Advantage | Cost | Effect |
+|-----------|------|--------|
+| Extra Vote | 15 pts | Cast an additional vote in QOTW voting |
+| Vote Steal | 20 pts | Steal a player's vote (blocks them from voting, auto-votes for you) |
+| Double Trouble | 25 pts | Double ALL your weekly points when scores are released |
+| Immunity Idol | 30 pts | Negate all negative points for the week |
+| Knowledge is Power | 35 pts | Steal another player's advantage (wasted if they have none) |
+
+**Shop UI States**:
+- **Available** (purple): Can purchase if you have enough points
+- **You Own This** (green): Already in your inventory
+- **Someone Has Purchased This** (red): Another player owns it
+- **Insufficient Points** (gray): Not enough points to buy
+
+**Playing Advantages**:
+- Owned advantages appear above shop with "Play Advantage" button
+- Some advantages require target selection (Vote Steal, Knowledge is Power)
+- QOTW advantages (Extra Vote, Vote Steal) require voting to be open
+- Weekly advantages (Double Trouble, Immunity Idol) link to active questionnaire
+- Effects apply automatically when admin releases scores
+
+**Notifications**:
+- Anonymous broadcast when any advantage is purchased
+- Anonymous broadcast when any advantage is played (returns to shop)
+- Targeted notification to victim (Vote Steal, Knowledge is Power)
 
 ## Database Schema
 
@@ -205,7 +243,7 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 - `qotWVotes` - Array of QotW votes
 - `latePenalties` - Object of player late penalty counts
 - `pickScores` - Array of pick scoring events
-- `advantages` - Array of advantage objects
+- `playerAdvantages` - Array of player-owned advantages (with scarcity tracking)
 - `episodes` - Array of episode recaps
 - `notifications` - Array of notification objects (auto-cleaned after 7 days)
 - `password_{playerId}` - Individual player passwords
@@ -256,7 +294,28 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
   message: string,
   targetPlayerId: number | null,  // null = broadcast to all
   createdAt: ISO_string,
-  read: boolean
+  readBy: number[],   // Array of user IDs who have read (bell icon)
+  seenBy: number[]    // Array of user IDs who have seen banner (per-user tracking)
+}
+```
+
+**PlayerAdvantage**:
+```javascript
+{
+  id: number,
+  playerId: number,
+  advantageId: string,           // e.g., 'extra-vote', 'vote-steal'
+  name: string,
+  description: string,
+  type: string,
+  purchasedAt: ISO_string,
+  used: boolean,
+  activated: boolean,
+  usedAt: ISO_string | null,
+  targetPlayerId: number | null,       // For Vote Steal, Knowledge is Power
+  linkedQuestionnaireId: number | null, // Links effect to specific questionnaire
+  wasted: boolean,                     // True if Knowledge is Power found no advantage
+  stolenFrom: number | null            // If this advantage was stolen via Knowledge is Power
 }
 ```
 
@@ -376,6 +435,9 @@ Cast includes placeholder bios for each contestant (to be updated with real info
 - [x] Tree Mail notification management
 - [x] Cast bios and accordion display
 - [x] Simplified questionnaire types
+- [x] Wordle Challenge mini-game
+- [x] Full Advantages System with scarcity rules
+- [x] Banner notifications on Home page (per-user tracking)
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
