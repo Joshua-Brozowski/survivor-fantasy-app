@@ -212,6 +212,8 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 - `security_{playerId}` - Security questions for password recovery
 - `currentSeason` - Current season number
 - `seasonHistory` - Archived season data
+- `challenges` - Array of Wordle challenge objects
+- `challengeAttempts` - Array of player challenge attempts
 
 ### Key Data Structures
 
