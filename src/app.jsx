@@ -97,7 +97,7 @@ export default function SurvivorFantasyApp() {
   const [contestants, setContestants] = useState([]);
   const [picks, setPicks] = useState([]);
   const [gamePhase, setGamePhase] = useState('instinct-picks');
-  const [currentView, setCurrentView] = useState('dashboard');
+  const [currentView, setCurrentView] = useState('home');
   const [questionnaires, setQuestionnaires] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [qotWVotes, setQotWVotes] = useState([]);
@@ -1183,7 +1183,6 @@ export default function SurvivorFantasyApp() {
           <div className="flex gap-1 overflow-x-auto">
             {[
               { id: 'home', label: 'Home', icon: Home },
-              { id: 'dashboard', label: 'Dashboard', icon: TrendingUp },
               { id: 'picks', label: 'Picks', icon: Target },
               { id: 'questionnaire', label: 'Questionnaire', icon: FileText },
               { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
@@ -1673,15 +1672,28 @@ export default function SurvivorFantasyApp() {
         {/* Home View - Cast Display */}
         {currentView === 'home' && (
           <div className="space-y-6">
-            {/* Welcome Section */}
+            {/* Combined Welcome Section */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
-              <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+              <h2 className="text-2xl font-bold text-amber-400 mb-2 flex items-center gap-2">
                 <Flame className="w-6 h-6" />
                 Welcome to Survivor Fantasy Season 48!
               </h2>
               <p className="text-amber-200 mb-4">
-                Compete with your friends by making picks, answering weekly questionnaires, and earning points throughout the season!
+                Hey {currentUser.name}! Compete with your friends by making picks, answering weekly questionnaires, and earning points throughout the season!
               </p>
+              <div className="flex flex-wrap items-center gap-6 mb-6">
+                <div className="bg-gradient-to-br from-amber-600 to-orange-600 p-6 rounded-xl">
+                  <p className="text-white text-sm opacity-80">Your Total Points</p>
+                  <p className="text-5xl font-bold text-white">{myTotalPoints}</p>
+                </div>
+                <div>
+                  <p className="text-amber-300">Current Rank</p>
+                  <p className="text-3xl font-bold text-white">
+                    #{[...players].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id)).findIndex(p => p.id === currentUser.id) + 1}
+                    <span className="text-lg text-amber-400 ml-2">of {players.length}</span>
+                  </p>
+                </div>
+              </div>
               <div className="grid md:grid-cols-3 gap-4 text-center">
                 <div className="bg-amber-900/30 p-4 rounded-lg border border-amber-600">
                   <p className="text-3xl font-bold text-amber-400">{players.length}</p>
@@ -1694,141 +1706,6 @@ export default function SurvivorFantasyApp() {
                 <div className="bg-amber-900/30 p-4 rounded-lg border border-amber-600">
                   <p className="text-3xl font-bold text-amber-400">{getActiveContestants().length}</p>
                   <p className="text-amber-200 text-sm">Still in the Game</p>
-                </div>
-              </div>
-            </div>
-
-            {/* How to Play Section */}
-            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
-              <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center gap-2">
-                <Star className="w-5 h-5" />
-                How to Play
-              </h3>
-              <div className="space-y-4 text-amber-200">
-                <p>
-                  Navigate through the app using the tabs above to manage your fantasy game experience:
-                </p>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <TrendingUp className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Dashboard</h4>
-                    </div>
-                    <p className="text-sm">Your personal hub showing your total points, current rank, pick status, and quick access to pending tasks like questionnaires.</p>
-                  </div>
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Target className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Picks</h4>
-                    </div>
-                    <p className="text-sm">Select your Instinct Pick before the season starts and your Final Pick after the merge. Earn points based on how your picks perform!</p>
-                  </div>
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <FileText className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Questionnaire</h4>
-                    </div>
-                    <p className="text-sm">Answer weekly prediction questions about the upcoming episode. Get points for correct answers and compete in Question of the Week!</p>
-                  </div>
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Trophy className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Leaderboard</h4>
-                    </div>
-                    <p className="text-sm">See how you stack up against the competition! View everyone's total points, rankings, and detailed score breakdowns.</p>
-                  </div>
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Gift className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Advantages</h4>
-                    </div>
-                    <p className="text-sm">View and activate special advantages you've earned. These powerful bonuses can steal points, double your score, or protect you from penalties!</p>
-                  </div>
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Bell className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Notifications</h4>
-                    </div>
-                    <p className="text-sm">Stay updated with alerts for new questionnaires, score releases, phase changes, and when you receive advantages. Check the bell icon!</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Cast Accordion */}
-            <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
-              <button
-                onClick={() => setCastAccordionOpen(!castAccordionOpen)}
-                className="w-full p-6 flex items-center justify-between hover:bg-amber-900/20 transition"
-              >
-                <h3 className="text-xl font-bold text-amber-400 flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Check Out This Season's Cast
-                </h3>
-                {castAccordionOpen ? (
-                  <ChevronUp className="w-6 h-6 text-amber-400" />
-                ) : (
-                  <ChevronDown className="w-6 h-6 text-amber-400" />
-                )}
-              </button>
-
-              {castAccordionOpen && (
-                <div className="px-6 pb-6">
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {contestants.map(contestant => {
-                      const tribeColor = contestant.tribe === 'Manu' ? 'orange' : contestant.tribe === 'Loto' ? 'blue' : 'green';
-                      return (
-                        <div
-                          key={contestant.id}
-                          className={`p-4 rounded-lg border ${
-                            contestant.eliminated
-                              ? 'bg-red-900/20 border-red-600 opacity-60'
-                              : `bg-${tribeColor}-900/30 border-${tribeColor}-500`
-                          }`}
-                        >
-                          <img
-                            src={contestant.image}
-                            alt={contestant.name}
-                            className="w-full h-40 object-cover rounded-lg mb-3"
-                            onError={(e) => { e.target.src = 'https://via.placeholder.com/150?text=No+Image'; }}
-                          />
-                          <h5 className="text-white font-bold">{contestant.name}</h5>
-                          <p className={`text-${tribeColor}-300 text-sm mb-2`}>{contestant.tribe}</p>
-                          <p className="text-gray-300 text-sm leading-relaxed">
-                            {CONTESTANT_BIOS[contestant.id] || 'Bio coming soon...'}
-                          </p>
-                          {contestant.eliminated && (
-                            <p className="text-red-400 text-sm font-semibold mt-2">Eliminated</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Dashboard View */}
-        {currentView === 'dashboard' && (
-          <div className="space-y-6">
-            {/* Welcome & Points */}
-            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
-              <h2 className="text-2xl font-bold text-amber-400 mb-2">
-                Welcome back, {currentUser.name}!
-              </h2>
-              <div className="mt-4 flex items-center gap-6">
-                <div className="bg-gradient-to-br from-amber-600 to-orange-600 p-6 rounded-xl">
-                  <p className="text-white text-sm opacity-80">Total Points</p>
-                  <p className="text-5xl font-bold text-white">{myTotalPoints}</p>
-                </div>
-                <div>
-                  <p className="text-amber-300">Current Rank</p>
-                  <p className="text-3xl font-bold text-white">
-                    #{[...players].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id)).findIndex(p => p.id === currentUser.id) + 1}
-                    <span className="text-lg text-amber-400 ml-2">of {players.length}</span>
-                  </p>
                 </div>
               </div>
             </div>
@@ -1916,35 +1793,104 @@ export default function SurvivorFantasyApp() {
               </div>
             </div>
 
-            {/* Quick Stats */}
+            {/* How to Play Section */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
-              <h3 className="text-lg font-bold text-amber-400 mb-4 flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                Quick Stats
+              <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+                <Star className="w-5 h-5" />
+                How to Play
               </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-gradient-to-br from-amber-900/40 to-orange-900/40 p-4 rounded-lg text-center">
-                  <p className="text-3xl font-bold text-amber-400">{myTotalPoints}</p>
-                  <p className="text-amber-200 text-sm">Total Points</p>
-                </div>
-                <div className="bg-gradient-to-br from-green-900/40 to-emerald-900/40 p-4 rounded-lg text-center">
-                  <p className="text-3xl font-bold text-green-400">{completedQuestionnaires}</p>
-                  <p className="text-green-200 text-sm">Questionnaires</p>
-                </div>
-                <div className="bg-gradient-to-br from-purple-900/40 to-pink-900/40 p-4 rounded-lg text-center">
-                  <p className="text-3xl font-bold text-purple-400">{myQotwWins}</p>
-                  <p className="text-purple-200 text-sm">QOTW Wins</p>
-                </div>
-                <div className="bg-gradient-to-br from-blue-900/40 to-indigo-900/40 p-4 rounded-lg text-center">
-                  <p className="text-3xl font-bold text-blue-400">{myAdvantages.length}</p>
-                  <p className="text-blue-200 text-sm">Advantages</p>
+              <div className="space-y-4 text-amber-200">
+                <p>
+                  Navigate through the app using the tabs above to manage your fantasy game experience:
+                </p>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Target className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Picks</h4>
+                    </div>
+                    <p className="text-sm">Select your Instinct Pick before the season starts and your Final Pick after the merge. Earn points based on how your picks perform!</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Questionnaire</h4>
+                    </div>
+                    <p className="text-sm">Answer weekly prediction questions about the upcoming episode. Get points for correct answers and compete in Question of the Week!</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Trophy className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Leaderboard</h4>
+                    </div>
+                    <p className="text-sm">See how you stack up against the competition! View everyone's total points, rankings, and detailed score breakdowns.</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Gift className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Advantages</h4>
+                    </div>
+                    <p className="text-sm">View and activate special advantages you've earned. These powerful bonuses can steal points, double your score, or protect you from penalties!</p>
+                  </div>
                 </div>
               </div>
+            </div>
+
+            {/* Cast Accordion */}
+            <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
+              <button
+                onClick={() => setCastAccordionOpen(!castAccordionOpen)}
+                className="w-full p-6 flex items-center justify-between hover:bg-amber-900/20 transition"
+              >
+                <h3 className="text-xl font-bold text-amber-400 flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Check Out This Season's Cast
+                </h3>
+                {castAccordionOpen ? (
+                  <ChevronUp className="w-6 h-6 text-amber-400" />
+                ) : (
+                  <ChevronDown className="w-6 h-6 text-amber-400" />
+                )}
+              </button>
+
+              {castAccordionOpen && (
+                <div className="px-6 pb-6">
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {contestants.map(contestant => {
+                      const tribeColor = contestant.tribe === 'Manu' ? 'orange' : contestant.tribe === 'Loto' ? 'blue' : 'green';
+                      return (
+                        <div
+                          key={contestant.id}
+                          className={`p-4 rounded-lg border ${
+                            contestant.eliminated
+                              ? 'bg-red-900/20 border-red-600 opacity-60'
+                              : `bg-${tribeColor}-900/30 border-${tribeColor}-500`
+                          }`}
+                        >
+                          <img
+                            src={contestant.image}
+                            alt={contestant.name}
+                            className="w-full h-40 object-cover rounded-lg mb-3"
+                            onError={(e) => { e.target.src = 'https://via.placeholder.com/150?text=No+Image'; }}
+                          />
+                          <h5 className="text-white font-bold">{contestant.name}</h5>
+                          <p className={`text-${tribeColor}-300 text-sm mb-2`}>{contestant.tribe}</p>
+                          <p className="text-gray-300 text-sm leading-relaxed">
+                            {CONTESTANT_BIOS[contestant.id] || 'Bio coming soon...'}
+                          </p>
+                          {contestant.eliminated && (
+                            <p className="text-red-400 text-sm font-semibold mt-2">Eliminated</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Advantages View */}
         {currentView === 'advantages' && (
           <div className="space-y-6">
             {/* Your Advantages */}
