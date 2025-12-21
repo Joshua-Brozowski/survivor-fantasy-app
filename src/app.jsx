@@ -71,6 +71,14 @@ const SECURITY_QUESTIONS = [
   "What was the name of your elementary school?"
 ];
 
+// Survivor-themed 5-letter words for Wordle challenge
+const SURVIVOR_WORDS = [
+  'TRIBE', 'MERGE', 'TORCH', 'SNUFF', 'VOTES', 'IDOLS', 'EXILE', 'FLAME',
+  'FEAST', 'FINAL', 'BLIND', 'SPLIT', 'TRUST', 'BEACH', 'TWIST', 'FLINT',
+  'SPEAR', 'BRAWN', 'BRAIN', 'BUFFS', 'QUEST', 'PRIZE', 'CHAOS', 'RIVAL',
+  'ALPHA', 'LOYAL', 'POWER', 'SNAKE', 'STORM', 'SWAMP'
+];
+
 // Default Advantages Available for Purchase
 const DEFAULT_ADVANTAGES = [
   { id: 'extra-vote', name: 'Extra Vote', description: 'Cast an additional vote on Question of the Week', cost: 5, type: 'qotw' },
@@ -117,6 +125,10 @@ export default function SurvivorFantasyApp() {
   const [currentSeason, setCurrentSeason] = useState(48);
   const [seasonHistory, setSeasonHistory] = useState([]);
   const [castAccordionOpen, setCastAccordionOpen] = useState(false);
+  
+  // Wordle Challenge state
+  const [challenges, setChallenges] = useState([]);
+  const [challengeAttempts, setChallengeAttempts] = useState([]);
 
   // Check for remembered login on mount
   useEffect(() => {
@@ -138,6 +150,21 @@ export default function SurvivorFantasyApp() {
   useEffect(() => {
     loadGameData();
   }, []);
+
+  // Check for weekly challenge on load and periodically
+  useEffect(() => {
+    if (currentUser && challenges.length >= 0) {
+      checkAndCreateWeeklyChallenge();
+      checkAndFinalizeChallenge();
+      
+      // Check every hour for challenge state
+      const interval = setInterval(() => {
+        checkAndFinalizeChallenge();
+      }, 60 * 60 * 1000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [currentUser, challenges.length]);
 
   // Check if current user has security question
   useEffect(() => {
@@ -168,11 +195,15 @@ export default function SurvivorFantasyApp() {
       const playerScoresData = await storage.get('playerScores');
       const currentSeasonData = await storage.get('currentSeason');
       const seasonHistoryData = await storage.get('seasonHistory');
+      const challengesData = await storage.get('challenges');
+      const challengeAttemptsData = await storage.get('challengeAttempts');
 
       setPlayers(playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS);
       setContestants(contestantsData ? JSON.parse(contestantsData.value) : SURVIVOR_48_CAST);
       setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 48);
       setSeasonHistory(seasonHistoryData ? JSON.parse(seasonHistoryData.value) : []);
+      setChallenges(challengesData ? JSON.parse(challengesData.value) : []);
+      setChallengeAttempts(challengeAttemptsData ? JSON.parse(challengeAttemptsData.value) : []);
       setPicks(picksData ? JSON.parse(picksData.value) : []);
       setGamePhase(gamePhaseData ? gamePhaseData.value : 'instinct-picks');
       setQuestionnaires(questionnairesData ? JSON.parse(questionnairesData.value) : []);
@@ -758,6 +789,282 @@ export default function SurvivorFantasyApp() {
     return true;
   };
 
+  // ============ WORDLE CHALLENGE FUNCTIONS ============
+
+  // Get the Monday 12:00 AM of the current week
+  const getWeekStart = (date = new Date()) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  // Get Sunday 11:59:59 PM of the current week
+  const getWeekEnd = (date = new Date()) => {
+    const weekStart = getWeekStart(date);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+    return weekEnd;
+  };
+
+  // Get active challenge
+  const getActiveChallenge = () => {
+    return challenges.find(c => c.status === 'active');
+  };
+
+  // Get random word not used in recent challenges
+  const getRandomWord = () => {
+    const usedWords = challenges.slice(-10).map(c => c.word);
+    const availableWords = SURVIVOR_WORDS.filter(w => !usedWords.includes(w));
+    const words = availableWords.length > 0 ? availableWords : SURVIVOR_WORDS;
+    return words[Math.floor(Math.random() * words.length)];
+  };
+
+  // Check if a challenge exists for this week
+  const getChallengeForWeek = (weekStart) => {
+    return challenges.find(c => {
+      const challengeWeekStart = new Date(c.weekStart);
+      return challengeWeekStart.toDateString() === weekStart.toDateString();
+    });
+  };
+
+  // Auto-create challenge on Monday (called in useEffect)
+  const checkAndCreateWeeklyChallenge = async () => {
+    const now = new Date();
+    const weekStart = getWeekStart(now);
+    const weekEnd = getWeekEnd(now);
+
+    const existingChallenge = getChallengeForWeek(weekStart);
+
+    // Only auto-create if it's Monday and no challenge exists for this week
+    if (now.getDay() === 1 && !existingChallenge) {
+      const newChallenge = {
+        id: Date.now(),
+        word: getRandomWord(),
+        weekStart: weekStart.toISOString(),
+        weekEnd: weekEnd.toISOString(),
+        status: 'active',
+        createdBy: 'auto',
+        createdAt: now.toISOString(),
+        winnerId: null,
+        winnerData: null
+      };
+
+      const updated = [...challenges, newChallenge];
+      setChallenges(updated);
+      await storage.set('challenges', JSON.stringify(updated));
+
+      await addNotification({
+        type: 'challenge_started',
+        message: 'New Survivor Wordle Challenge is live! Guess the word before Sunday.',
+        targetPlayerId: null
+      });
+    }
+  };
+
+  // Finalize challenge and determine winner
+  const finalizeChallenge = async (challengeId) => {
+    const challenge = challenges.find(c => c.id === challengeId);
+    if (!challenge || challenge.status !== 'active') return;
+
+    // Find winner: solved attempts, sorted by guesses (asc) then time (asc)
+    const solvedAttempts = challengeAttempts
+      .filter(a => a.challengeId === challengeId && a.solved)
+      .sort((a, b) => {
+        if (a.guesses.length !== b.guesses.length) {
+          return a.guesses.length - b.guesses.length;
+        }
+        return a.timeSpent - b.timeSpent;
+      });
+
+    let winnerId = null;
+    let winnerData = null;
+
+    if (solvedAttempts.length > 0) {
+      const winner = solvedAttempts[0];
+      winnerId = winner.playerId;
+      winnerData = {
+        guesses: winner.guesses.length,
+        timeSpent: winner.timeSpent
+      };
+
+      // Award 3 points to winner
+      await updatePlayerScore(winnerId, 3, 'Wordle Challenge Winner', 'challenge');
+
+      const winnerPlayer = players.find(p => p.id === winnerId);
+      await addNotification({
+        type: 'challenge_winner',
+        message: `${winnerPlayer?.name || 'Someone'} won this week's Wordle Challenge with ${winnerData.guesses} guess${winnerData.guesses > 1 ? 'es' : ''}!`,
+        targetPlayerId: null
+      });
+    } else {
+      await addNotification({
+        type: 'challenge_ended',
+        message: 'This week\'s Wordle Challenge ended with no winner.',
+        targetPlayerId: null
+      });
+    }
+
+    // Update challenge status
+    const updatedChallenges = challenges.map(c =>
+      c.id === challengeId
+        ? { ...c, status: 'completed', winnerId, winnerData }
+        : c
+    );
+    setChallenges(updatedChallenges);
+    await storage.set('challenges', JSON.stringify(updatedChallenges));
+  };
+
+  // Check and finalize expired challenges
+  const checkAndFinalizeChallenge = async () => {
+    const activeChallenge = getActiveChallenge();
+    if (!activeChallenge) return;
+
+    const now = new Date();
+    const weekEnd = new Date(activeChallenge.weekEnd);
+
+    if (now > weekEnd) {
+      await finalizeChallenge(activeChallenge.id);
+    }
+  };
+
+  // Get player's attempt for a challenge
+  const getPlayerAttempt = (challengeId, playerId) => {
+    return challengeAttempts.find(
+      a => a.challengeId === challengeId && a.playerId === playerId
+    );
+  };
+
+  // Start or resume a challenge attempt
+  const startChallengeAttempt = async (challengeId) => {
+    const existing = getPlayerAttempt(challengeId, currentUser.id);
+
+    if (existing) {
+      // Resume: update lastActiveAt
+      const updated = challengeAttempts.map(a =>
+        a.id === existing.id
+          ? { ...a, lastActiveAt: new Date().toISOString() }
+          : a
+      );
+      setChallengeAttempts(updated);
+      await storage.set('challengeAttempts', JSON.stringify(updated));
+      return existing;
+    }
+
+    // New attempt
+    const newAttempt = {
+      id: Date.now(),
+      challengeId,
+      playerId: currentUser.id,
+      guesses: [],
+      timeSpent: 0,
+      startedAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+      completedAt: null,
+      solved: false,
+      status: 'in_progress'
+    };
+
+    const updated = [...challengeAttempts, newAttempt];
+    setChallengeAttempts(updated);
+    await storage.set('challengeAttempts', JSON.stringify(updated));
+    return newAttempt;
+  };
+
+  // Submit a guess
+  const submitChallengeGuess = async (attemptId, guess, elapsedSinceLastSave) => {
+    const attempt = challengeAttempts.find(a => a.id === attemptId);
+    if (!attempt || attempt.status !== 'in_progress') return null;
+
+    const challenge = challenges.find(c => c.id === attempt.challengeId);
+    if (!challenge) return null;
+
+    const normalizedGuess = guess.toUpperCase();
+    const newGuesses = [...attempt.guesses, normalizedGuess];
+    const isSolved = normalizedGuess === challenge.word;
+    const isFailed = newGuesses.length >= 6 && !isSolved;
+
+    const updatedAttempt = {
+      ...attempt,
+      guesses: newGuesses,
+      timeSpent: attempt.timeSpent + elapsedSinceLastSave,
+      lastActiveAt: new Date().toISOString(),
+      solved: isSolved,
+      status: isSolved ? 'completed' : (isFailed ? 'failed' : 'in_progress'),
+      completedAt: (isSolved || isFailed) ? new Date().toISOString() : null
+    };
+
+    const updated = challengeAttempts.map(a =>
+      a.id === attemptId ? updatedAttempt : a
+    );
+    setChallengeAttempts(updated);
+    await storage.set('challengeAttempts', JSON.stringify(updated));
+
+    return updatedAttempt;
+  };
+
+  // Save time progress (called periodically and on visibility change)
+  const saveChallengeTimeProgress = async (attemptId, elapsedSinceLastSave) => {
+    const attempt = challengeAttempts.find(a => a.id === attemptId);
+    if (!attempt || attempt.status !== 'in_progress') return;
+
+    const updated = challengeAttempts.map(a =>
+      a.id === attemptId
+        ? {
+            ...a,
+            timeSpent: a.timeSpent + elapsedSinceLastSave,
+            lastActiveAt: new Date().toISOString()
+          }
+        : a
+    );
+    setChallengeAttempts(updated);
+    await storage.set('challengeAttempts', JSON.stringify(updated));
+  };
+
+  // Admin: manually create challenge
+  const adminCreateChallenge = async (word) => {
+    const weekStart = getWeekStart();
+    const weekEnd = getWeekEnd();
+
+    // Cancel any existing active challenge
+    const updatedChallenges = challenges.map(c =>
+      c.status === 'active' ? { ...c, status: 'cancelled' } : c
+    );
+
+    const newChallenge = {
+      id: Date.now(),
+      word: word.toUpperCase(),
+      weekStart: weekStart.toISOString(),
+      weekEnd: weekEnd.toISOString(),
+      status: 'active',
+      createdBy: currentUser.id,
+      createdAt: new Date().toISOString(),
+      winnerId: null,
+      winnerData: null
+    };
+
+    const updated = [...updatedChallenges, newChallenge];
+    setChallenges(updated);
+    await storage.set('challenges', JSON.stringify(updated));
+
+    await addNotification({
+      type: 'challenge_started',
+      message: 'New Survivor Wordle Challenge is live! Guess the word before Sunday.',
+      targetPlayerId: null
+    });
+
+    return newChallenge;
+  };
+
+  // Admin: end challenge early
+  const adminEndChallenge = async (challengeId) => {
+    await finalizeChallenge(challengeId);
+  };
+
+
   // Login Screen
   if (!currentUser) {
     return (
@@ -1185,6 +1492,7 @@ export default function SurvivorFantasyApp() {
               { id: 'home', label: 'Home', icon: Home },
               { id: 'picks', label: 'Picks', icon: Target },
               { id: 'questionnaire', label: 'Questionnaire', icon: FileText },
+              { id: 'challenge', label: 'Wordle', icon: Zap },
               { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
               { id: 'advantages', label: 'Advantages', icon: Gift }
             ].map(({ id, label, icon: Icon }) => (
@@ -1666,6 +1974,11 @@ export default function SurvivorFantasyApp() {
             startNewSeason={startNewSeason}
             archiveCurrentSeason={archiveCurrentSeason}
             seasonHistory={seasonHistory}
+            challenges={challenges}
+            setChallenges={setChallenges}
+            challengeAttempts={challengeAttempts}
+            adminCreateChallenge={adminCreateChallenge}
+            adminEndChallenge={adminEndChallenge}
           />
         )}
 
@@ -2020,6 +2333,23 @@ export default function SurvivorFantasyApp() {
             </div>
           </div>
         )}
+
+        {/* Wordle Challenge View */}
+        {currentView === 'challenge' && (
+          <div className="space-y-6">
+            <WordleGame
+              currentUser={currentUser}
+              challenges={challenges}
+              challengeAttempts={challengeAttempts}
+              players={players}
+              startChallengeAttempt={startChallengeAttempt}
+              submitChallengeGuess={submitChallengeGuess}
+              saveChallengeTimeProgress={saveChallengeTimeProgress}
+              getPlayerAttempt={getPlayerAttempt}
+            />
+          </div>
+        )}
+
       </main>
 
       {/* Footer */}
@@ -2038,7 +2368,7 @@ export default function SurvivorFantasyApp() {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory }) {
+function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge }) {
   const [adminView, setAdminView] = useState('main');
   const [newQ, setNewQ] = useState({
     title: '',
@@ -3657,6 +3987,127 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     );
   }
 
+  if (adminView === 'challenge-management') {
+    const activeChallenge = challenges.find(c => c.status === 'active');
+    const completedChallenges = challenges.filter(c => c.status === 'completed').slice(-10).reverse();
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-cyan-600">
+          <h2 className="text-2xl font-bold text-cyan-400 mb-6 flex items-center gap-2">
+            <Zap className="w-6 h-6" />
+            Wordle Challenge Management
+          </h2>
+
+          {/* Current Status */}
+          <div className="mb-6 p-4 bg-cyan-900/30 rounded-lg border border-cyan-600">
+            <h3 className="text-cyan-300 font-semibold mb-2">Current Status</h3>
+            {activeChallenge ? (
+              <div>
+                <p className="text-white">Active Challenge: <span className="font-mono tracking-widest text-cyan-300">{activeChallenge.word}</span></p>
+                <p className="text-cyan-200 text-sm">Ends: {new Date(activeChallenge.weekEnd).toLocaleString()}</p>
+                <p className="text-cyan-200 text-sm">
+                  Attempts: {challengeAttempts.filter(a => a.challengeId === activeChallenge.id).length} started,
+                  {' '}{challengeAttempts.filter(a => a.challengeId === activeChallenge.id && a.solved).length} solved
+                </p>
+                <button
+                  onClick={async () => {
+                    if (window.confirm('End this challenge early and calculate winner?')) {
+                      await adminEndChallenge(activeChallenge.id);
+                      alert('Challenge ended!');
+                    }
+                  }}
+                  className="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500 transition"
+                >
+                  End Challenge Early
+                </button>
+              </div>
+            ) : (
+              <p className="text-cyan-200">No active challenge</p>
+            )}
+          </div>
+
+          {/* Create New Challenge */}
+          <div className="mb-6 p-4 bg-cyan-900/30 rounded-lg border border-cyan-600">
+            <h3 className="text-cyan-300 font-semibold mb-3">Create New Challenge</h3>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                id="challenge-word-input"
+                placeholder="5-letter word"
+                maxLength={5}
+                className="flex-1 px-4 py-2 rounded bg-black/50 text-white border border-cyan-600 font-mono text-lg tracking-widest uppercase"
+                onChange={(e) => e.target.value = e.target.value.toUpperCase()}
+              />
+              <button
+                onClick={async () => {
+                  const input = document.getElementById('challenge-word-input');
+                  const word = input.value.trim().toUpperCase();
+                  if (word.length !== 5) {
+                    alert('Word must be exactly 5 letters');
+                    return;
+                  }
+                  if (!/^[A-Z]+$/.test(word)) {
+                    alert('Word must contain only letters');
+                    return;
+                  }
+                  if (window.confirm(`Create challenge with word "${word}"?`)) {
+                    await adminCreateChallenge(word);
+                    input.value = '';
+                    alert('Challenge created!');
+                  }
+                }}
+                className="px-6 py-2 bg-cyan-600 text-white rounded font-semibold hover:bg-cyan-500 transition"
+              >
+                Create
+              </button>
+            </div>
+            <p className="text-cyan-400 text-sm mt-2">
+              Suggested: {SURVIVOR_WORDS.slice(0, 8).join(', ')}...
+            </p>
+          </div>
+
+          {/* Past Challenges */}
+          {completedChallenges.length > 0 && (
+            <div className="p-4 bg-cyan-900/30 rounded-lg border border-cyan-600">
+              <h3 className="text-cyan-300 font-semibold mb-3">Recent Challenges</h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {completedChallenges.map(c => {
+                  const winner = players.find(p => p.id === c.winnerId);
+                  const attempts = challengeAttempts.filter(a => a.challengeId === c.id);
+                  return (
+                    <div key={c.id} className="bg-cyan-900/20 p-3 rounded border border-cyan-600/50">
+                      <div className="flex justify-between">
+                        <span className="text-white font-mono tracking-widest">{c.word}</span>
+                        <span className="text-cyan-300 text-sm">
+                          {new Date(c.weekStart).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <p className="text-cyan-400 text-sm">
+                        {winner
+                          ? `Winner: ${winner.name} (${c.winnerData?.guesses} guesses)`
+                          : 'No winner'
+                        } • {attempts.filter(a => a.solved).length}/{attempts.length} solved
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={() => setAdminView('main')}
+          className="w-full py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+        >
+          Back to Controls
+        </button>
+      </div>
+    );
+  }
+
+
   return (
     <div className="space-y-6">
       {/* Season Header */}
@@ -3776,6 +4227,19 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               <div className="flex items-center gap-2">
                 <Mail className="w-5 h-5" />
                 <span>Tree Mail</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('challenge-management')}
+            className="bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-cyan-500 hover:to-blue-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5" />
+                <span>Wordle Challenge</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
@@ -4199,6 +4663,448 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// Wordle Game Component
+function WordleGame({
+  currentUser,
+  challenges,
+  challengeAttempts,
+  players,
+  startChallengeAttempt,
+  submitChallengeGuess,
+  saveChallengeTimeProgress,
+  getPlayerAttempt
+}) {
+  const [currentGuess, setCurrentGuess] = useState('');
+  const [attempt, setAttempt] = useState(null);
+  const [lastSaveTime, setLastSaveTime] = useState(null);
+  const [displayTime, setDisplayTime] = useState(0);
+
+  const activeChallenge = challenges.find(c => c.status === 'active');
+  const isExpired = activeChallenge && new Date() > new Date(activeChallenge.weekEnd);
+
+  // Load existing attempt on mount
+  useEffect(() => {
+    if (activeChallenge && currentUser) {
+      const existingAttempt = getPlayerAttempt(activeChallenge.id, currentUser.id);
+      if (existingAttempt) {
+        setAttempt(existingAttempt);
+        setDisplayTime(existingAttempt.timeSpent);
+      }
+    }
+  }, [activeChallenge?.id, currentUser?.id, challengeAttempts]);
+
+  // Timer display update
+  useEffect(() => {
+    if (attempt?.status !== 'in_progress' || !lastSaveTime) return;
+
+    const interval = setInterval(() => {
+      setDisplayTime(attempt.timeSpent + (Date.now() - lastSaveTime));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [attempt, lastSaveTime]);
+
+  // Visibility change handler - save progress when user leaves
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.hidden && attempt?.status === 'in_progress' && lastSaveTime) {
+        const elapsed = Date.now() - lastSaveTime;
+        await saveChallengeTimeProgress(attempt.id, elapsed);
+        setLastSaveTime(Date.now());
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [attempt, lastSaveTime]);
+
+  // Periodic save (every 30 seconds while active)
+  useEffect(() => {
+    if (attempt?.status !== 'in_progress' || !lastSaveTime) return;
+
+    const interval = setInterval(async () => {
+      const elapsed = Date.now() - lastSaveTime;
+      await saveChallengeTimeProgress(attempt.id, elapsed);
+      setLastSaveTime(Date.now());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [attempt, lastSaveTime]);
+
+  // Start playing
+  const handleStartPlaying = async () => {
+    if (!activeChallenge) return;
+    const newAttempt = await startChallengeAttempt(activeChallenge.id);
+    setAttempt(newAttempt);
+    setLastSaveTime(Date.now());
+    setDisplayTime(0);
+  };
+
+  // Submit guess
+  const handleSubmitGuess = async () => {
+    if (!attempt || currentGuess.length !== 5) return;
+
+    const elapsed = lastSaveTime ? Date.now() - lastSaveTime : 0;
+    const updatedAttempt = await submitChallengeGuess(attempt.id, currentGuess, elapsed);
+    setAttempt(updatedAttempt);
+    setCurrentGuess('');
+    setLastSaveTime(Date.now());
+    if (updatedAttempt) {
+      setDisplayTime(updatedAttempt.timeSpent);
+    }
+  };
+
+  // Handle keyboard input
+  const handleKeyPress = (key) => {
+    if (attempt?.status !== 'in_progress') return;
+
+    if (key === 'ENTER') {
+      if (currentGuess.length === 5) {
+        handleSubmitGuess();
+      }
+    } else if (key === 'BACKSPACE') {
+      setCurrentGuess(prev => prev.slice(0, -1));
+    } else if (currentGuess.length < 5 && /^[A-Z]$/.test(key)) {
+      setCurrentGuess(prev => prev + key);
+    }
+  };
+
+  // Physical keyboard support
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (attempt?.status !== 'in_progress') return;
+
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleKeyPress('ENTER');
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        handleKeyPress('BACKSPACE');
+      } else if (/^[a-zA-Z]$/.test(e.key)) {
+        handleKeyPress(e.key.toUpperCase());
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentGuess, attempt]);
+
+  // Get letter status for coloring
+  const getLetterStatus = (letter, position, word) => {
+    if (!activeChallenge) return 'empty';
+    const answer = activeChallenge.word;
+
+    if (answer[position] === letter) return 'correct';
+    if (answer.includes(letter)) return 'present';
+    return 'absent';
+  };
+
+  // Get keyboard letter status
+  const getKeyboardLetterStatus = (letter) => {
+    if (!attempt) return 'unused';
+
+    let status = 'unused';
+    for (const guess of attempt.guesses) {
+      for (let i = 0; i < 5; i++) {
+        if (guess[i] === letter) {
+          const letterStatus = getLetterStatus(letter, i, guess);
+          if (letterStatus === 'correct') return 'correct';
+          if (letterStatus === 'present' && status !== 'correct') status = 'present';
+          if (letterStatus === 'absent' && status === 'unused') status = 'absent';
+        }
+      }
+    }
+    return status;
+  };
+
+  // Format time display
+  const formatTime = (ms) => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    }
+    return `${seconds}s`;
+  };
+
+  // Render game board
+  const renderBoard = () => {
+    const rows = [];
+    for (let i = 0; i < 6; i++) {
+      const guess = attempt?.guesses[i] || '';
+      const isCurrentRow = attempt?.guesses.length === i;
+      const displayGuess = isCurrentRow ? currentGuess : guess;
+
+      rows.push(
+        <div key={i} className="flex gap-2 justify-center">
+          {[0, 1, 2, 3, 4].map(j => {
+            const letter = displayGuess[j] || '';
+            let bgClass = 'bg-gray-700 border-gray-600';
+
+            if (guess && !isCurrentRow) {
+              const status = getLetterStatus(letter, j, guess);
+              if (status === 'correct') bgClass = 'bg-green-600 border-green-500';
+              else if (status === 'present') bgClass = 'bg-yellow-600 border-yellow-500';
+              else bgClass = 'bg-gray-600 border-gray-500';
+            } else if (letter) {
+              bgClass = 'bg-gray-600 border-gray-400';
+            }
+
+            return (
+              <div
+                key={j}
+                className={`w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center text-xl sm:text-2xl font-bold text-white border-2 rounded ${bgClass}`}
+              >
+                {letter}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+    return rows;
+  };
+
+  // Render keyboard
+  const renderKeyboard = () => {
+    const rows = [
+      ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
+      ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
+      ['ENTER', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', 'DEL']
+    ];
+
+    return rows.map((row, i) => (
+      <div key={i} className="flex gap-1 justify-center">
+        {row.map(key => {
+          const displayKey = key === 'DEL' ? 'BACKSPACE' : key;
+          const status = key.length === 1 ? getKeyboardLetterStatus(key) : 'unused';
+          let bgClass = 'bg-gray-600 hover:bg-gray-500';
+
+          if (status === 'correct') bgClass = 'bg-green-600 hover:bg-green-500';
+          else if (status === 'present') bgClass = 'bg-yellow-600 hover:bg-yellow-500';
+          else if (status === 'absent') bgClass = 'bg-gray-800 hover:bg-gray-700';
+
+          return (
+            <button
+              key={key}
+              onClick={() => handleKeyPress(displayKey)}
+              className={`${bgClass} text-white font-bold rounded py-3 ${
+                key.length > 1 ? 'px-2 sm:px-3 text-xs' : 'px-3 sm:px-4 text-sm'
+              } transition`}
+            >
+              {key === 'DEL' ? '⌫' : key}
+            </button>
+          );
+        })}
+      </div>
+    ));
+  };
+
+  // No active challenge
+  if (!activeChallenge) {
+    const completedChallenges = challenges.filter(c => c.status === 'completed');
+
+    return (
+      <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+        <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+          <Zap className="w-6 h-6" />
+          Survivor Wordle
+        </h2>
+        <p className="text-amber-200 text-center py-8">
+          No active challenge right now. Check back Monday for the next weekly challenge!
+        </p>
+
+        {completedChallenges.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-lg text-amber-300 font-semibold mb-3">Past Challenges</h3>
+            <div className="space-y-2">
+              {completedChallenges
+                .slice(-5)
+                .reverse()
+                .map(c => {
+                  const winner = players.find(p => p.id === c.winnerId);
+                  return (
+                    <div key={c.id} className="bg-amber-900/30 p-3 rounded border border-amber-600">
+                      <div className="flex justify-between items-center">
+                        <span className="text-white font-bold font-mono tracking-widest">{c.word}</span>
+                        <span className="text-amber-300 text-sm">
+                          {winner ? `Winner: ${winner.name}` : 'No winner'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Challenge expired but not yet finalized
+  if (isExpired && activeChallenge.status === 'active') {
+    return (
+      <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+        <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+          <Zap className="w-6 h-6" />
+          Challenge Ended
+        </h2>
+        <p className="text-amber-200 text-center py-8">
+          This week's challenge has ended. Results will be announced soon!
+        </p>
+      </div>
+    );
+  }
+
+  // Player hasn't started yet
+  if (!attempt) {
+    return (
+      <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+        <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+          <Zap className="w-6 h-6" />
+          Survivor Wordle Challenge
+        </h2>
+
+        <div className="text-center py-8">
+          <div className="mb-6">
+            <p className="text-amber-200 text-lg mb-2">
+              Guess the 5-letter Survivor-themed word in 6 tries or less!
+            </p>
+            <div className="flex justify-center gap-2 my-4">
+              <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold">T</div>
+              <div className="w-10 h-10 bg-yellow-600 rounded flex items-center justify-center text-white font-bold">R</div>
+              <div className="w-10 h-10 bg-gray-600 rounded flex items-center justify-center text-white font-bold">I</div>
+              <div className="w-10 h-10 bg-gray-600 rounded flex items-center justify-center text-white font-bold">B</div>
+              <div className="w-10 h-10 bg-green-600 rounded flex items-center justify-center text-white font-bold">E</div>
+            </div>
+            <p className="text-amber-400 text-sm">
+              <span className="text-green-400">Green</span> = correct spot,
+              <span className="text-yellow-400 ml-2">Yellow</span> = wrong spot,
+              <span className="text-gray-400 ml-2">Gray</span> = not in word
+            </p>
+          </div>
+
+          <p className="text-amber-300 text-sm mb-6">
+            Ends: {new Date(activeChallenge.weekEnd).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </p>
+
+          <button
+            onClick={handleStartPlaying}
+            className="px-8 py-4 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-lg font-bold text-xl hover:from-amber-500 hover:to-orange-500 transition"
+          >
+            Start Challenge
+          </button>
+
+          <p className="text-red-400 text-sm mt-4 font-semibold">
+            Warning: You only get ONE attempt! Choose wisely.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Game completed (won or lost)
+  if (attempt.status !== 'in_progress') {
+    const attemptsList = challengeAttempts
+      .filter(a => a.challengeId === activeChallenge.id && a.status !== 'in_progress')
+      .sort((a, b) => {
+        if (a.solved !== b.solved) return b.solved - a.solved;
+        if (a.guesses.length !== b.guesses.length) return a.guesses.length - b.guesses.length;
+        return a.timeSpent - b.timeSpent;
+      });
+
+    return (
+      <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+        <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+          <Zap className="w-6 h-6" />
+          {attempt.solved ? 'You Got It!' : 'Challenge Complete'}
+        </h2>
+
+        <div className="space-y-3 mb-6">
+          {renderBoard()}
+        </div>
+
+        <div className="text-center py-4">
+          {attempt.solved ? (
+            <>
+              <p className="text-green-400 text-xl font-bold mb-2">
+                Solved in {attempt.guesses.length} guess{attempt.guesses.length > 1 ? 'es' : ''}!
+              </p>
+              <p className="text-amber-300">
+                Time: {formatTime(attempt.timeSpent)}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-red-400 text-xl font-bold mb-2">
+                The word was: <span className="font-mono tracking-widest">{activeChallenge.word}</span>
+              </p>
+              <p className="text-amber-300">Better luck next week!</p>
+            </>
+          )}
+        </div>
+
+        {attemptsList.length > 0 && (
+          <div className="mt-6 bg-amber-900/30 p-4 rounded border border-amber-600">
+            <h3 className="text-lg text-amber-300 font-semibold mb-3">This Week's Results</h3>
+            <div className="space-y-2">
+              {attemptsList.map((a, i) => {
+                const player = players.find(p => p.id === a.playerId);
+                const isYou = a.playerId === currentUser.id;
+                return (
+                  <div key={a.id} className={`flex justify-between text-sm p-2 rounded ${isYou ? 'bg-amber-800/50' : ''}`}>
+                    <span className={`flex items-center gap-2 ${a.solved ? 'text-green-400' : 'text-gray-400'}`}>
+                      {i === 0 && a.solved && <Trophy className="w-4 h-4 text-yellow-400" />}
+                      {player?.name || 'Unknown'}
+                      {isYou && <span className="text-amber-400 text-xs">(You)</span>}
+                    </span>
+                    <span className="text-amber-300">
+                      {a.solved ? `${a.guesses.length} guesses, ${formatTime(a.timeSpent)}` : 'Did not solve'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Active game
+  return (
+    <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl sm:text-2xl font-bold text-amber-400 flex items-center gap-2">
+          <Zap className="w-5 h-5 sm:w-6 sm:h-6" />
+          Survivor Wordle
+        </h2>
+        <div className="flex items-center gap-2 text-amber-300">
+          <Clock className="w-4 h-4" />
+          <span className="text-sm sm:text-base">{formatTime(displayTime)}</span>
+        </div>
+      </div>
+
+      <div className="space-y-2 sm:space-y-3 mb-6">
+        {renderBoard()}
+      </div>
+
+      <div className="space-y-1 sm:space-y-2">
+        {renderKeyboard()}
+      </div>
+
+      <p className="text-center text-amber-400 text-sm mt-4">
+        Guesses remaining: {6 - attempt.guesses.length}
+      </p>
     </div>
   );
 }
