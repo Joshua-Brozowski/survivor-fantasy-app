@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image } from 'lucide-react';
+import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye } from 'lucide-react';
 import { storage } from './db.js';
 
 // Survivor 48 Cast
@@ -137,6 +137,18 @@ export default function SurvivorFantasyApp() {
   const [previousView, setPreviousView] = useState('home');
 
   // Check for remembered login on mount
+  // Helper function to check if current user is a guest
+  const isGuestMode = () => currentUser?.isGuest === true;
+
+  // Helper function for guest-safe storage writes
+  // Returns fake success for guests, actually saves for real users
+  const guestSafeSet = async (key, value) => {
+    if (isGuestMode()) {
+      return { key, value }; // Fake success - don't actually save
+    }
+    return storage.set(key, value);
+  };
+
   useEffect(() => {
     const remembered = localStorage.getItem('survivorFantasyUser');
     if (remembered) {
@@ -363,6 +375,16 @@ export default function SurvivorFantasyApp() {
     }
   };
 
+  const handleGuestLogin = () => {
+    const guestUser = {
+      id: 'guest',
+      name: 'Guest',
+      isAdmin: true, // Allow viewing admin panel (read-only)
+      isGuest: true  // Flag to prevent writes
+    };
+    setCurrentUser(guestUser);
+  };
+
   const handleFindPlayer = async () => {
     if (!recoveryForm.name) {
       alert('Please enter your name');
@@ -582,8 +604,8 @@ export default function SurvivorFantasyApp() {
     
     const updatedPicks = [...picks.filter(p => !(p.playerId === currentUser.id && p.type === 'instinct')), newPick];
     setPicks(updatedPicks);
-    await storage.set('picks', JSON.stringify(updatedPicks));
-    alert('Instinct pick submitted!');
+    await guestSafeSet('picks', JSON.stringify(updatedPicks));
+    alert(isGuestMode() ? 'Instinct pick submitted! (Demo mode - not saved)' : 'Instinct pick submitted!');
   };
 
   const submitFinalPick = async (contestantId) => {
@@ -594,11 +616,11 @@ export default function SurvivorFantasyApp() {
       type: 'final',
       timestamp: Date.now()
     };
-    
+
     const updatedPicks = [...picks.filter(p => !(p.playerId === currentUser.id && p.type === 'final')), newPick];
     setPicks(updatedPicks);
-    await storage.set('picks', JSON.stringify(updatedPicks));
-    alert('Final pick submitted!');
+    await guestSafeSet('picks', JSON.stringify(updatedPicks));
+    alert(isGuestMode() ? 'Final pick submitted! (Demo mode - not saved)' : 'Final pick submitted!');
   };
 
   const getInstinctPicksStatus = () => {
@@ -825,19 +847,22 @@ export default function SurvivorFantasyApp() {
 
     const updated = [...playerAdvantages, newPlayerAdvantage];
     setPlayerAdvantages(updated);
-    await storage.set('playerAdvantages', JSON.stringify(updated));
+    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
-    // Deduct points
-    await updatePlayerScore(currentUser.id, -advantage.cost, `Purchased: ${advantage.name}`, 'advantage');
+    // Skip point deduction and notifications for guest mode
+    if (!isGuestMode()) {
+      // Deduct points
+      await updatePlayerScore(currentUser.id, -advantage.cost, `Purchased: ${advantage.name}`, 'advantage');
 
-    // Send anonymous notification to all players
-    await addNotification({
-      type: 'advantage_purchased',
-      message: `An advantage has been purchased! One less available in the shop.`,
-      targetPlayerId: null // Broadcast to all
-    });
+      // Send anonymous notification to all players
+      await addNotification({
+        type: 'advantage_purchased',
+        message: `An advantage has been purchased! One less available in the shop.`,
+        targetPlayerId: null // Broadcast to all
+      });
+    }
 
-    alert(`Successfully purchased ${advantage.name}!`);
+    alert(isGuestMode() ? `Successfully purchased ${advantage.name}! (Demo mode - not saved)` : `Successfully purchased ${advantage.name}!`);
   };
 
   const useAdvantage = async (playerAdvantageId, targetData = null) => {
@@ -861,23 +886,26 @@ export default function SurvivorFantasyApp() {
         : a
     );
     setPlayerAdvantages(updated);
-    await storage.set('playerAdvantages', JSON.stringify(updated));
+    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
-    // Send anonymous notification that advantage was played and returned to game
-    await addNotification({
-      type: 'advantage_played',
-      message: `An advantage has been played and returned to the game!`,
-      targetPlayerId: null // Broadcast to all
-    });
-
-    // Add specific notification if there's a target player (for Vote Steal, Knowledge is Power)
-    if (targetData?.targetPlayerId && targetData?.notifyTarget) {
-      const targetPlayer = players.find(p => p.id === targetData.targetPlayerId);
+    // Skip notifications for guest mode
+    if (!isGuestMode()) {
+      // Send anonymous notification that advantage was played and returned to game
       await addNotification({
-        type: 'advantage_used_on_you',
-        message: targetData.targetMessage || `An advantage was used targeting you!`,
-        targetPlayerId: targetData.targetPlayerId
+        type: 'advantage_played',
+        message: `An advantage has been played and returned to the game!`,
+        targetPlayerId: null // Broadcast to all
       });
+
+      // Add specific notification if there's a target player (for Vote Steal, Knowledge is Power)
+      if (targetData?.targetPlayerId && targetData?.notifyTarget) {
+        const targetPlayer = players.find(p => p.id === targetData.targetPlayerId);
+        await addNotification({
+          type: 'advantage_used_on_you',
+          message: targetData.targetMessage || `An advantage was used targeting you!`,
+          targetPlayerId: targetData.targetPlayerId
+        });
+      }
     }
 
     return true;
@@ -910,24 +938,30 @@ export default function SurvivorFantasyApp() {
         return a;
       });
       setPlayerAdvantages(updated);
-      await storage.set('playerAdvantages', JSON.stringify(updated));
+      await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
-      // Notify the target that their advantage was stolen
       const targetPlayer = players.find(p => p.id === targetPlayerId);
-      await addNotification({
-        type: 'advantage_stolen',
-        message: `Your ${targetAdvantage.name} was stolen by another player using Knowledge is Power!`,
-        targetPlayerId: targetPlayerId
-      });
 
-      // Anonymous broadcast
-      await addNotification({
-        type: 'advantage_played',
-        message: `An advantage has been played and returned to the game!`,
-        targetPlayerId: null
-      });
+      // Skip notifications for guest mode
+      if (!isGuestMode()) {
+        // Notify the target that their advantage was stolen
+        await addNotification({
+          type: 'advantage_stolen',
+          message: `Your ${targetAdvantage.name} was stolen by another player using Knowledge is Power!`,
+          targetPlayerId: targetPlayerId
+        });
 
-      alert(`Success! You stole ${targetAdvantage.name} from ${targetPlayer?.name || 'another player'}!`);
+        // Anonymous broadcast
+        await addNotification({
+          type: 'advantage_played',
+          message: `An advantage has been played and returned to the game!`,
+          targetPlayerId: null
+        });
+      }
+
+      alert(isGuestMode()
+        ? `Success! You stole ${targetAdvantage.name} from ${targetPlayer?.name || 'another player'}! (Demo mode - not saved)`
+        : `Success! You stole ${targetAdvantage.name} from ${targetPlayer?.name || 'another player'}!`);
     } else {
       // Target has no advantage - wasted
       const updated = playerAdvantages.map(a => {
@@ -937,17 +971,22 @@ export default function SurvivorFantasyApp() {
         return a;
       });
       setPlayerAdvantages(updated);
-      await storage.set('playerAdvantages', JSON.stringify(updated));
+      await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
-      // Anonymous broadcast
-      await addNotification({
-        type: 'advantage_played',
-        message: `An advantage has been played and returned to the game!`,
-        targetPlayerId: null
-      });
+      // Skip notifications for guest mode
+      if (!isGuestMode()) {
+        // Anonymous broadcast
+        await addNotification({
+          type: 'advantage_played',
+          message: `An advantage has been played and returned to the game!`,
+          targetPlayerId: null
+        });
+      }
 
       const targetPlayer = players.find(p => p.id === targetPlayerId);
-      alert(`${targetPlayer?.name || 'That player'} had no advantage to steal. Knowledge is Power was wasted and returned to the game.`);
+      alert(isGuestMode()
+        ? `${targetPlayer?.name || 'That player'} had no advantage to steal. Knowledge is Power was wasted. (Demo mode - not saved)`
+        : `${targetPlayer?.name || 'That player'} had no advantage to steal. Knowledge is Power was wasted and returned to the game.`);
     }
   };
 
@@ -974,7 +1013,7 @@ export default function SurvivorFantasyApp() {
       return a;
     });
     setPlayerAdvantages(updated);
-    await storage.set('playerAdvantages', JSON.stringify(updated));
+    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
     // Find current user's submission for this questionnaire to get their QOTW answer ID
     const mySubmission = submissions.find(s => s.questionnaireId === questionnaireId && s.playerId === currentUser.id);
@@ -993,25 +1032,31 @@ export default function SurvivorFantasyApp() {
 
       const updatedVotes = [...qotWVotes, stolenVote];
       setQotWVotes(updatedVotes);
-      await storage.set('qotWVotes', JSON.stringify(updatedVotes));
+      await guestSafeSet('qotWVotes', JSON.stringify(updatedVotes));
     }
 
-    // Notify target that their vote was stolen
     const targetPlayer = players.find(p => p.id === targetPlayerId);
-    await addNotification({
-      type: 'vote_stolen',
-      message: `Your QOTW vote was stolen! You cannot vote on this week's Question of the Week.`,
-      targetPlayerId: targetPlayerId
-    });
 
-    // Anonymous broadcast
-    await addNotification({
-      type: 'advantage_played',
-      message: `An advantage has been played and returned to the game!`,
-      targetPlayerId: null
-    });
+    // Skip notifications for guest mode
+    if (!isGuestMode()) {
+      // Notify target that their vote was stolen
+      await addNotification({
+        type: 'vote_stolen',
+        message: `Your QOTW vote was stolen! You cannot vote on this week's Question of the Week.`,
+        targetPlayerId: targetPlayerId
+      });
 
-    alert(`Vote Steal activated! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you!`);
+      // Anonymous broadcast
+      await addNotification({
+        type: 'advantage_played',
+        message: `An advantage has been played and returned to the game!`,
+        targetPlayerId: null
+      });
+    }
+
+    alert(isGuestMode()
+      ? `Vote Steal activated! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you! (Demo mode - not saved)`
+      : `Vote Steal activated! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you!`);
   };
 
   // Activate Extra Vote - allows additional QOTW vote
@@ -1036,16 +1081,21 @@ export default function SurvivorFantasyApp() {
       return a;
     });
     setPlayerAdvantages(updated);
-    await storage.set('playerAdvantages', JSON.stringify(updated));
+    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
-    // Anonymous broadcast
-    await addNotification({
-      type: 'advantage_played',
-      message: `An advantage has been played and returned to the game!`,
-      targetPlayerId: null
-    });
+    // Skip notifications for guest mode
+    if (!isGuestMode()) {
+      // Anonymous broadcast
+      await addNotification({
+        type: 'advantage_played',
+        message: `An advantage has been played and returned to the game!`,
+        targetPlayerId: null
+      });
+    }
 
-    alert(`Extra Vote activated! You can now cast an additional vote in QOTW voting.`);
+    alert(isGuestMode()
+      ? `Extra Vote activated! You can now cast an additional vote in QOTW voting. (Demo mode - not saved)`
+      : `Extra Vote activated! You can now cast an additional vote in QOTW voting.`);
     return true;
   };
 
@@ -1071,17 +1121,22 @@ export default function SurvivorFantasyApp() {
       return a;
     });
     setPlayerAdvantages(updated);
-    await storage.set('playerAdvantages', JSON.stringify(updated));
+    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
-    // Anonymous broadcast
-    await addNotification({
-      type: 'advantage_played',
-      message: `An advantage has been played and returned to the game!`,
-      targetPlayerId: null
-    });
+    // Skip notifications for guest mode
+    if (!isGuestMode()) {
+      // Anonymous broadcast
+      await addNotification({
+        type: 'advantage_played',
+        message: `An advantage has been played and returned to the game!`,
+        targetPlayerId: null
+      });
+    }
 
     const advantageName = myAdvantage.name;
-    alert(`${advantageName} activated! The effect will apply when this week's scores are released.`);
+    alert(isGuestMode()
+      ? `${advantageName} activated! The effect will apply when this week's scores are released. (Demo mode - not saved)`
+      : `${advantageName} activated! The effect will apply when this week's scores are released.`);
     return true;
   };
 
@@ -1246,7 +1301,7 @@ export default function SurvivorFantasyApp() {
           : a
       );
       setChallengeAttempts(updated);
-      await storage.set('challengeAttempts', JSON.stringify(updated));
+      await guestSafeSet('challengeAttempts', JSON.stringify(updated));
       return existing;
     }
 
@@ -1266,7 +1321,7 @@ export default function SurvivorFantasyApp() {
 
     const updated = [...challengeAttempts, newAttempt];
     setChallengeAttempts(updated);
-    await storage.set('challengeAttempts', JSON.stringify(updated));
+    await guestSafeSet('challengeAttempts', JSON.stringify(updated));
     return newAttempt;
   };
 
@@ -1297,7 +1352,7 @@ export default function SurvivorFantasyApp() {
       a.id === attemptId ? updatedAttempt : a
     );
     setChallengeAttempts(updated);
-    await storage.set('challengeAttempts', JSON.stringify(updated));
+    await guestSafeSet('challengeAttempts', JSON.stringify(updated));
 
     return updatedAttempt;
   };
@@ -1317,7 +1372,7 @@ export default function SurvivorFantasyApp() {
         : a
     );
     setChallengeAttempts(updated);
-    await storage.set('challengeAttempts', JSON.stringify(updated));
+    await guestSafeSet('challengeAttempts', JSON.stringify(updated));
   };
 
   // Admin: manually create challenge
@@ -1417,6 +1472,21 @@ export default function SurvivorFantasyApp() {
                 className="w-full text-amber-300 text-sm hover:text-amber-200 transition"
               >
                 Forgot Password?
+              </button>
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-amber-600/50"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-black/50 text-amber-400/60">or</span>
+                </div>
+              </div>
+              <button
+                onClick={handleGuestLogin}
+                type="button"
+                className="w-full bg-gradient-to-r from-gray-600 to-gray-700 text-white py-3 rounded font-semibold hover:from-gray-500 hover:to-gray-600 transition border border-gray-500"
+              >
+                Demo / Guest
               </button>
               <p className="text-amber-400/60 text-xs text-center mt-4">
                 Default password: password123
@@ -2281,6 +2351,7 @@ export default function SurvivorFantasyApp() {
             challengeAttempts={challengeAttempts}
             adminCreateChallenge={adminCreateChallenge}
             adminEndChallenge={adminEndChallenge}
+            isGuestMode={isGuestMode()}
           />
         )}
 
@@ -2908,8 +2979,17 @@ export default function SurvivorFantasyApp() {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge }) {
+function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode }) {
   const [adminView, setAdminView] = useState('main');
+
+  // Helper to check guest mode and show alert
+  const requireRealUser = (actionName) => {
+    if (isGuestMode) {
+      alert(`Demo mode: ${actionName} is disabled. Log in as a real user to make changes.`);
+      return false;
+    }
+    return true;
+  };
   const [newQ, setNewQ] = useState({
     title: '',
     episodeNumber: episodes.length + 1,
@@ -2951,6 +3031,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   };
 
   const createQuestionnaire = async () => {
+    if (!requireRealUser('Create Questionnaire')) return;
     if (!newQ.title || newQ.questions.length === 0 || !newQ.qotw.text) {
       alert('Please fill in all fields!');
       return;
@@ -3034,6 +3115,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   };
 
   const releaseScores = async () => {
+    if (!requireRealUser('Release Scores')) return;
     const scores = calculateScores(scoringQ, correctAnswers);
 
     const qotwVotesForThis = qotWVotes.filter(v => v.questionnaireId === scoringQ.id);
@@ -3137,9 +3219,10 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   };
 
   const eliminateContestant = async (contestantId) => {
+    if (!requireRealUser('Eliminate Contestant')) return;
     if (!window.confirm('Mark this contestant as eliminated?')) return;
-    
-    const updated = contestants.map(c => 
+
+    const updated = contestants.map(c =>
       c.id === contestantId ? { ...c, eliminated: true } : c
     );
     setContestants(updated);
@@ -3150,6 +3233,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   const GAME_PHASES = ['instinct-picks', 'early-season', 'final-picks', 'mid-season', 'finale'];
 
   const advancePhase = async () => {
+    if (!requireRealUser('Advance Phase')) return;
     const currentIndex = GAME_PHASES.indexOf(gamePhase);
     if (currentIndex < GAME_PHASES.length - 1) {
       const newPhase = GAME_PHASES[currentIndex + 1];
@@ -3171,6 +3255,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   };
 
   const regressPhase = async () => {
+    if (!requireRealUser('Regress Phase')) return;
     const currentIndex = GAME_PHASES.indexOf(gamePhase);
     if (currentIndex > 0) {
       const newPhase = GAME_PHASES[currentIndex - 1];
@@ -3186,6 +3271,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   };
 
   const setPhaseDirectly = async (newPhase) => {
+    if (!requireRealUser('Change Phase')) return;
     if (!window.confirm(`Change phase to "${newPhase.replace('-', ' ')}"?`)) {
       return;
     }
@@ -4711,6 +4797,19 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   return (
     <div className="space-y-6">
+      {/* Guest Mode Banner */}
+      {isGuestMode && (
+        <div className="bg-gray-800 border-2 border-gray-500 p-4 rounded-lg flex items-center gap-3">
+          <div className="w-10 h-10 bg-gray-600 rounded-full flex items-center justify-center">
+            <Eye className="w-5 h-5 text-gray-300" />
+          </div>
+          <div>
+            <h3 className="text-gray-200 font-bold">Demo Mode - Read Only</h3>
+            <p className="text-gray-400 text-sm">You can view the admin panel but cannot make changes. Log in as a real admin to manage the game.</p>
+          </div>
+        </div>
+      )}
+
       {/* Season Header */}
       <div className="bg-gradient-to-r from-amber-900/60 to-orange-900/60 p-4 rounded-lg border-2 border-amber-600 flex items-center justify-between">
         <div>
@@ -5097,15 +5196,16 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
     const updatedSubmissions = [...submissions.filter(s => !(s.questionnaireId === activeQ.id && s.playerId === currentUser.id)), newSubmission];
     setSubmissions(updatedSubmissions);
-    await storage.set('submissions', JSON.stringify(updatedSubmissions));
+    await guestSafeSet('submissions', JSON.stringify(updatedSubmissions));
 
     if (penalty > 0) {
       const updatedPenalties = { ...latePenalties, [currentUser.id]: penalty };
       setLatePenalties(updatedPenalties);
-      await storage.set('latePenalties', JSON.stringify(updatedPenalties));
+      await guestSafeSet('latePenalties', JSON.stringify(updatedPenalties));
     }
 
-    alert(isLate ? `Submitted! Late penalty applied: -${penalty} points` : 'Submitted successfully!');
+    const demoSuffix = isGuestMode() ? ' (Demo mode - not saved)' : '';
+    alert(isLate ? `Submitted! Late penalty applied: -${penalty} points${demoSuffix}` : `Submitted successfully!${demoSuffix}`);
     setAnswers({});
   };
 
@@ -5120,8 +5220,8 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
     const updatedVotes = [...qotWVotes.filter(v => !(v.questionnaireId === activeQ.id && v.voterId === currentUser.id)), newVote];
     setQotWVotes(updatedVotes);
-    await storage.set('qotWVotes', JSON.stringify(updatedVotes));
-    alert('Vote submitted!');
+    await guestSafeSet('qotWVotes', JSON.stringify(updatedVotes));
+    alert(isGuestMode() ? 'Vote submitted! (Demo mode - not saved)' : 'Vote submitted!');
     setVotingFor(null);
   };
 
