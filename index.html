@@ -2,10 +2,36 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Survivor Fantasy League</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+      /* Prevent horizontal scroll and set background */
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
+      html {
+        overflow-x: hidden;
+        width: 100%;
+        max-width: 100vw;
+        background: #78350f; /* amber-900 fallback */
+      }
+      body {
+        overflow-x: hidden;
+        width: 100%;
+        max-width: 100vw;
+        margin: 0;
+        padding: 0;
+        background: #78350f; /* amber-900 fallback */
+        -webkit-overflow-scrolling: touch;
+      }
+      #root {
+        overflow-x: hidden;
+        width: 100%;
+        max-width: 100vw;
+        min-height: 100vh;
+      }
+
       @keyframes slideDown {
         from {
           opacity: 0;
@@ -26,6 +52,14 @@
       }
       .notification-banner {
         animation: slideDown 0.3s ease-out;
+      }
+      /* Hide scrollbar for navigation on mobile */
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
       }
     </style>
   </head>

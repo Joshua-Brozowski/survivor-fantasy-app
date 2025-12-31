@@ -1419,11 +1419,11 @@ export default function SurvivorFantasyApp() {
   // Login Screen
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900 flex items-center justify-center p-4">
-        <div className="bg-black/60 backdrop-blur-sm p-8 rounded-lg shadow-2xl max-w-md w-full border-2 border-amber-600">
-          <div className="flex items-center justify-center mb-6">
-            <Flame className="w-12 h-12 text-orange-500 mr-3" />
-            <h1 className="text-3xl font-bold text-amber-400">Survivor Fantasy</h1>
+      <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900 flex items-center justify-center p-3 sm:p-4 overflow-x-hidden w-full max-w-full">
+        <div className="bg-black/60 backdrop-blur-sm p-5 sm:p-8 rounded-lg shadow-2xl max-w-md w-full border-2 border-amber-600 mx-auto">
+          <div className="flex items-center justify-center mb-4 sm:mb-6">
+            <Flame className="w-10 h-10 sm:w-12 sm:h-12 text-orange-500 mr-2 sm:mr-3" />
+            <h1 className="text-2xl sm:text-3xl font-bold text-amber-400">Survivor Fantasy</h1>
           </div>
 
           {loginView === 'login' ? (
@@ -1618,93 +1618,113 @@ export default function SurvivorFantasyApp() {
   }).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900">
+    <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900 overflow-x-hidden w-full max-w-full">
       {/* Header */}
       <header className="bg-black/60 backdrop-blur-sm border-b-2 border-amber-600 relative z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Flame className="w-8 h-8 text-orange-500" />
-            <div>
-              <h1 className="text-2xl font-bold text-amber-400">Survivor Fantasy</h1>
-              <p className="text-amber-200 text-sm">Season 48</p>
+        <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4">
+          {/* Mobile: Two rows, Desktop: Single row */}
+          <div className="flex items-center justify-between">
+            {/* Logo and Title */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              <Flame className="w-6 h-6 sm:w-8 sm:h-8 text-orange-500 flex-shrink-0" />
+              <div>
+                <h1 className="text-lg sm:text-2xl font-bold text-amber-400">Survivor Fantasy</h1>
+                <p className="text-amber-200 text-xs sm:text-sm">Season 48</p>
+              </div>
+            </div>
+
+            {/* Right side: User info and actions */}
+            <div className="flex items-center gap-2 sm:gap-4">
+              {/* User info - compact on mobile, fuller on desktop */}
+              <div className="text-right hidden min-[400px]:block">
+                <p className="text-amber-200 text-xs sm:text-sm hidden sm:block">Welcome back,</p>
+                <p className="text-white font-semibold text-sm sm:text-base truncate max-w-[80px] sm:max-w-none">{currentUser.name}</p>
+                <p className="text-amber-400 text-xs sm:text-sm font-semibold">{myTotalPoints} pts</p>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-1 sm:gap-2">
+                {/* Notifications */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowNotifications(!showNotifications)}
+                    className="p-1.5 sm:p-2 hover:bg-white/10 rounded-full transition relative"
+                  >
+                    <Bell className="w-5 h-5 sm:w-6 sm:h-6 text-amber-300" />
+                    {unreadNotifications.length > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center text-[10px] sm:text-xs">
+                        {unreadNotifications.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {showNotifications && (
+                    <div className="absolute right-0 top-10 sm:top-12 w-72 sm:w-80 bg-black/95 border-2 border-amber-600 rounded-lg shadow-xl z-50 max-h-80 sm:max-h-96 overflow-y-auto">
+                      <div className="p-2 sm:p-3 border-b border-amber-600 flex items-center justify-between">
+                        <h3 className="text-amber-400 font-semibold text-sm sm:text-base">Notifications</h3>
+                        {unreadNotifications.length > 0 && (
+                          <button
+                            onClick={markAllNotificationsRead}
+                            className="text-xs text-amber-300 hover:text-amber-200"
+                          >
+                            Mark all read
+                          </button>
+                        )}
+                      </div>
+                      <div className="divide-y divide-amber-600/30">
+                        {notifications
+                          .filter(n => n.targetPlayerId === currentUser.id || !n.targetPlayerId)
+                          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                          .slice(0, 10)
+                          .map(notif => (
+                            <div
+                              key={notif.id}
+                              onClick={() => markNotificationRead(notif.id)}
+                              className={`p-2 sm:p-3 cursor-pointer transition ${
+                                notif.read ? 'bg-transparent opacity-60' : 'bg-amber-900/30'
+                              } hover:bg-amber-900/50`}
+                            >
+                              <p className="text-white text-xs sm:text-sm">{notif.message}</p>
+                              <p className="text-amber-400 text-xs mt-1">
+                                {new Date(notif.createdAt).toLocaleDateString()}
+                              </p>
+                            </div>
+                          ))}
+                        {notifications.filter(n => n.targetPlayerId === currentUser.id || !n.targetPlayerId).length === 0 && (
+                          <div className="p-3 sm:p-4 text-center text-amber-300 text-xs sm:text-sm">
+                            No notifications yet
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {currentUser.isAdmin && (
+                  <Crown className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-400" title="Admin (Jeff)" />
+                )}
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-1.5 sm:p-2 hover:bg-white/10 rounded-full transition"
+                  title="Settings"
+                >
+                  <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="p-1.5 sm:p-2 hover:bg-white/10 rounded-full transition"
+                  title="Logout"
+                >
+                  <LogOut className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+                </button>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-amber-200 text-sm">Welcome back,</p>
-              <p className="text-white font-semibold">{currentUser.name}</p>
-              <p className="text-amber-400 text-sm font-semibold">{myTotalPoints} points</p>
-            </div>
-            <div className="relative">
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="p-2 hover:bg-white/10 rounded-full transition relative"
-              >
-                <Bell className="w-6 h-6 text-amber-300" />
-                {unreadNotifications.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                    {unreadNotifications.length}
-                  </span>
-                )}
-              </button>
 
-              {showNotifications && (
-                <div className="absolute right-0 top-12 w-80 bg-black/95 border-2 border-amber-600 rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto">
-                  <div className="p-3 border-b border-amber-600 flex items-center justify-between">
-                    <h3 className="text-amber-400 font-semibold">Notifications</h3>
-                    {unreadNotifications.length > 0 && (
-                      <button
-                        onClick={markAllNotificationsRead}
-                        className="text-xs text-amber-300 hover:text-amber-200"
-                      >
-                        Mark all read
-                      </button>
-                    )}
-                  </div>
-                  <div className="divide-y divide-amber-600/30">
-                    {notifications
-                      .filter(n => n.targetPlayerId === currentUser.id || !n.targetPlayerId)
-                      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-                      .slice(0, 10)
-                      .map(notif => (
-                        <div
-                          key={notif.id}
-                          onClick={() => markNotificationRead(notif.id)}
-                          className={`p-3 cursor-pointer transition ${
-                            notif.read ? 'bg-transparent opacity-60' : 'bg-amber-900/30'
-                          } hover:bg-amber-900/50`}
-                        >
-                          <p className="text-white text-sm">{notif.message}</p>
-                          <p className="text-amber-400 text-xs mt-1">
-                            {new Date(notif.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                      ))}
-                    {notifications.filter(n => n.targetPlayerId === currentUser.id || !n.targetPlayerId).length === 0 && (
-                      <div className="p-4 text-center text-amber-300 text-sm">
-                        No notifications yet
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            {currentUser.isAdmin && (
-              <Crown className="w-6 h-6 text-yellow-400" title="Admin (Jeff)" />
-            )}
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 hover:bg-white/10 rounded-full transition"
-              title="Settings"
-            >
-              <Settings className="w-5 h-5 text-amber-300" />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="p-2 hover:bg-white/10 rounded-full transition"
-            >
-              <LogOut className="w-5 h-5 text-amber-300" />
-            </button>
+          {/* Mobile-only: User name and points shown below header on very small screens */}
+          <div className="min-[400px]:hidden flex items-center justify-between mt-2 pt-2 border-t border-amber-600/30">
+            <p className="text-white font-semibold text-sm">{currentUser.name}</p>
+            <p className="text-amber-400 text-sm font-semibold">{myTotalPoints} points</p>
           </div>
         </div>
       </header>
@@ -1857,39 +1877,39 @@ export default function SurvivorFantasyApp() {
 
       {/* Navigation */}
       <nav className="bg-black/40 backdrop-blur-sm border-b border-amber-600/50">
-        <div className="container mx-auto px-4">
-          <div className="flex gap-1 overflow-x-auto">
+        <div className="container mx-auto px-2 sm:px-4">
+          <div className="flex gap-0 sm:gap-1 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
             {[
               { id: 'home', label: 'Home', icon: Home },
               { id: 'picks', label: 'Picks', icon: Target },
-              { id: 'questionnaire', label: 'Questionnaire', icon: FileText },
+              { id: 'questionnaire', label: 'Quiz', icon: FileText },
               { id: 'challenge', label: 'Wordle', icon: Zap },
-              { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
-              { id: 'advantages', label: 'Advantages', icon: Gift }
+              { id: 'leaderboard', label: 'Board', icon: Trophy },
+              { id: 'advantages', label: 'Perks', icon: Gift }
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => { setCurrentView(id); setShowNotifications(false); }}
-                className={`px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-2 ${
+                className={`px-3 sm:px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base ${
                   currentView === id
                     ? 'text-amber-400 border-b-2 border-amber-400'
                     : 'text-amber-200 hover:text-amber-300'
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span className="hidden sm:inline">{label}</span>
               </button>
             ))}
             {currentUser.isAdmin && (
               <button
                 onClick={() => { setCurrentView('admin'); setShowNotifications(false); }}
-                className={`px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-2 ${
+                className={`px-3 sm:px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base ${
                   currentView === 'admin'
                     ? 'text-yellow-400 border-b-2 border-yellow-400'
                     : 'text-yellow-300 hover:text-yellow-200'
                 }`}
               >
-                <Crown className="w-4 h-4" />
+                <Crown className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span className="hidden sm:inline">Jeff's Controls</span>
               </button>
             )}
@@ -1898,7 +1918,7 @@ export default function SurvivorFantasyApp() {
       </nav>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
         {currentView === 'picks' && (
           <div className="space-y-6">
             {/* Instinct Picks Section */}
