@@ -102,6 +102,7 @@ export default function SurvivorFantasyApp() {
   const [players, setPlayers] = useState([]);
   const [contestants, setContestants] = useState([]);
   const [picks, setPicks] = useState([]);
+  const [picksLocked, setPicksLocked] = useState({ instinct: false, final: false });
   const [gamePhase, setGamePhase] = useState('instinct-picks');
   const [currentView, setCurrentView] = useState('home');
   const [questionnaires, setQuestionnaires] = useState([]);
@@ -231,6 +232,7 @@ export default function SurvivorFantasyApp() {
       const playersData = await storage.get('players');
       const contestantsData = await storage.get('contestants');
       const picksData = await storage.get('picks');
+      const picksLockedData = await storage.get('picksLocked');
       const gamePhaseData = await storage.get('gamePhase');
       const questionnairesData = await storage.get('questionnaires');
       const submissionsData = await storage.get('submissions');
@@ -254,6 +256,7 @@ export default function SurvivorFantasyApp() {
       setChallenges(challengesData ? JSON.parse(challengesData.value) : []);
       setChallengeAttempts(challengeAttemptsData ? JSON.parse(challengeAttemptsData.value) : []);
       setPicks(picksData ? JSON.parse(picksData.value) : []);
+      setPicksLocked(picksLockedData ? JSON.parse(picksLockedData.value) : { instinct: false, final: false });
       setGamePhase(gamePhaseData ? gamePhaseData.value : 'instinct-picks');
       setQuestionnaires(questionnairesData ? JSON.parse(questionnairesData.value) : []);
       setSubmissions(submissionsData ? JSON.parse(submissionsData.value) : []);
@@ -553,6 +556,7 @@ export default function SurvivorFantasyApp() {
     setCurrentSeason(newSeasonNumber);
     setContestants(defaultCast);
     setPicks([]);
+    setPicksLocked({ instinct: false, final: false });
     setQuestionnaires([]);
     setSubmissions([]);
     setQotWVotes([]);
@@ -566,6 +570,7 @@ export default function SurvivorFantasyApp() {
     await storage.set('currentSeason', newSeasonNumber.toString());
     await storage.set('contestants', JSON.stringify(defaultCast));
     await storage.set('picks', JSON.stringify([]));
+    await storage.set('picksLocked', JSON.stringify({ instinct: false, final: false }));
     await storage.set('questionnaires', JSON.stringify([]));
     await storage.set('submissions', JSON.stringify([]));
     await storage.set('qotWVotes', JSON.stringify([]));
@@ -621,6 +626,18 @@ export default function SurvivorFantasyApp() {
       submitted: playersWithPicks.size,
       allSubmitted: playersWithPicks.size === players.length
     };
+  };
+
+  const togglePicksLock = async (pickType) => {
+    if (!requireRealUser('Lock/Unlock Picks')) return;
+
+    const newLocked = { ...picksLocked, [pickType]: !picksLocked[pickType] };
+    setPicksLocked(newLocked);
+    await storage.set('picksLocked', JSON.stringify(newLocked));
+
+    const action = newLocked[pickType] ? 'locked' : 'unlocked';
+    const pickName = pickType === 'instinct' ? 'Instinct' : 'Final';
+    alert(`${pickName} picks have been ${action}!`);
   };
 
   const getActiveContestants = () => {
@@ -1939,56 +1956,86 @@ export default function SurvivorFantasyApp() {
 
               {gamePhase === 'instinct-picks' ? (
                 <>
-                  {myInstinctPick ? (
-                    <div className="bg-gradient-to-r from-green-900/40 to-emerald-900/40 p-6 rounded-lg border-2 border-green-600">
-                      <p className="text-green-300 font-semibold mb-3">Your Instinct Pick:</p>
-                      <div className="flex items-center gap-4">
-                        <img 
-                          src={contestants.find(c => c.id === myInstinctPick.contestantId)?.image} 
-                          alt=""
-                          className="w-24 h-24 rounded-lg object-cover border-4 border-green-500"
-                        />
-                        <div>
-                          <p className="text-white font-bold text-2xl">
-                            {contestants.find(c => c.id === myInstinctPick.contestantId)?.name}
-                          </p>
-                          <p className="text-green-300 text-lg">
-                            {contestants.find(c => c.id === myInstinctPick.contestantId)?.tribe} Tribe
-                          </p>
-                          <p className="text-green-400 text-sm mt-2">
-                            ✓ Locked in and ready for the season!
-                          </p>
+                  {picksLocked.instinct ? (
+                    // Picks are LOCKED
+                    myInstinctPick ? (
+                      <div className="bg-gradient-to-r from-green-900/40 to-emerald-900/40 p-6 rounded-lg border-2 border-green-600">
+                        <p className="text-green-300 font-semibold mb-3">Your Instinct Pick:</p>
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={contestants.find(c => c.id === myInstinctPick.contestantId)?.image}
+                            alt=""
+                            className="w-24 h-24 rounded-lg object-cover border-4 border-green-500"
+                          />
+                          <div>
+                            <p className="text-white font-bold text-2xl">
+                              {contestants.find(c => c.id === myInstinctPick.contestantId)?.name}
+                            </p>
+                            <p className="text-green-300 text-lg">
+                              {contestants.find(c => c.id === myInstinctPick.contestantId)?.tribe} Tribe
+                            </p>
+                            <p className="text-green-400 text-sm mt-2">
+                              🔒 Locked in and ready for the season!
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="bg-gray-900/40 p-6 rounded-lg border border-gray-600 text-center">
+                        <p className="text-gray-400">Instinct picks are now locked. You did not submit a pick.</p>
+                      </div>
+                    )
                   ) : (
+                    // Picks are UNLOCKED - can change
                     <>
+                      {myInstinctPick && (
+                        <div className="bg-gradient-to-r from-amber-900/40 to-orange-900/40 p-4 rounded-lg border-2 border-amber-600 mb-4">
+                          <p className="text-amber-300 font-semibold mb-2">Your Current Pick:</p>
+                          <div className="flex items-center gap-4">
+                            <img
+                              src={contestants.find(c => c.id === myInstinctPick.contestantId)?.image}
+                              alt=""
+                              className="w-16 h-16 rounded-lg object-cover border-2 border-amber-500"
+                            />
+                            <div>
+                              <p className="text-white font-bold text-lg">
+                                {contestants.find(c => c.id === myInstinctPick.contestantId)?.name}
+                              </p>
+                              <p className="text-amber-200 text-sm">
+                                You can change your pick until Jeff locks it
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-600 rounded-lg">
                         <p className="text-yellow-200 text-sm">
-                          ⏰ Pick must be submitted before Episode 1. Choose wisely - this pick cannot be changed!
+                          ⏰ Pick must be submitted before Episode 1. You can change your pick until Jeff locks it.
                         </p>
                       </div>
-                      
+
                       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {contestants.map(contestant => (
                           <div
                             key={contestant.id}
                             onClick={() => {
-                              if (window.confirm(`Select ${contestant.name} as your Instinct Pick? This cannot be changed!`)) {
+                              const action = myInstinctPick ? 'change your pick to' : 'select';
+                              if (window.confirm(`${action === 'change your pick to' ? 'Change' : 'Select'} ${contestant.name} as your Instinct Pick?`)) {
                                 submitInstinctPick(contestant.id);
                               }
                             }}
-                            className="bg-gradient-to-br from-amber-900/40 to-orange-900/40 p-4 rounded-lg border-2 border-amber-600 hover:border-amber-400 cursor-pointer transition transform hover:scale-105"
+                            className={`bg-gradient-to-br from-amber-900/40 to-orange-900/40 p-4 rounded-lg border-2 ${myInstinctPick?.contestantId === contestant.id ? 'border-green-500 ring-2 ring-green-500' : 'border-amber-600 hover:border-amber-400'} cursor-pointer transition transform hover:scale-105`}
                           >
-                            <img 
-                              src={contestant.image} 
+                            <img
+                              src={contestant.image}
                               alt={contestant.name}
                               className="w-full h-40 object-cover rounded-lg mb-3"
                             />
                             <h3 className="text-white font-bold text-lg">{contestant.name}</h3>
                             <p className="text-amber-300 text-sm mb-2">{contestant.tribe} Tribe</p>
-                            <button className="w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded font-semibold hover:from-amber-500 hover:to-orange-500 transition">
-                              Select as Instinct Pick
+                            <button className={`w-full py-2 ${myInstinctPick?.contestantId === contestant.id ? 'bg-green-600' : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500'} text-white rounded font-semibold transition`}>
+                              {myInstinctPick?.contestantId === contestant.id ? '✓ Current Pick' : (myInstinctPick ? 'Change to This Pick' : 'Select as Instinct Pick')}
                             </button>
                           </div>
                         ))}
@@ -2051,56 +2098,86 @@ export default function SurvivorFantasyApp() {
                     Choose ONE contestant after the merge. This pick earns the same points as your instinct pick (except no episode survival bonuses).
                   </p>
 
-                  {myFinalPick ? (
-                    <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-6 rounded-lg border-2 border-purple-600">
-                      <p className="text-purple-300 font-semibold mb-3">Your Final Pick:</p>
-                      <div className="flex items-center gap-4">
-                        <img 
-                          src={contestants.find(c => c.id === myFinalPick.contestantId)?.image} 
-                          alt=""
-                          className="w-24 h-24 rounded-lg object-cover border-4 border-purple-500"
-                        />
-                        <div>
-                          <p className="text-white font-bold text-2xl">
-                            {contestants.find(c => c.id === myFinalPick.contestantId)?.name}
-                          </p>
-                          <p className="text-purple-300 text-lg">
-                            {contestants.find(c => c.id === myFinalPick.contestantId)?.tribe} Tribe
-                          </p>
-                          <p className="text-purple-400 text-sm mt-2">
-                            ✓ Locked in for the rest of the season!
-                          </p>
+                  {picksLocked.final ? (
+                    // Final picks are LOCKED
+                    myFinalPick ? (
+                      <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-6 rounded-lg border-2 border-purple-600">
+                        <p className="text-purple-300 font-semibold mb-3">Your Final Pick:</p>
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={contestants.find(c => c.id === myFinalPick.contestantId)?.image}
+                            alt=""
+                            className="w-24 h-24 rounded-lg object-cover border-4 border-purple-500"
+                          />
+                          <div>
+                            <p className="text-white font-bold text-2xl">
+                              {contestants.find(c => c.id === myFinalPick.contestantId)?.name}
+                            </p>
+                            <p className="text-purple-300 text-lg">
+                              {contestants.find(c => c.id === myFinalPick.contestantId)?.tribe} Tribe
+                            </p>
+                            <p className="text-purple-400 text-sm mt-2">
+                              🔒 Locked in for the rest of the season!
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="bg-gray-900/40 p-6 rounded-lg border border-gray-600 text-center">
+                        <p className="text-gray-400">Final picks are now locked. You did not submit a pick.</p>
+                      </div>
+                    )
                   ) : (
+                    // Final picks are UNLOCKED - can change
                     <>
+                      {myFinalPick && (
+                        <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-4 rounded-lg border-2 border-purple-600 mb-4">
+                          <p className="text-purple-300 font-semibold mb-2">Your Current Pick:</p>
+                          <div className="flex items-center gap-4">
+                            <img
+                              src={contestants.find(c => c.id === myFinalPick.contestantId)?.image}
+                              alt=""
+                              className="w-16 h-16 rounded-lg object-cover border-2 border-purple-500"
+                            />
+                            <div>
+                              <p className="text-white font-bold text-lg">
+                                {contestants.find(c => c.id === myFinalPick.contestantId)?.name}
+                              </p>
+                              <p className="text-purple-200 text-sm">
+                                You can change your pick until Jeff locks it
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="mb-4 p-3 bg-purple-900/30 border border-purple-600 rounded-lg">
                         <p className="text-purple-200 text-sm">
-                          ⏰ Choose from the remaining contestants. This pick cannot be changed once submitted!
+                          ⏰ Choose from the remaining contestants. You can change your pick until Jeff locks it.
                         </p>
                       </div>
-                      
+
                       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {contestants.filter(c => !c.eliminated).map(contestant => (
                           <div
                             key={contestant.id}
                             onClick={() => {
-                              if (window.confirm(`Select ${contestant.name} as your Final Pick? This cannot be changed!`)) {
+                              const action = myFinalPick ? 'change your pick to' : 'select';
+                              if (window.confirm(`${action === 'change your pick to' ? 'Change' : 'Select'} ${contestant.name} as your Final Pick?`)) {
                                 submitFinalPick(contestant.id);
                               }
                             }}
-                            className="bg-gradient-to-br from-purple-900/40 to-pink-900/40 p-4 rounded-lg border-2 border-purple-600 hover:border-purple-400 cursor-pointer transition transform hover:scale-105"
+                            className={`bg-gradient-to-br from-purple-900/40 to-pink-900/40 p-4 rounded-lg border-2 ${myFinalPick?.contestantId === contestant.id ? 'border-green-500 ring-2 ring-green-500' : 'border-purple-600 hover:border-purple-400'} cursor-pointer transition transform hover:scale-105`}
                           >
-                            <img 
-                              src={contestant.image} 
+                            <img
+                              src={contestant.image}
                               alt={contestant.name}
                               className="w-full h-40 object-cover rounded-lg mb-3"
                             />
                             <h3 className="text-white font-bold text-lg">{contestant.name}</h3>
                             <p className="text-purple-300 text-sm mb-2">{contestant.tribe} Tribe</p>
-                            <button className="w-full py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded font-semibold hover:from-purple-500 hover:to-pink-500 transition">
-                              Select as Final Pick
+                            <button className={`w-full py-2 ${myFinalPick?.contestantId === contestant.id ? 'bg-green-600' : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500'} text-white rounded font-semibold transition`}>
+                              {myFinalPick?.contestantId === contestant.id ? '✓ Current Pick' : (myFinalPick ? 'Change to This Pick' : 'Select as Final Pick')}
                             </button>
                           </div>
                         ))}
@@ -4580,6 +4657,40 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               <p className="text-yellow-200"><span className="text-yellow-400">Final Picks:</span> Post-merge, players select their final pick</p>
               <p className="text-yellow-200"><span className="text-yellow-400">Mid Season:</span> Merge to near-finale</p>
               <p className="text-yellow-200"><span className="text-yellow-400">Finale:</span> Final episodes of the season</p>
+            </div>
+          </div>
+
+          {/* Picks Lock Control */}
+          <div className="mt-6 bg-amber-900/20 p-4 rounded-lg border border-amber-600">
+            <p className="text-amber-300 font-semibold mb-3">Picks Lock Control</p>
+            <p className="text-amber-200 text-sm mb-4">
+              Players can change their picks until you lock them. Lock picks when you're ready to start scoring.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => togglePicksLock('instinct')}
+                className={`p-4 rounded-lg border-2 font-semibold transition flex flex-col items-center gap-2 ${
+                  picksLocked.instinct
+                    ? 'bg-red-900/40 border-red-500 text-red-300'
+                    : 'bg-green-900/40 border-green-500 text-green-300'
+                }`}
+              >
+                <span className="text-2xl">{picksLocked.instinct ? '🔒' : '🔓'}</span>
+                <span>Instinct Picks</span>
+                <span className="text-xs opacity-80">{picksLocked.instinct ? 'Locked' : 'Unlocked'}</span>
+              </button>
+              <button
+                onClick={() => togglePicksLock('final')}
+                className={`p-4 rounded-lg border-2 font-semibold transition flex flex-col items-center gap-2 ${
+                  picksLocked.final
+                    ? 'bg-red-900/40 border-red-500 text-red-300'
+                    : 'bg-green-900/40 border-green-500 text-green-300'
+                }`}
+              >
+                <span className="text-2xl">{picksLocked.final ? '🔒' : '🔓'}</span>
+                <span>Final Picks</span>
+                <span className="text-xs opacity-80">{picksLocked.final ? 'Locked' : 'Unlocked'}</span>
+              </button>
             </div>
           </div>
         </div>
