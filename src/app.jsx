@@ -1879,8 +1879,17 @@ export default function SurvivorFantasyApp() {
       <nav className="bg-black/40 backdrop-blur-sm border-b border-amber-600/50">
         <div className="container mx-auto px-1 sm:px-4">
           <div className="flex justify-center gap-0 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            {/* Home - icon only */}
+            <button
+              onClick={() => { setCurrentView('home'); setShowNotifications(false); }}
+              className={`px-2 sm:px-3 py-2.5 sm:py-3 transition flex items-center ${
+                currentView === 'home' ? 'text-amber-400 border-b-2 border-amber-400' : 'text-amber-200 hover:text-amber-300'
+              }`}
+            >
+              <Home className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            {/* Other tabs with labels */}
             {[
-              { id: 'home', label: 'HOME', icon: Home, activeClass: 'text-amber-400 border-b-2 border-amber-400', inactiveClass: 'text-amber-200 hover:text-amber-300' },
               { id: 'picks', label: 'PICKS', icon: Target, activeClass: 'text-orange-400 border-b-2 border-orange-400', inactiveClass: 'text-orange-300 hover:text-orange-200' },
               { id: 'questionnaire', label: 'QUESTIONNAIRE', icon: FileText, activeClass: 'text-amber-400 border-b-2 border-amber-400', inactiveClass: 'text-amber-200 hover:text-amber-300' },
               { id: 'challenge', label: 'WORDLE', icon: Zap, activeClass: 'text-amber-400 border-b-2 border-amber-400', inactiveClass: 'text-amber-200 hover:text-amber-300' },
