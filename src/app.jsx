@@ -4,46 +4,52 @@ import { storage, auth, backup } from './db.js';
 
 // Survivor 48 Cast
 const SURVIVOR_48_CAST = [
-  { id: 1, name: "Alyssa Bellman", tribe: "Manu", image: "https://static.wikia.nocookie.net/survivor/images/thumb/e/e5/S48_Alyssa_Bellman.jpg/250px-S48_Alyssa_Bellman.jpg" },
-  { id: 2, name: "Brooklyn Rivera", tribe: "Manu", image: "https://static.wikia.nocookie.net/survivor/images/thumb/0/04/S48_Brooklyn_Rivera.jpg/250px-S48_Brooklyn_Rivera.jpg" },
-  { id: 3, name: "Christine Bernier", tribe: "Manu", image: "https://static.wikia.nocookie.net/survivor/images/thumb/a/ab/S48_Christine_Bernier.jpg/250px-S48_Christine_Bernier.jpg" },
-  { id: 4, name: "David Kinne", tribe: "Manu", image: "https://static.wikia.nocookie.net/survivor/images/thumb/5/58/S48_David_Kinne.jpg/250px-S48_David_Kinne.jpg" },
-  { id: 5, name: "Kamilla Salah-Ud-Din", tribe: "Manu", image: "https://static.wikia.nocookie.net/survivor/images/thumb/f/f3/S48_Kamilla_Salah-Ud-Din.jpg/250px-S48_Kamilla_Salah-Ud-Din.jpg" },
-  { id: 6, name: "Mitch McKenzie", tribe: "Manu", image: "https://static.wikia.nocookie.net/survivor/images/thumb/6/60/S48_Mitch_McKenzie.jpg/250px-S48_Mitch_McKenzie.jpg" },
-  { id: 7, name: "Aysha Camarena", tribe: "Loto", image: "https://static.wikia.nocookie.net/survivor/images/thumb/b/b9/S48_Aysha_Camarena.jpg/250px-S48_Aysha_Camarena.jpg" },
-  { id: 8, name: "Jerome Mojica", tribe: "Loto", image: "https://static.wikia.nocookie.net/survivor/images/thumb/a/a1/S48_Jerome_Mojica.jpg/250px-S48_Jerome_Mojica.jpg" },
-  { id: 9, name: "Joe Hunter", tribe: "Loto", image: "https://static.wikia.nocookie.net/survivor/images/thumb/e/e8/S48_Joe_Hunter.jpg/250px-S48_Joe_Hunter.jpg" },
-  { id: 10, name: "Mary Bill", tribe: "Loto", image: "https://static.wikia.nocookie.net/survivor/images/thumb/1/1f/S48_Mary_Bill.jpg/250px-S48_Mary_Bill.jpg" },
-  { id: 11, name: "Shauhin Davari", tribe: "Loto", image: "https://static.wikia.nocookie.net/survivor/images/thumb/2/2c/S48_Shauhin_Davari.jpg/250px-S48_Shauhin_Davari.jpg" },
-  { id: 12, name: "Tabitha Davis", tribe: "Loto", image: "https://static.wikia.nocookie.net/survivor/images/thumb/d/d0/S48_Tabitha_Davis.jpg/250px-S48_Tabitha_Davis.jpg" },
-  { id: 13, name: "Hannah Rose", tribe: "Moana", image: "https://static.wikia.nocookie.net/survivor/images/thumb/b/bf/S48_Hannah_Rose.jpg/250px-S48_Hannah_Rose.jpg" },
-  { id: 14, name: "Kendra McQuarrie", tribe: "Moana", image: "https://static.wikia.nocookie.net/survivor/images/thumb/7/73/S48_Kendra_McQuarrie.jpg/250px-S48_Kendra_McQuarrie.jpg" },
-  { id: 15, name: "Kishori Senanayake", tribe: "Moana", image: "https://static.wikia.nocookie.net/survivor/images/thumb/5/5e/S48_Kishori_Senanayake.jpg/250px-S48_Kishori_Senanayake.jpg" },
-  { id: 16, name: "Marco Zecchinato", tribe: "Moana", image: "https://static.wikia.nocookie.net/survivor/images/thumb/0/0f/S48_Marco_Zecchinato.jpg/250px-S48_Marco_Zecchinato.jpg" },
-  { id: 17, name: "Silas Hearndon", tribe: "Moana", image: "https://static.wikia.nocookie.net/survivor/images/thumb/a/ad/S48_Silas_Hearndon.jpg/250px-S48_Silas_Hearndon.jpg" },
-  { id: 18, name: "Steven Lim", tribe: "Moana", image: "https://static.wikia.nocookie.net/survivor/images/thumb/c/c8/S48_Steven_Lim.jpg/250px-S48_Steven_Lim.jpg" }
+  // CIVA Tribe (Green)
+  { id: 1, name: "Kyle Fraser", tribe: "Civa", image: "/cast/Kyle Fraser.jpg" },
+  { id: 2, name: "Cedrek McFadden", tribe: "Civa", image: "/cast/Cedrek McFadden.jpg" },
+  { id: 3, name: "Charity Nelms", tribe: "Civa", image: "/cast/Charity Nelms.jpg" },
+  { id: 4, name: "Chrissy Sarnowsky", tribe: "Civa", image: "/cast/Chrissy Sarnowsky.jpg" },
+  { id: 5, name: "Kamilla Karthigesu", tribe: "Civa", image: "/cast/Kamilla Karthigesu.jpg" },
+  { id: 6, name: "David Kinne", tribe: "Civa", image: "/cast/David Kinne.jpg" },
+  // LAGI Tribe (Orange)
+  { id: 7, name: "Thomas Krottinger", tribe: "Lagi", image: "/cast/Thomas Krottinger.jpg" },
+  { id: 8, name: "Star Toomey", tribe: "Lagi", image: "/cast/Star Toomey.jpg" },
+  { id: 9, name: "Shauhin Davari", tribe: "Lagi", image: "/cast/Shauhin Davari.jpg" },
+  { id: 10, name: "Joe Hunter", tribe: "Lagi", image: "/cast/Joe Hunter.jpg" },
+  { id: 11, name: "Bianca Roses", tribe: "Lagi", image: "/cast/Bianca Roses.jpg" },
+  { id: 12, name: "Eva Erickson", tribe: "Lagi", image: "/cast/Eva Erickson.jpg" },
+  // VULA Tribe (Blue)
+  { id: 13, name: "Stephanie Burger", tribe: "Vula", image: "/cast/Stephanie Burger.jpg" },
+  { id: 14, name: "Mary Zheng", tribe: "Vula", image: "/cast/Mary Zheng.jpg" },
+  { id: 15, name: "Kevin Leung", tribe: "Vula", image: "/cast/Kevin Leung.jpg" },
+  { id: 16, name: "Saiounia 'Sai' Hughley", tribe: "Vula", image: "/cast/Saiounia 'Sai' Hughley.jpg" },
+  { id: 17, name: "Justin Pioppi", tribe: "Vula", image: "/cast/Justin Pioppi.jpg" },
+  { id: 18, name: "Mitch Guerra", tribe: "Vula", image: "/cast/Mitch Guerra.jpg" }
 ];
 
-// Contestant bios (placeholder data for testing)
+// Contestant bios (placeholder data - update with real bios)
 const CONTESTANT_BIOS = {
-  1: "Alyssa is a 28-year-old marketing executive from Los Angeles. A former college volleyball player, she brings her competitive spirit and team-building skills to the island. She plans to form strong alliances early and adapt quickly to changing dynamics.",
-  2: "Brooklyn is a 25-year-old social media influencer from Miami. With over 500K followers, she's used to reading people and understanding what makes them tick. She believes her ability to connect with anyone will be her greatest asset.",
-  3: "Christine is a 34-year-old emergency room nurse from Chicago. She's seen it all in high-pressure situations and stays calm when others panic. Her strategy is to be the reliable one everyone trusts.",
-  4: "David is a 31-year-old software engineer from Seattle. A puzzle enthusiast and escape room champion, he's confident in his problem-solving abilities. He plans to lay low early while building genuine connections.",
-  5: "Kamilla is a 29-year-old attorney from New York City. Known for her persuasive arguments in the courtroom, she's ready to apply those same skills at Tribal Council. She's not afraid to make big moves.",
-  6: "Mitch is a 26-year-old personal trainer from Denver. His physical prowess makes him a challenge threat, but he's hoping his likeable personality will keep him safe. He's here to prove brains beat brawn.",
-  7: "Aysha is a 32-year-old nonprofit director from Atlanta. She's spent years building coalitions and advocating for her community. She believes Survivor is the ultimate test of her leadership skills.",
-  8: "Jerome is a 27-year-old chef from New Orleans. His creativity in the kitchen translates to creative gameplay. He plans to nourish his tribe while cooking up strategic moves behind the scenes.",
-  9: "Joe is a 35-year-old construction foreman from Texas. A natural leader on job sites, he knows how to motivate people and build things that last—including alliances. He's the provider type.",
-  10: "Mary is a 24-year-old graduate student studying marine biology from Hawaii. Growing up near the ocean has prepared her for island life. She's observant and plans to strike when the time is right.",
-  11: "Shauhin is a 30-year-old entrepreneur from San Francisco. He's built multiple successful startups and knows how to pivot when things go wrong. Adaptability is his game.",
-  12: "Tabitha is a 33-year-old high school teacher from Philadelphia. She's used to managing different personalities and keeping everyone focused. She plans to be the social glue of her tribe.",
-  13: "Hannah is a 23-year-old actress from Nashville. She's perfected the art of reading scripts—and people. Her plan is to play a character that everyone underestimates until the finale.",
-  14: "Kendra is a 28-year-old firefighter from Portland. She runs into burning buildings for a living and isn't afraid of any challenge. Her bravery and work ethic will carry her far.",
-  15: "Kishori is a 31-year-old physician from Boston. Her analytical mind helps her diagnose problems quickly, both medical and strategic. She's playing the long game.",
-  16: "Marco is a 29-year-old professional soccer player from Arizona. He's used to intense competition and performing under pressure. He hopes his athletic background won't make him an early target.",
-  17: "Silas is a 26-year-old musician from Austin. His easygoing nature makes him everyone's friend, but he's secretly competitive. He's here to prove artists can be strategic masterminds.",
-  18: "Steven is a 34-year-old financial analyst from New York. He's used to calculating risk and making data-driven decisions. He plans to treat Survivor like the ultimate investment opportunity."
+  // CIVA Tribe
+  1: "Kyle Fraser is ready to outwit, outplay, and outlast on Survivor 48. Representing the Civa tribe, he's bringing his A-game to Fiji.",
+  2: "Cedrek McFadden joins the Civa tribe with a strategic mindset and determination to go far in the game.",
+  3: "Charity Nelms is competing on Civa tribe this season. She's ready to form alliances and make her mark on Survivor 48.",
+  4: "Chrissy Sarnowsky brings her competitive spirit to the Civa tribe. She's not here to make friends - she's here to win.",
+  5: "Kamilla Karthigesu represents Civa tribe on Survivor 48. Her social game and strategic thinking could take her far.",
+  6: "David Kinne rounds out the Civa tribe. He's ready to prove he has what it takes to be the Sole Survivor.",
+  // LAGI Tribe
+  7: "Thomas Krottinger is competing on Lagi tribe this season. He's bringing physical strength and mental fortitude to the game.",
+  8: "Star Toomey shines bright on the Lagi tribe. Her charisma and determination make her a player to watch.",
+  9: "Shauhin Davari joins Lagi tribe ready to adapt and overcome any challenge thrown his way.",
+  10: "Joe Hunter brings his survival skills to Lagi tribe. As a natural provider, he hopes to be an asset to his team.",
+  11: "Bianca Roses represents Lagi tribe on Survivor 48. She's ready to bloom in the game and outlast the competition.",
+  12: "Eva Erickson completes the Lagi tribe lineup. Her strategic mind and social awareness could be her ticket to the end.",
+  // VULA Tribe
+  13: "Stephanie Burger is competing on Vula tribe this season. She's hungry for the win and ready to fight for it.",
+  14: "Mary Zheng brings her analytical skills to Vula tribe. She's playing the long game from day one.",
+  15: "Kevin Leung represents Vula tribe on Survivor 48. His adaptability and calm demeanor could serve him well.",
+  16: "Saiounia 'Sai' Hughley joins Vula tribe with a positive attitude and fierce competitive spirit.",
+  17: "Justin Pioppi brings his determination to Vula tribe. He's ready to prove he deserves to be the Sole Survivor.",
+  18: "Mitch Guerra rounds out the Vula tribe. His physical and social game make him a triple threat in the competition."
 };
 
 const INITIAL_PLAYERS = [
@@ -2645,7 +2651,7 @@ export default function SurvivorFantasyApp() {
                 <div className="px-6 pb-6">
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {contestants.map(contestant => {
-                      const tribeColor = contestant.tribe === 'Manu' ? 'orange' : contestant.tribe === 'Loto' ? 'blue' : 'green';
+                      const tribeColor = contestant.tribe === 'Civa' ? 'green' : contestant.tribe === 'Lagi' ? 'orange' : 'blue';
                       return (
                         <div
                           key={contestant.id}
