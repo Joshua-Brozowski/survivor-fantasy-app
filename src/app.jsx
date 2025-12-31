@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, Key } from 'lucide-react';
-import { storage } from './db.js';
+import { storage, auth } from './db.js';
 
 // Survivor 48 Cast
 const SURVIVOR_48_CAST = [
@@ -336,42 +336,20 @@ export default function SurvivorFantasyApp() {
     );
 
     if (player) {
-      try {
-        const storedPassword = await storage.get(`password_${player.id}`);
+      // Use server-side password verification
+      const result = await auth.login(player.id, loginForm.password);
 
-        if (!storedPassword) {
-          // First time - set default password and check against it
-          await storage.set(`password_${player.id}`, DEFAULT_PASSWORD);
-          if (loginForm.password === DEFAULT_PASSWORD) {
-            setCurrentUser(player);
-            if (loginForm.rememberMe) {
-              localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
-            }
-          } else {
-            alert('Incorrect password');
-          }
-        } else if (storedPassword.value === loginForm.password) {
-          setCurrentUser(player);
-          if (loginForm.rememberMe) {
-            localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
-          }
-        } else {
-          alert('Incorrect password');
+      if (result.success) {
+        setCurrentUser(player);
+        if (loginForm.rememberMe) {
+          localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
         }
-      } catch (error) {
-        // On error, try default password
-        if (loginForm.password === DEFAULT_PASSWORD) {
-          await storage.set(`password_${player.id}`, DEFAULT_PASSWORD);
-          setCurrentUser(player);
-          if (loginForm.rememberMe) {
-            localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
-          }
-        } else {
-          alert('Incorrect password');
-        }
+      } else {
+        alert('Invalid username or password');
       }
     } else {
-      alert('Player not found. Valid players: ' + players.map(p => p.name).join(', '));
+      // Don't reveal whether username exists - same error message
+      alert('Invalid username or password');
     }
   };
 
@@ -438,19 +416,24 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
-    if (recoveryForm.newPassword.length < 4) {
-      alert('Password must be at least 4 characters');
+    if (recoveryForm.newPassword.length < 8) {
+      alert('Password must be at least 8 characters');
       return;
     }
 
-    await storage.set(`password_${recoveryPlayer.id}`, recoveryForm.newPassword);
-    alert('Password reset successfully! You can now login with your new password.');
+    // Use server-side password hashing
+    const result = await auth.setPassword(recoveryPlayer.id, recoveryForm.newPassword);
 
-    // Reset and go back to login
-    setRecoveryForm({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
-    setRecoveryStep('name');
-    setRecoveryPlayer(null);
-    setLoginView('login');
+    if (result.success) {
+      alert('Password reset successfully! You can now login with your new password.');
+      // Reset and go back to login
+      setRecoveryForm({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
+      setRecoveryStep('name');
+      setRecoveryPlayer(null);
+      setLoginView('login');
+    } else {
+      alert('Failed to reset password. Please try again.');
+    }
   };
 
   const handleLogout = () => {
@@ -470,12 +453,15 @@ export default function SurvivorFantasyApp() {
   const changePassword = async (currentPassword, newPassword) => {
     if (!currentUser) return false;
 
-    const storedPassword = await storage.get(`password_${currentUser.id}`);
-    if (storedPassword && storedPassword.value === currentPassword) {
-      await storage.set(`password_${currentUser.id}`, newPassword);
-      return true;
+    // Verify current password server-side
+    const verifyResult = await auth.verifyCurrentPassword(currentUser.id, currentPassword);
+    if (!verifyResult.valid) {
+      return false;
     }
-    return false;
+
+    // Set new password (hashed server-side)
+    const setResult = await auth.setPassword(currentUser.id, newPassword);
+    return setResult.success;
   };
 
   // Cast Management Functions
@@ -1489,7 +1475,7 @@ export default function SurvivorFantasyApp() {
                 Demo / Guest
               </button>
               <p className="text-amber-400/60 text-xs text-center mt-4">
-                Default password: password123
+                First time? Default password: password123
               </p>
             </div>
           ) : (
@@ -4519,8 +4505,13 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
       if (!confirm(`Reset ${player.name}'s password to "password123"?`)) return;
 
-      await storage.set(`password_${playerId}`, 'password123');
-      alert(`${player.name}'s password has been reset to "password123"`);
+      // Use server-side password reset (hashed)
+      const result = await auth.resetToDefault(playerId);
+      if (result.success) {
+        alert(`${player.name}'s password has been reset to "password123"`);
+      } else {
+        alert('Failed to reset password. Please try again.');
+      }
     };
 
     return (
