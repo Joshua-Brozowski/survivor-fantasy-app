@@ -3738,6 +3738,23 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   }
 
   if (adminView === 'score-questionnaire') {
+    // Safety check: if scoringQ is null (e.g., after refresh), go back to main
+    if (!scoringQ) {
+      return (
+        <div className="space-y-6">
+          <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-yellow-600">
+            <h2 className="text-xl font-bold text-yellow-400 mb-4">No Questionnaire Selected</h2>
+            <p className="text-yellow-200 mb-4">Please select a questionnaire to score from the main panel.</p>
+            <button
+              onClick={() => setAdminView('main')}
+              className="py-3 px-6 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+            >
+              Back to Controls
+            </button>
+          </div>
+        </div>
+      );
+    }
     const qSubmissions = submissions.filter(s => s.questionnaireId === scoringQ.id);
     const isRescore = scoringQ.isRescore;
 
