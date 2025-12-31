@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye } from 'lucide-react';
+import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, Key } from 'lucide-react';
 import { storage } from './db.js';
 
 // Survivor 48 Cast
@@ -1878,10 +1878,35 @@ export default function SurvivorFantasyApp() {
       {/* Navigation */}
       <nav className="bg-black/40 backdrop-blur-sm border-b border-amber-600/50">
         <div className="container mx-auto px-2 sm:px-4">
-          <div className="flex gap-0 sm:gap-1 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+          <div className="flex justify-center gap-0 sm:gap-1 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            {/* Home */}
+            <button
+              onClick={() => { setCurrentView('home'); setShowNotifications(false); }}
+              className={`px-3 sm:px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base ${
+                currentView === 'home'
+                  ? 'text-amber-400 border-b-2 border-amber-400'
+                  : 'text-amber-200 hover:text-amber-300'
+              }`}
+            >
+              <Home className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="hidden sm:inline">Home</span>
+            </button>
+
+            {/* PICKS - Special styling, always visible */}
+            <button
+              onClick={() => { setCurrentView('picks'); setShowNotifications(false); }}
+              className={`px-3 sm:px-4 py-3 transition whitespace-nowrap flex items-center gap-1.5 sm:gap-2 ${
+                currentView === 'picks'
+                  ? 'text-orange-400 border-b-2 border-orange-400'
+                  : 'text-orange-300 hover:text-orange-200'
+              }`}
+            >
+              <Target className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="picks-text text-base sm:text-lg font-bold">PICKS</span>
+            </button>
+
+            {/* Other nav items */}
             {[
-              { id: 'home', label: 'Home', icon: Home },
-              { id: 'picks', label: 'Picks', icon: Target },
               { id: 'questionnaire', label: 'Quiz', icon: FileText },
               { id: 'challenge', label: 'Wordle', icon: Zap },
               { id: 'leaderboard', label: 'Board', icon: Trophy },
@@ -4503,6 +4528,72 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     );
   }
 
+  if (adminView === 'password-management') {
+    const resetPassword = async (playerId) => {
+      if (!requireRealUser('Reset Password')) return;
+
+      const player = players.find(p => p.id === playerId);
+      if (!player) return;
+
+      if (!confirm(`Reset ${player.name}'s password to "password123"?`)) return;
+
+      await storage.set(`password_${playerId}`, 'password123');
+      alert(`${player.name}'s password has been reset to "password123"`);
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-gray-600">
+          <h2 className="text-2xl font-bold text-gray-300 mb-6 flex items-center gap-2">
+            <Key className="w-6 h-6" />
+            Password Management
+          </h2>
+
+          <p className="text-gray-400 mb-4 text-sm">
+            Reset a player's password to the default: <code className="bg-gray-800 px-2 py-1 rounded">password123</code>
+          </p>
+
+          <div className="space-y-3">
+            {players.map(player => (
+              <div
+                key={player.id}
+                className="flex items-center justify-between p-4 bg-gray-900/50 rounded-lg border border-gray-700"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center border-2 border-gray-500">
+                    <span className="text-white font-bold">{player.name.charAt(0)}</span>
+                  </div>
+                  <div>
+                    <p className="text-white font-semibold">{player.name}</p>
+                    {player.isAdmin && (
+                      <span className="text-yellow-400 text-xs flex items-center gap-1">
+                        <Crown className="w-3 h-3" /> Admin
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => resetPassword(player.id)}
+                  className="px-4 py-2 bg-red-600 text-white rounded font-semibold hover:bg-red-500 transition flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Reset to Default
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setAdminView('main')}
+            className="w-full mt-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+          >
+            Back to Controls
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (adminView === 'tree-mail') {
     const togglePlayer = (playerId) => {
       if (notificationForm.selectedPlayers.includes(playerId)) {
@@ -4960,6 +5051,19 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               <div className="flex items-center gap-2">
                 <Zap className="w-5 h-5" />
                 <span>Wordle Challenge</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('password-management')}
+            className="bg-gradient-to-r from-gray-600 to-slate-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-gray-500 hover:to-slate-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key className="w-5 h-5" />
+                <span>Password Management</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
