@@ -18,7 +18,8 @@ survivor-fantasy-app/
 │   ├── main.jsx          # React entry point
 │   └── db.js             # Storage API wrapper
 ├── api/
-│   └── storage.js        # MongoDB serverless function
+│   └── storage/
+│       └── [key].js      # MongoDB serverless function (dynamic route)
 ├── index.html            # HTML template
 ├── package.json          # Dependencies
 ├── vite.config.js        # Vite configuration
@@ -33,6 +34,12 @@ survivor-fantasy-app/
 - Password recovery with security questions
 - Passwords stored in MongoDB per player
 - "Remember me" option using localStorage
+- **Demo/Guest Mode**: Allows exploring the app without an account
+  - Click "Demo / Guest" button on login screen
+  - Can view all features and interact with UI
+  - Nothing saves to MongoDB (local state only)
+  - Admin panel visible but read-only
+  - All actions show "(Demo mode - not saved)" alerts
 
 ### 2. Player Roles
 - **Players**: 9 friends competing in the league
@@ -321,15 +328,16 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 
 ## API Routes
 
-### `/api/storage/:key`
-Serverless function handling all database operations:
+### `/api/storage/[key]`
+Vercel serverless function with dynamic routing for all database operations:
 
-- **GET** - Retrieve value by key
-- **POST** - Set/update value for key
-- **DELETE** - Delete key
-- **GET** (no key) - List keys with optional prefix
+- **GET `/api/storage/{key}`** - Retrieve value by key
+- **POST `/api/storage/{key}`** - Set/update value for key
+- **DELETE `/api/storage/{key}`** - Delete key
 
-Returns JSON: `{ key, value }` or `{ keys, prefix }`
+Returns JSON: `{ key, value }` or `{ error: 'Not found' }`
+
+**Note**: The `[key]` in the filename (`api/storage/[key].js`) enables Vercel's file-system based dynamic routing. The key is accessed via `req.query.key`.
 
 ## Environment Variables
 
@@ -438,6 +446,7 @@ Cast includes placeholder bios for each contestant (to be updated with real info
 - [x] Wordle Challenge mini-game
 - [x] Full Advantages System with scarcity rules
 - [x] Banner notifications on Home page (per-user tracking)
+- [x] Demo/Guest mode for app exploration
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
