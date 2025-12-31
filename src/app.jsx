@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, Key } from 'lucide-react';
-import { storage, auth } from './db.js';
+import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, Key, Download, Database, RotateCcw } from 'lucide-react';
+import { storage, auth, backup } from './db.js';
 
 // Survivor 48 Cast
 const SURVIVOR_48_CAST = [
@@ -127,6 +127,10 @@ export default function SurvivorFantasyApp() {
   // Wordle Challenge state
   const [challenges, setChallenges] = useState([]);
   const [challengeAttempts, setChallengeAttempts] = useState([]);
+
+  // Backup snapshots state
+  const [snapshots, setSnapshots] = useState([]);
+  const [loadingBackup, setLoadingBackup] = useState(false);
 
   // Advantage play modal state
   const [advantageModal, setAdvantageModal] = useState({ show: false, advantage: null, step: 'confirm' });
@@ -3129,8 +3133,68 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   const releaseScores = async () => {
     if (!requireRealUser('Release Scores')) return;
-    const scores = calculateScores(scoringQ, correctAnswers);
 
+    const isRescore = scoringQ.isRescore;
+
+    // Auto-snapshot before releasing/re-scoring
+    await backup.createSnapshot(isRescore ? 'before-rescore' : 'before-release-scores');
+
+    const newScores = calculateScores(scoringQ, correctAnswers);
+
+    // For re-scoring, get old scores and calculate adjustments
+    if (isRescore) {
+      const qSubmissions = submissions.filter(s => s.questionnaireId === scoringQ.id);
+
+      for (const sub of qSubmissions) {
+        const oldScore = sub.score || 0;
+        const newScore = newScores[sub.playerId] || 0;
+        const adjustment = newScore - oldScore;
+
+        if (adjustment !== 0) {
+          await updatePlayerScore(
+            sub.playerId,
+            adjustment,
+            `Score Adjustment (${scoringQ.title})`,
+            'questionnaire'
+          );
+        }
+      }
+
+      // Update submissions with new scores
+      const updatedSubmissions = submissions.map(s => {
+        if (s.questionnaireId === scoringQ.id) {
+          return { ...s, score: newScores[s.playerId] || 0 };
+        }
+        return s;
+      });
+
+      // Update questionnaire with new correct answers (keep existing qotwWinner)
+      const updatedQuestionnaires = questionnaires.map(q => {
+        if (q.id === scoringQ.id) {
+          return { ...q, correctAnswers };
+        }
+        return q;
+      });
+
+      await storage.set('submissions', JSON.stringify(updatedSubmissions));
+      await storage.set('questionnaires', JSON.stringify(updatedQuestionnaires));
+      setSubmissions(updatedSubmissions);
+      setQuestionnaires(updatedQuestionnaires);
+
+      await addNotification({
+        type: 'scores_updated',
+        message: `Scores for ${scoringQ.title} have been updated (re-scored).`,
+        targetPlayerId: null
+      });
+
+      alert('Scores have been re-calculated and updated!');
+      setAdminView('main');
+      setScoringQ(null);
+      setCorrectAnswers({});
+      return;
+    }
+
+    // Original first-time scoring logic
     const qotwVotesForThis = qotWVotes.filter(v => v.questionnaireId === scoringQ.id);
     const voteCounts = {};
     qotwVotesForThis.forEach(v => {
@@ -3158,7 +3222,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
     const updatedSubmissions = submissions.map(s => {
       if (s.questionnaireId === scoringQ.id) {
-        return { ...s, score: scores[s.playerId] || 0 };
+        return { ...s, score: newScores[s.playerId] || 0 };
       }
       return s;
     });
@@ -3177,7 +3241,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
     // Apply Double Trouble effect - double the player's weekly points
     for (const dtAdv of doubleTroubleAdvantages) {
-      const baseScore = scores[dtAdv.playerId] || 0;
+      const baseScore = newScores[dtAdv.playerId] || 0;
       const qotwBonus = winnerPlayerIds.includes(dtAdv.playerId) ? 5 : 0;
       const totalWeeklyPoints = baseScore + qotwBonus;
 
@@ -3201,7 +3265,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
     // Apply Immunity Idol effect - negate negative points
     for (const iiAdv of immunityIdolAdvantages) {
-      const baseScore = scores[iiAdv.playerId] || 0;
+      const baseScore = newScores[iiAdv.playerId] || 0;
 
       // If the questionnaire score is negative, add points to offset it to 0
       if (baseScore < 0) {
@@ -3233,14 +3297,22 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   const eliminateContestant = async (contestantId) => {
     if (!requireRealUser('Eliminate Contestant')) return;
-    if (!window.confirm('Mark this contestant as eliminated?')) return;
+
+    const contestant = contestants.find(c => c.id === contestantId);
+    const isCurrentlyEliminated = contestant?.eliminated;
+
+    const action = isCurrentlyEliminated ? 'un-eliminate' : 'eliminate';
+    if (!window.confirm(`Are you sure you want to ${action} ${contestant?.name}?${isCurrentlyEliminated ? ' This will restore them to the active cast.' : ''}`)) return;
+
+    // Create backup before elimination status change
+    await backup.createSnapshot(`before-${action}-contestant`);
 
     const updated = contestants.map(c =>
-      c.id === contestantId ? { ...c, eliminated: true } : c
+      c.id === contestantId ? { ...c, eliminated: !isCurrentlyEliminated } : c
     );
     setContestants(updated);
     await storage.set('contestants', JSON.stringify(updated));
-    alert('Contestant marked as eliminated');
+    alert(`${contestant?.name} has been ${isCurrentlyEliminated ? 'restored to active cast' : 'marked as eliminated'}`);
   };
 
   const GAME_PHASES = ['instinct-picks', 'early-season', 'final-picks', 'mid-season', 'finale'];
@@ -3303,6 +3375,9 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   };
 
   const submitEpisodeScoring = async () => {
+    // Create backup before episode scoring
+    await backup.createSnapshot('before-episode-scoring');
+
     const newScores = [];
 
     Object.entries(episodeScoring.pickScoresData).forEach(([pickId, scoreData]) => {
@@ -3580,11 +3655,26 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   if (adminView === 'score-questionnaire') {
     const qSubmissions = submissions.filter(s => s.questionnaireId === scoringQ.id);
+    const isRescore = scoringQ.isRescore;
 
     return (
       <div className="space-y-6">
         <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-yellow-600">
-          <h2 className="text-2xl font-bold text-yellow-400 mb-6">Score: {scoringQ.title}</h2>
+          <h2 className="text-2xl font-bold text-yellow-400 mb-6">
+            {isRescore ? 'Re-Score' : 'Score'}: {scoringQ.title}
+          </h2>
+
+          {isRescore && (
+            <div className="bg-amber-900/30 border border-amber-500 p-4 rounded-lg mb-6">
+              <p className="text-amber-300 font-semibold flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                Re-Scoring Mode
+              </p>
+              <p className="text-amber-200 text-sm mt-1">
+                Changing correct answers will calculate score adjustments for each player. Advantages (Double Trouble, Immunity Idol) will NOT be re-applied.
+              </p>
+            </div>
+          )}
 
           <div className="bg-yellow-900/30 border border-yellow-600 p-4 rounded-lg mb-6">
             <p className="text-yellow-300 font-semibold">Submissions: {qSubmissions.length} / {players.length}</p>
@@ -3679,9 +3769,9 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
           <div className="flex gap-4">
             <button
               onClick={releaseScores}
-              className="flex-1 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg font-semibold hover:from-green-500 hover:to-emerald-500 transition text-lg"
+              className={`flex-1 py-3 ${isRescore ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500' : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500'} text-white rounded-lg font-semibold transition text-lg`}
             >
-              Release Scores to Players
+              {isRescore ? 'Update Scores' : 'Release Scores to Players'}
             </button>
             <button
               onClick={() => {
@@ -3721,7 +3811,15 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                 <h3 className="text-white font-bold">{contestant.name}</h3>
                 <p className="text-amber-300 text-sm mb-2">{contestant.tribe}</p>
                 {contestant.eliminated ? (
-                  <p className="text-red-400 text-sm font-semibold">❌ Eliminated</p>
+                  <div className="space-y-1">
+                    <p className="text-red-400 text-sm font-semibold">❌ Eliminated</p>
+                    <button
+                      onClick={() => eliminateContestant(contestant.id)}
+                      className="w-full py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition text-sm"
+                    >
+                      <RotateCcw size={14} className="inline mr-1" /> Un-eliminate
+                    </button>
+                  </div>
                 ) : (
                   <button
                     onClick={() => eliminateContestant(contestant.id)}
@@ -4567,6 +4665,188 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     );
   }
 
+  if (adminView === 'backup-management') {
+    const loadSnapshots = async () => {
+      setLoadingBackup(true);
+      const result = await backup.getSnapshots();
+      if (result.success) {
+        setSnapshots(result.snapshots);
+      }
+      setLoadingBackup(false);
+    };
+
+    const createManualSnapshot = async () => {
+      if (!requireRealUser('Create Backup')) return;
+      setLoadingBackup(true);
+      const result = await backup.createSnapshot('manual');
+      if (result.success) {
+        alert('Backup created successfully!');
+        await loadSnapshots();
+      } else {
+        alert('Failed to create backup');
+      }
+      setLoadingBackup(false);
+    };
+
+    const restoreSnapshot = async (snapshotId) => {
+      if (!requireRealUser('Restore Backup')) return;
+      if (!confirm('Are you sure you want to restore this backup? This will overwrite all current data. A safety backup will be created first.')) return;
+
+      setLoadingBackup(true);
+      const result = await backup.restoreSnapshot(snapshotId);
+      if (result.success) {
+        alert('Backup restored successfully! Please refresh the page to see the changes.');
+        window.location.reload();
+      } else {
+        alert('Failed to restore backup: ' + result.error);
+      }
+      setLoadingBackup(false);
+    };
+
+    const deleteSnapshot = async (snapshotId) => {
+      if (!requireRealUser('Delete Backup')) return;
+      if (!confirm('Are you sure you want to delete this backup? This cannot be undone.')) return;
+
+      setLoadingBackup(true);
+      const result = await backup.deleteSnapshot(snapshotId);
+      if (result.success) {
+        await loadSnapshots();
+      } else {
+        alert('Failed to delete backup');
+      }
+      setLoadingBackup(false);
+    };
+
+    const exportData = async () => {
+      const result = await backup.exportData();
+      if (result.success) {
+        const dataStr = JSON.stringify(result.data, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `survivor-fantasy-backup-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        alert('Failed to export data');
+      }
+    };
+
+    // Load snapshots on mount
+    if (snapshots.length === 0 && !loadingBackup) {
+      loadSnapshots();
+    }
+
+    const formatTrigger = (trigger) => {
+      const triggerLabels = {
+        'manual': 'Manual Backup',
+        'before-release-scores': 'Before Score Release',
+        'before-episode-scoring': 'Before Episode Scoring',
+        'before-eliminate-contestant': 'Before Elimination',
+        'before-un-eliminate-contestant': 'Before Un-eliminate',
+        'pre-restore-safety': 'Pre-Restore Safety'
+      };
+      return triggerLabels[trigger] || trigger;
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-slate-600">
+          <h2 className="text-2xl font-bold text-slate-300 mb-6 flex items-center gap-2">
+            <Database className="w-6 h-6" />
+            Backup Management
+          </h2>
+
+          <div className="grid sm:grid-cols-2 gap-4 mb-6">
+            <button
+              onClick={createManualSnapshot}
+              disabled={loadingBackup}
+              className="py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-500 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Database className="w-5 h-5" />
+              Create Manual Backup
+            </button>
+            <button
+              onClick={exportData}
+              disabled={loadingBackup}
+              className="py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-500 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              <Download className="w-5 h-5" />
+              Export Data (JSON)
+            </button>
+          </div>
+
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-slate-300 font-semibold">Snapshots</h3>
+              <button
+                onClick={loadSnapshots}
+                disabled={loadingBackup}
+                className="text-slate-400 hover:text-white text-sm flex items-center gap-1"
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingBackup ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+
+            {loadingBackup && snapshots.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">Loading snapshots...</p>
+            ) : snapshots.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">No snapshots yet. They'll be created automatically before risky actions.</p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {snapshots.map(snapshot => (
+                  <div
+                    key={snapshot.id}
+                    className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg border border-slate-700"
+                  >
+                    <div>
+                      <p className="text-white font-medium text-sm">{formatTrigger(snapshot.trigger)}</p>
+                      <p className="text-slate-400 text-xs">
+                        {new Date(snapshot.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => restoreSnapshot(snapshot.id)}
+                        disabled={loadingBackup}
+                        className="px-3 py-1 bg-amber-600 text-white rounded text-sm font-medium hover:bg-amber-500 transition flex items-center gap-1 disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Restore
+                      </button>
+                      <button
+                        onClick={() => deleteSnapshot(snapshot.id)}
+                        disabled={loadingBackup}
+                        className="px-3 py-1 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-500 transition flex items-center gap-1 disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <p className="text-slate-500 text-xs mb-4">
+            Snapshots are created automatically before: releasing scores, episode scoring, and contestant eliminations.
+          </p>
+
+          <button
+            onClick={() => setAdminView('main')}
+            className="w-full py-3 bg-slate-600 text-white rounded-lg font-semibold hover:bg-slate-500 transition"
+          >
+            Back to Controls
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (adminView === 'tree-mail') {
     const togglePlayer = (playerId) => {
       if (notificationForm.selectedPlayers.includes(playerId)) {
@@ -5041,6 +5321,19 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               <ChevronRight className="w-5 h-5" />
             </div>
           </button>
+
+          <button
+            onClick={() => setAdminView('backup-management')}
+            className="bg-gradient-to-r from-slate-600 to-zinc-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-slate-500 hover:to-zinc-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5" />
+                <span>Backup Management</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
         </div>
 
         {questionnaires.length > 0 && (
@@ -5061,18 +5354,33 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                           <span className="text-green-400 text-sm">✓ Scores Released</span>
                         )}
                       </div>
-                      {!q.scoresReleased && (
-                        <button
-                          onClick={() => {
-                            setScoringQ(q);
-                            setCorrectAnswers(q.correctAnswers || {});
-                            setAdminView('score-questionnaire');
-                          }}
-                          className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition"
-                        >
-                          Score Questionnaire
-                        </button>
-                      )}
+                      <div className="flex gap-2">
+                        {!q.scoresReleased && (
+                          <button
+                            onClick={() => {
+                              setScoringQ(q);
+                              setCorrectAnswers(q.correctAnswers || {});
+                              setAdminView('score-questionnaire');
+                            }}
+                            className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition"
+                          >
+                            Score Questionnaire
+                          </button>
+                        )}
+                        {q.scoresReleased && (
+                          <button
+                            onClick={() => {
+                              setScoringQ({ ...q, isRescore: true });
+                              setCorrectAnswers(q.correctAnswers || {});
+                              setAdminView('score-questionnaire');
+                            }}
+                            className="px-4 py-2 bg-amber-600 text-white rounded font-semibold hover:bg-amber-500 transition flex items-center gap-1"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            Re-Score
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

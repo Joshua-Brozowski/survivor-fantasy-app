@@ -16,10 +16,12 @@ survivor-fantasy-app/
 ├── src/
 │   ├── app.jsx           # Main application component (all views & logic)
 │   ├── main.jsx          # React entry point
-│   └── db.js             # Storage API wrapper
+│   └── db.js             # Storage API wrapper (storage, auth, backup)
 ├── api/
-│   └── storage/
-│       └── [key].js      # MongoDB serverless function (dynamic route)
+│   ├── storage/
+│   │   └── [key].js      # MongoDB serverless function (dynamic route)
+│   ├── auth.js           # Authentication API (password hashing with bcrypt)
+│   └── backup.js         # Backup/snapshot management API
 ├── index.html            # HTML template
 ├── package.json          # Dependencies
 ├── vite.config.js        # Vite configuration
@@ -31,8 +33,11 @@ survivor-fantasy-app/
 
 ### 1. Authentication
 - Simple name/password login system
+- **Password Security**: Server-side hashing with bcrypt (10 salt rounds)
+  - Auto-migration: Legacy plaintext passwords hashed on first login
+  - Minimum 8 character password requirement
 - Password recovery with security questions
-- Passwords stored in MongoDB per player
+- Passwords stored in MongoDB per player (hashed)
 - "Remember me" option using localStorage
 - **Demo/Guest Mode**: Allows exploring the app without an account
   - Click "Demo / Guest" button on login screen
@@ -136,6 +141,10 @@ survivor-fantasy-app/
 - Preview scores before releasing
 - Auto-calculates QotW winner from votes
 - Release scores with one click
+- **Re-Score**: Edit correct answers after release
+  - Calculates score adjustments (difference)
+  - Does not re-apply advantage effects
+  - Auto-backup before re-scoring
 
 **Edit Cast**:
 - Add/remove contestants
@@ -144,8 +153,10 @@ survivor-fantasy-app/
 
 **Eliminations**:
 - Mark contestants as eliminated
+- **Un-eliminate**: Toggle button to restore eliminated contestants
 - Eliminated contestants removed from questionnaire dropdowns
 - Visual indicators (red, opacity reduced)
+- Auto-backup before each elimination/un-elimination
 
 **Episode Scoring**:
 - Score pick performance per episode
@@ -173,6 +184,24 @@ survivor-fantasy-app/
 - See read/unread status
 - Delete individual notifications or clear all
 - 7-day auto-expiry (old notifications cleaned on load)
+
+**Password Management**:
+- View all players with reset option
+- Reset any player's password to default ("password123")
+- Uses server-side bcrypt hashing
+
+**Backup Management**:
+- **Auto-snapshots**: Created before risky actions
+  - Before releasing questionnaire scores
+  - Before episode scoring
+  - Before contestant eliminations/un-eliminations
+  - Before re-scoring questionnaires
+- **Manual backup**: Create snapshot on demand
+- **Export Data**: Download all game data as JSON file
+- **Restore**: Revert to any previous snapshot
+  - Creates safety backup before restoring
+- **Delete**: Remove old snapshots
+- Stores ~45-60 snapshots per season
 
 ### 9. Notifications System
 
@@ -237,7 +266,11 @@ survivor-fantasy-app/
 
 ## Database Schema
 
-### Storage Collections
+### Collections
+- **game_data**: Key-value store for all game state
+- **backups**: Snapshot storage for data integrity
+
+### Storage Collections (game_data)
 All data stored in MongoDB `game_data` collection as key-value pairs:
 
 **Key Structure**:
@@ -326,6 +359,23 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 }
 ```
 
+**Backup Snapshot** (stored in `backups` collection):
+```javascript
+{
+  id: number,                    // Timestamp-based ID
+  trigger: string,               // e.g., 'manual', 'before-release-scores', 'before-episode-scoring'
+  createdAt: ISO_string,
+  data: {                        // Full game state snapshot
+    players: [...],
+    contestants: [...],
+    picks: [...],
+    // ... all BACKUP_KEYS
+    _passwords: [...],           // Encrypted password data (not in exports)
+    _security: [...]             // Security questions (not in exports)
+  }
+}
+```
+
 ## API Routes
 
 ### `/api/storage/[key]`
@@ -338,6 +388,23 @@ Vercel serverless function with dynamic routing for all database operations:
 Returns JSON: `{ key, value }` or `{ error: 'Not found' }`
 
 **Note**: The `[key]` in the filename (`api/storage/[key].js`) enables Vercel's file-system based dynamic routing. The key is accessed via `req.query.key`.
+
+### `/api/auth`
+Server-side password management with bcrypt hashing:
+
+- **POST** with `action: 'login'` - Verify password (auto-migrates plaintext to hashed)
+- **POST** with `action: 'setPassword'` - Set new hashed password
+- **POST** with `action: 'resetToDefault'` - Reset to default password (hashed)
+- **POST** with `action: 'verifyCurrentPassword'` - Verify before password change
+
+### `/api/backup`
+Snapshot management for data integrity:
+
+- **POST** with `action: 'createSnapshot'` - Create backup with trigger label
+- **GET** with `action: 'getSnapshots'` - List all snapshots (id, trigger, date)
+- **POST** with `action: 'restoreSnapshot'` - Restore from snapshot (creates safety backup first)
+- **GET** with `action: 'exportData'` - Export all game data as JSON
+- **POST** with `action: 'deleteSnapshot'` - Delete a specific snapshot
 
 ## Environment Variables
 
@@ -447,6 +514,12 @@ Cast includes placeholder bios for each contestant (to be updated with real info
 - [x] Full Advantages System with scarcity rules
 - [x] Banner notifications on Home page (per-user tracking)
 - [x] Demo/Guest mode for app exploration
+- [x] Password hashing with bcrypt (server-side security)
+- [x] Auto-backup system with snapshots
+- [x] Un-eliminate contestants
+- [x] Re-score questionnaires
+- [x] Admin password reset for players
+- [x] Manual backup & JSON export
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)

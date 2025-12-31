@@ -64,6 +64,76 @@ export const auth = {
   }
 };
 
+// Backup API wrapper for snapshots and data export
+export const backup = {
+  async createSnapshot(trigger) {
+    try {
+      const response = await fetch(`${API_BASE}/backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'createSnapshot', trigger })
+      });
+      const data = await response.json();
+      return { success: response.ok && data.success, snapshotId: data.snapshotId, error: data.error };
+    } catch (error) {
+      console.error('Backup createSnapshot error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async getSnapshots() {
+    try {
+      const response = await fetch(`${API_BASE}/backup?action=getSnapshots`);
+      const data = await response.json();
+      return { success: response.ok && data.success, snapshots: data.snapshots || [], error: data.error };
+    } catch (error) {
+      console.error('Backup getSnapshots error:', error);
+      return { success: false, snapshots: [], error: 'Network error' };
+    }
+  },
+
+  async restoreSnapshot(snapshotId) {
+    try {
+      const response = await fetch(`${API_BASE}/backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'restoreSnapshot', snapshotId })
+      });
+      const data = await response.json();
+      return { success: response.ok && data.success, message: data.message, error: data.error };
+    } catch (error) {
+      console.error('Backup restoreSnapshot error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async exportData() {
+    try {
+      const response = await fetch(`${API_BASE}/backup?action=exportData`);
+      const data = await response.json();
+      return { success: response.ok && data.success, data: data.data, error: data.error };
+    } catch (error) {
+      console.error('Backup exportData error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async deleteSnapshot(snapshotId) {
+    try {
+      const response = await fetch(`${API_BASE}/backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deleteSnapshot', snapshotId })
+      });
+      const data = await response.json();
+      return { success: response.ok && data.success, error: data.error };
+    } catch (error) {
+      console.error('Backup deleteSnapshot error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  }
+};
+
 export const storage = {
   async get(key) {
     try {
