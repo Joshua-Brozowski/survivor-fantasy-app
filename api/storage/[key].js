@@ -12,10 +12,10 @@ async function connectToDatabase() {
   const client = new MongoClient(uri);
   await client.connect();
   const db = client.db('survivor_fantasy');
-  
+
   cachedClient = client;
   cachedDb = db;
-  
+
   return { client, db };
 }
 
@@ -35,11 +35,10 @@ export default async function handler(req, res) {
     const { db } = await connectToDatabase();
     const collection = db.collection('game_data');
 
-    // Extract key from URL path
-    const pathParts = req.url.split('/');
-    const key = pathParts[pathParts.length - 1].split('?')[0];
+    // Get key from Vercel's dynamic route parameter
+    const { key } = req.query;
 
-    if (req.method === 'GET' && key && key !== 'storage') {
+    if (req.method === 'GET' && key) {
       // Get single key
       const doc = await collection.findOne({ key });
       if (doc) {
@@ -47,17 +46,7 @@ export default async function handler(req, res) {
       } else {
         res.status(404).json({ error: 'Not found' });
       }
-    } else if (req.method === 'GET' && (!key || key === 'storage')) {
-      // List keys with optional prefix
-      const url = new URL(req.url, `http://${req.headers.host}`);
-      const prefix = url.searchParams.get('prefix') || '';
-      
-      const query = prefix ? { key: { $regex: `^${prefix}` } } : {};
-      const docs = await collection.find(query).toArray();
-      const keys = docs.map(doc => doc.key);
-      
-      res.status(200).json({ keys, prefix });
-    } else if (req.method === 'POST') {
+    } else if (req.method === 'POST' && key) {
       // Set key
       const { value } = req.body;
       await collection.updateOne(
@@ -66,7 +55,7 @@ export default async function handler(req, res) {
         { upsert: true }
       );
       res.status(200).json({ key, value });
-    } else if (req.method === 'DELETE') {
+    } else if (req.method === 'DELETE' && key) {
       // Delete key
       await collection.deleteOne({ key });
       res.status(200).json({ key, deleted: true });
