@@ -1877,65 +1877,38 @@ export default function SurvivorFantasyApp() {
 
       {/* Navigation */}
       <nav className="bg-black/40 backdrop-blur-sm border-b border-amber-600/50">
-        <div className="container mx-auto px-2 sm:px-4">
-          <div className="flex justify-center gap-0 sm:gap-1 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-            {/* Home */}
-            <button
-              onClick={() => { setCurrentView('home'); setShowNotifications(false); }}
-              className={`px-3 sm:px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base ${
-                currentView === 'home'
-                  ? 'text-amber-400 border-b-2 border-amber-400'
-                  : 'text-amber-200 hover:text-amber-300'
-              }`}
-            >
-              <Home className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="hidden sm:inline">Home</span>
-            </button>
-
-            {/* PICKS - Special styling, always visible */}
-            <button
-              onClick={() => { setCurrentView('picks'); setShowNotifications(false); }}
-              className={`px-3 sm:px-4 py-3 transition whitespace-nowrap flex items-center gap-1.5 sm:gap-2 ${
-                currentView === 'picks'
-                  ? 'text-orange-400 border-b-2 border-orange-400'
-                  : 'text-orange-300 hover:text-orange-200'
-              }`}
-            >
-              <Target className="w-4 h-4 sm:w-5 sm:h-5" />
-              <span className="picks-text text-base sm:text-lg font-bold">PICKS</span>
-            </button>
-
-            {/* Other nav items */}
+        <div className="container mx-auto px-1 sm:px-4">
+          <div className="flex justify-center gap-0 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
             {[
-              { id: 'questionnaire', label: 'Quiz', icon: FileText },
-              { id: 'challenge', label: 'Wordle', icon: Zap },
-              { id: 'leaderboard', label: 'Board', icon: Trophy },
-              { id: 'advantages', label: 'Perks', icon: Gift }
-            ].map(({ id, label, icon: Icon }) => (
+              { id: 'home', label: 'HOME', icon: Home, activeClass: 'text-amber-400 border-b-2 border-amber-400', inactiveClass: 'text-amber-200 hover:text-amber-300' },
+              { id: 'picks', label: 'PICKS', icon: Target, activeClass: 'text-orange-400 border-b-2 border-orange-400', inactiveClass: 'text-orange-300 hover:text-orange-200' },
+              { id: 'questionnaire', label: 'QUESTIONNAIRE', icon: FileText, activeClass: 'text-amber-400 border-b-2 border-amber-400', inactiveClass: 'text-amber-200 hover:text-amber-300' },
+              { id: 'challenge', label: 'WORDLE', icon: Zap, activeClass: 'text-amber-400 border-b-2 border-amber-400', inactiveClass: 'text-amber-200 hover:text-amber-300' },
+              { id: 'leaderboard', label: 'BOARD', icon: Trophy, activeClass: 'text-amber-400 border-b-2 border-amber-400', inactiveClass: 'text-amber-200 hover:text-amber-300' },
+              { id: 'advantages', label: "ADV'S", icon: Gift, activeClass: 'text-amber-400 border-b-2 border-amber-400', inactiveClass: 'text-amber-200 hover:text-amber-300' }
+            ].map(({ id, label, icon: Icon, activeClass, inactiveClass }) => (
               <button
                 key={id}
                 onClick={() => { setCurrentView(id); setShowNotifications(false); }}
-                className={`px-3 sm:px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base ${
-                  currentView === id
-                    ? 'text-amber-400 border-b-2 border-amber-400'
-                    : 'text-amber-200 hover:text-amber-300'
+                className={`px-2 sm:px-3 py-2.5 sm:py-3 transition whitespace-nowrap flex items-center gap-1 sm:gap-1.5 ${
+                  currentView === id ? activeClass : inactiveClass
                 }`}
               >
-                <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">{label}</span>
+                <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="picks-text text-xs sm:text-sm font-bold">{label}</span>
               </button>
             ))}
             {currentUser.isAdmin && (
               <button
                 onClick={() => { setCurrentView('admin'); setShowNotifications(false); }}
-                className={`px-3 sm:px-4 py-3 font-semibold transition whitespace-nowrap flex items-center gap-1.5 sm:gap-2 text-sm sm:text-base ${
+                className={`px-2 sm:px-3 py-2.5 sm:py-3 transition whitespace-nowrap flex items-center gap-1 sm:gap-1.5 ${
                   currentView === 'admin'
                     ? 'text-yellow-400 border-b-2 border-yellow-400'
                     : 'text-yellow-300 hover:text-yellow-200'
                 }`}
               >
-                <Crown className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="hidden sm:inline">Jeff's Controls</span>
+                <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <span className="picks-text text-xs sm:text-sm font-bold">JEFF</span>
               </button>
             )}
           </div>
