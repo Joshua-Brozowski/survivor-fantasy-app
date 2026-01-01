@@ -5854,7 +5854,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
   const qotwQuestion = activeQ?.qotw;
   const myVote = activeQ ? qotWVotes.find(v => v.questionnaireId === activeQ.id && v.voterId === currentUser.id) : null;
 
-  if (votingFor === 'qotw' && allQotWSubmitted && activeQ) {
+  if (votingFor === 'qotw' && activeQ?.qotwVotingOpen && activeQ) {
     // Check if vote was stolen
     if (voteWasStolen) {
       return (
@@ -6116,7 +6116,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
             </div>
           )}
 
-          {mySubmission && allQotWSubmitted && (
+          {mySubmission && activeQ?.qotwVotingOpen && (
             voteWasStolen ? (
               <button
                 onClick={() => setVotingFor('qotw')}
