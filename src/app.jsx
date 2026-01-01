@@ -4606,7 +4606,10 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   }
 
   if (adminView === 'phase-control') {
-    const currentIndex = GAME_PHASES.indexOf(gamePhase);
+    // Safety check for required data
+    const safeGamePhase = gamePhase || 'instinct-picks';
+    const safePicksLocked = picksLocked || { instinct: false, final: false };
+    const currentIndex = GAME_PHASES.indexOf(safeGamePhase);
 
     return (
       <div className="space-y-6">
@@ -4619,7 +4622,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
           {/* Current Phase Display */}
           <div className="bg-yellow-900/30 p-4 rounded-lg border border-yellow-600 mb-6">
             <p className="text-yellow-300 text-sm mb-1">Current Phase</p>
-            <p className="text-2xl font-bold text-white capitalize">{gamePhase.replace('-', ' ')}</p>
+            <p className="text-2xl font-bold text-white capitalize">{safeGamePhase.replace('-', ' ')}</p>
             <p className="text-yellow-400 text-sm mt-1">Phase {currentIndex + 1} of {GAME_PHASES.length}</p>
           </div>
 
@@ -4658,9 +4661,9 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               {GAME_PHASES.map((phase, idx) => (
                 <button
                   key={phase}
-                  onClick={() => phase !== gamePhase && setPhaseDirectly(phase)}
+                  onClick={() => phase !== safeGamePhase && setPhaseDirectly(phase)}
                   className={`p-3 rounded-lg border text-sm font-semibold transition ${
-                    phase === gamePhase
+                    phase === safeGamePhase
                       ? 'bg-yellow-600 border-yellow-400 text-white'
                       : 'bg-yellow-900/20 border-yellow-600/50 text-yellow-200 hover:bg-yellow-900/40'
                   }`}
@@ -4694,26 +4697,26 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               <button
                 onClick={() => togglePicksLock('instinct')}
                 className={`p-4 rounded-lg border-2 font-semibold transition flex flex-col items-center gap-2 ${
-                  picksLocked.instinct
+                  safePicksLocked.instinct
                     ? 'bg-red-900/40 border-red-500 text-red-300'
                     : 'bg-green-900/40 border-green-500 text-green-300'
                 }`}
               >
-                <span className="text-2xl">{picksLocked.instinct ? '🔒' : '🔓'}</span>
+                <span className="text-2xl">{safePicksLocked.instinct ? '🔒' : '🔓'}</span>
                 <span>Instinct Picks</span>
-                <span className="text-xs opacity-80">{picksLocked.instinct ? 'Locked' : 'Unlocked'}</span>
+                <span className="text-xs opacity-80">{safePicksLocked.instinct ? 'Locked' : 'Unlocked'}</span>
               </button>
               <button
                 onClick={() => togglePicksLock('final')}
                 className={`p-4 rounded-lg border-2 font-semibold transition flex flex-col items-center gap-2 ${
-                  picksLocked.final
+                  safePicksLocked.final
                     ? 'bg-red-900/40 border-red-500 text-red-300'
                     : 'bg-green-900/40 border-green-500 text-green-300'
                 }`}
               >
-                <span className="text-2xl">{picksLocked.final ? '🔒' : '🔓'}</span>
+                <span className="text-2xl">{safePicksLocked.final ? '🔒' : '🔓'}</span>
                 <span>Final Picks</span>
-                <span className="text-xs opacity-80">{picksLocked.final ? 'Locked' : 'Unlocked'}</span>
+                <span className="text-xs opacity-80">{safePicksLocked.final ? 'Locked' : 'Unlocked'}</span>
               </button>
             </div>
           </div>
