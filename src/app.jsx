@@ -635,7 +635,10 @@ export default function SurvivorFantasyApp() {
   };
 
   const togglePicksLock = async (pickType) => {
-    if (!requireRealUser('Lock/Unlock Picks')) return;
+    if (isGuestMode()) {
+      alert('Demo mode: Lock/Unlock Picks is disabled. Log in as a real user to make changes.');
+      return;
+    }
 
     const newLocked = { ...picksLocked, [pickType]: !picksLocked[pickType] };
     setPicksLocked(newLocked);
