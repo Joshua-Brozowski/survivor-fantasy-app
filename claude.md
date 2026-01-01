@@ -73,12 +73,18 @@ survivor-fantasy-app/
 **Instinct Pick** (Pre-season):
 - Select one contestant before Episode 1
 - Earns bonus points: +1 per episode survived, +5 for making merge
-- Cannot be changed once submitted
+- **Changeable until locked**: Players can change their pick until admin locks it
 
 **Final Pick** (Post-merge):
 - Opens when admin advances to `final-picks` phase
 - Select from remaining (non-eliminated) contestants
 - Same points as instinct pick (except no episode survival bonuses)
+- **Changeable until locked**: Players can change their pick until admin locks it
+
+**Picks Lock Control** (Admin - Phase Control panel):
+- Instinct picks and Final picks can be locked/unlocked independently
+- Players can change picks while unlocked
+- Lock picks when ready to start scoring
 
 **Points Earned by Picks**:
 - Reward Win: +1
@@ -135,6 +141,12 @@ survivor-fantasy-app/
 - Auto-archives previous questionnaires
 - Sends notifications to all players
 
+**Re-Open Questionnaire**:
+- Shows "Re-Open" button when questionnaire deadline has passed
+- Extends deadline to next Wednesday 7:59 PM (or 24 hours if sooner)
+- Reactivates the questionnaire for submissions
+- Sends notification to all players about new deadline
+
 **Score Questionnaire**:
 - View all player submissions
 - Select correct answers from dropdowns
@@ -163,8 +175,11 @@ survivor-fantasy-app/
 - Track immunity wins, advantages found, etc.
 
 **QOTW Management**:
-- Manage Question of the Week voting
-- View/set winners manually if needed
+- **Open Voting**: Makes "Vote on QOTW" button visible to players who submitted
+- **Close Voting**: Ends the voting period
+- **Award Winner**: Gives +5 points to the player(s) with most votes
+- View all answers with vote counts
+- Players see voting button on Questionnaire tab when voting is open
 
 **Phase Control**:
 - Visual display of current phase (1 of 5)
@@ -209,7 +224,8 @@ survivor-fantasy-app/
 - Shows unread count badge
 - Dropdown shows latest 10 notifications
 - Click to mark as read
-- "Mark all read" button
+- "Mark read" button - marks all as read
+- "Clear all" button - deletes all notifications for current user (with confirmation)
 - **Auto-expiry**: Notifications older than 7 days are automatically deleted on page load
 
 **Banner Notifications (Home Page)**:
@@ -277,6 +293,7 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 - `players` - Array of player objects
 - `contestants` - Array of Survivor 48 cast
 - `picks` - Array of player picks (instinct/final)
+- `picksLocked` - Object with `{ instinct: boolean, final: boolean }`
 - `gamePhase` - Current phase string
 - `questionnaires` - Array of questionnaire objects
 - `submissions` - Array of player questionnaire submissions
@@ -425,11 +442,21 @@ npm run dev
 # Opens at http://localhost:5173
 ```
 
+**Note**: Local dev server (Vite) does NOT serve Vercel serverless functions. API calls to `/api/*` will fail locally. For full testing with backend, deploy to production.
+
 ### Production Deployment
+**IMPORTANT**: Currently working directly on `main` branch for testing (backend required).
+
+1. Make changes on `main` branch
+2. Run `npm run build` to verify no errors
+3. Commit and push to `main`
+4. Vercel auto-deploys in ~2 minutes
+5. Live at: `https://survivor-fantasy-app.vercel.app`
+
+**Standard workflow** (when not actively testing):
 1. Work on `dev` branch
 2. When ready, merge to `main` branch
-3. Vercel auto-deploys in ~2 minutes
-4. Live at: `https://survivor-fantasy-app.vercel.app`
+3. Vercel auto-deploys
 
 ## Current Players
 1. Joshua (Admin/Jeff)
@@ -444,11 +471,11 @@ npm run dev
 
 ## Survivor 48 Cast
 18 contestants across 3 tribes:
-- **Manu** (6 contestants) - Orange theme
-- **Loto** (6 contestants) - Blue theme
-- **Moana** (6 contestants) - Green theme
+- **Civa** (6 contestants) - Green theme
+- **Lagi** (6 contestants) - Orange theme
+- **Vula** (6 contestants) - Blue theme
 
-Cast includes placeholder bios for each contestant (to be updated with real info).
+Cast photos stored in `public/cast/` folder. Bios in `CONTESTANT_BIOS` object in app.jsx.
 
 ## Development Guidelines
 
@@ -520,6 +547,11 @@ Cast includes placeholder bios for each contestant (to be updated with real info
 - [x] Re-score questionnaires
 - [x] Admin password reset for players
 - [x] Manual backup & JSON export
+- [x] Changeable picks (until admin locks)
+- [x] Picks lock control (instinct & final separate)
+- [x] Re-open questionnaire (extend deadline)
+- [x] Clear all notifications button
+- [x] QOTW voting visibility fix (admin-controlled)
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
@@ -546,4 +578,19 @@ Built with assistance from Claude (Anthropic) - December 2024.
 
 ---
 
-*For Claude/AI assistants working on this codebase*: This app is fully functional and deployed. The main component is in `app.jsx` with all game logic, views, and state management. The admin panel has full CRUD operations for questionnaires, cast management, phase control, and notifications. MongoDB handles all persistence through the `/api/storage` serverless function. Focus on maintaining the existing architecture when adding features. Always test with `npm run build` before recommending merge to main.
+*For Claude/AI assistants working on this codebase*:
+
+**IMPORTANT - Current Workflow**: Working directly on `main` branch because local dev cannot test serverless functions. Be careful with changes - they deploy immediately to production.
+
+**Architecture Notes**:
+- Main component is `app.jsx` with all game logic, views, and state management
+- AdminPanel is a separate function component - ensure all required props are passed
+- MongoDB handles persistence through `/api/storage` serverless function
+- Always run `npm run build` before committing to catch errors
+
+**Common Prop Issues**:
+- AdminPanel needs many props from App (check function signature when adding features)
+- QuestionnaireView needs `guestSafeSet` and `isGuestMode` props
+- Functions defined in App (like `togglePicksLock`) can't use AdminPanel's `requireRealUser`
+
+**Testing**: Since local dev doesn't support API routes, all testing happens on production. Make small, incremental changes.
