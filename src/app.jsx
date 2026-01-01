@@ -1678,14 +1678,34 @@ export default function SurvivorFantasyApp() {
                     <div className="absolute right-0 top-10 sm:top-12 w-72 sm:w-80 bg-black/95 border-2 border-amber-600 rounded-lg shadow-xl z-50 max-h-80 sm:max-h-96 overflow-y-auto">
                       <div className="p-2 sm:p-3 border-b border-amber-600 flex items-center justify-between">
                         <h3 className="text-amber-400 font-semibold text-sm sm:text-base">Notifications</h3>
-                        {unreadNotifications.length > 0 && (
-                          <button
-                            onClick={markAllNotificationsRead}
-                            className="text-xs text-amber-300 hover:text-amber-200"
-                          >
-                            Mark all read
-                          </button>
-                        )}
+                        <div className="flex gap-2">
+                          {unreadNotifications.length > 0 && (
+                            <button
+                              onClick={markAllNotificationsRead}
+                              className="text-xs text-amber-300 hover:text-amber-200"
+                            >
+                              Mark read
+                            </button>
+                          )}
+                          {notifications.filter(n => n.targetPlayerId === currentUser.id || !n.targetPlayerId).length > 0 && (
+                            <button
+                              onClick={async () => {
+                                if (window.confirm('Clear all your notifications?')) {
+                                  // Clear notifications for this user (remove broadcasts and targeted ones)
+                                  const updated = notifications.filter(n =>
+                                    n.targetPlayerId !== null && n.targetPlayerId !== currentUser.id
+                                  );
+                                  setNotifications(updated);
+                                  await storage.set('notifications', JSON.stringify(updated));
+                                  setShowNotifications(false);
+                                }
+                              }}
+                              className="text-xs text-red-400 hover:text-red-300"
+                            >
+                              Clear all
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className="divide-y divide-amber-600/30">
                         {notifications
