@@ -2453,6 +2453,9 @@ export default function SurvivorFantasyApp() {
             adminCreateChallenge={adminCreateChallenge}
             adminEndChallenge={adminEndChallenge}
             isGuestMode={isGuestMode()}
+            picksLocked={picksLocked}
+            setPicksLocked={setPicksLocked}
+            togglePicksLock={togglePicksLock}
           />
         )}
 
@@ -3080,7 +3083,7 @@ export default function SurvivorFantasyApp() {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode }) {
+function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock }) {
   const [adminView, setAdminView] = useState('main');
 
   // Helper to check guest mode and show alert
@@ -3185,6 +3188,46 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
       options: type === 'multiple-choice' ? ['', ''] : []
     };
     setNewQ({...newQ, questions: [...newQ.questions, question]});
+  };
+
+  // Re-open a questionnaire by extending its deadline
+  const reopenQuestionnaire = async (questionnaire) => {
+    if (!requireRealUser('Re-open Questionnaire')) return;
+
+    // Calculate new deadline: next Wednesday 7:59 PM EST, or 24 hours from now if sooner
+    const now = new Date();
+    const nextWednesday = new Date();
+    nextWednesday.setDate(now.getDate() + ((3 - now.getDay() + 7) % 7 || 7)); // Next Wednesday
+    nextWednesday.setHours(19, 59, 0, 0);
+
+    // If next Wednesday is more than 7 days away, use a shorter deadline
+    const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const newDeadline = nextWednesday < in24Hours ? in24Hours : nextWednesday;
+
+    const newLockedAt = new Date(newDeadline);
+    newLockedAt.setHours(21, 0, 0, 0);
+
+    const updated = questionnaires.map(q =>
+      q.id === questionnaire.id
+        ? {
+            ...q,
+            deadline: newDeadline.toISOString(),
+            lockedAt: newLockedAt.toISOString(),
+            status: 'active'
+          }
+        : q
+    );
+
+    setQuestionnaires(updated);
+    await storage.set('questionnaires', JSON.stringify(updated));
+
+    await addNotification({
+      type: 'questionnaire_reopened',
+      message: `Questionnaire "${questionnaire.title}" has been re-opened! New deadline: ${newDeadline.toLocaleString()}`,
+      targetPlayerId: null
+    });
+
+    alert(`Questionnaire re-opened!\n\nNew deadline: ${newDeadline.toLocaleString()}\nLocks at: ${newLockedAt.toLocaleString()}`);
   };
 
   const calculateScores = (questionnaire, correctAns) => {
@@ -5480,44 +5523,64 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
             <div className="space-y-3">
               {questionnaires.map(q => {
                 const qSubmissions = submissions.filter(s => s.questionnaireId === q.id);
+                const now = new Date();
+                const deadline = new Date(q.deadline);
+                const lockedAt = new Date(q.lockedAt);
+                const isPastDeadline = now > deadline;
+                const isLocked = now > lockedAt;
                 return (
                   <div key={q.id} className="bg-yellow-900/20 border border-yellow-600 p-4 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-white font-semibold">{q.title}</p>
-                        <p className="text-yellow-300 text-sm">
-                          Episode {q.episodeNumber} • {qSubmissions.length}/{players.length} submitted
-                        </p>
-                        {q.scoresReleased && (
-                          <span className="text-green-400 text-sm">✓ Scores Released</span>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        {!q.scoresReleased && (
-                          <button
-                            onClick={() => {
-                              setScoringQ(q);
-                              setCorrectAnswers(q.correctAnswers || {});
-                              setAdminView('score-questionnaire');
-                            }}
-                            className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition"
-                          >
-                            Score Questionnaire
-                          </button>
-                        )}
-                        {q.scoresReleased && (
-                          <button
-                            onClick={() => {
-                              setScoringQ({ ...q, isRescore: true });
-                              setCorrectAnswers(q.correctAnswers || {});
-                              setAdminView('score-questionnaire');
-                            }}
-                            className="px-4 py-2 bg-amber-600 text-white rounded font-semibold hover:bg-amber-500 transition flex items-center gap-1"
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                            Re-Score
-                          </button>
-                        )}
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-white font-semibold">{q.title}</p>
+                          <p className="text-yellow-300 text-sm">
+                            Episode {q.episodeNumber} • {qSubmissions.length}/{players.length} submitted
+                          </p>
+                          <p className={`text-sm ${isPastDeadline ? 'text-red-400' : 'text-green-400'}`}>
+                            Deadline: {deadline.toLocaleString()} {isPastDeadline ? '(PASSED)' : ''}
+                          </p>
+                          {q.scoresReleased && (
+                            <span className="text-green-400 text-sm">✓ Scores Released</span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2 justify-end">
+                          {/* Re-Open Button - show when past deadline or locked */}
+                          {(isPastDeadline || isLocked) && !q.scoresReleased && (
+                            <button
+                              onClick={() => reopenQuestionnaire(q)}
+                              className="px-4 py-2 bg-blue-600 text-white rounded font-semibold hover:bg-blue-500 transition flex items-center gap-1"
+                            >
+                              <RefreshCw className="w-4 h-4" />
+                              Re-Open
+                            </button>
+                          )}
+                          {!q.scoresReleased && (
+                            <button
+                              onClick={() => {
+                                setScoringQ(q);
+                                setCorrectAnswers(q.correctAnswers || {});
+                                setAdminView('score-questionnaire');
+                              }}
+                              className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition"
+                            >
+                              Score
+                            </button>
+                          )}
+                          {q.scoresReleased && (
+                            <button
+                              onClick={() => {
+                                setScoringQ({ ...q, isRescore: true });
+                                setCorrectAnswers(q.correctAnswers || {});
+                                setAdminView('score-questionnaire');
+                              }}
+                              className="px-4 py-2 bg-amber-600 text-white rounded font-semibold hover:bg-amber-500 transition flex items-center gap-1"
+                            >
+                              <RotateCcw className="w-4 h-4" />
+                              Re-Score
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
