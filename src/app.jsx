@@ -2251,10 +2251,35 @@ export default function SurvivorFantasyApp() {
             </h2>
 
             <div className="space-y-3">
-              {[...players]
-                .sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))
-                .map((player, index) => {
-                  const points = calculateTotalPoints(player.id);
+              {(() => {
+                // Calculate rankings with ties
+                const sortedPlayers = [...players]
+                  .map(p => ({ ...p, points: calculateTotalPoints(p.id) }))
+                  .sort((a, b) => b.points - a.points);
+
+                // Build ranking with ties: T-1, T-1, 3 (not T-1, T-1, T-2)
+                const rankings = [];
+                let currentRank = 1;
+                sortedPlayers.forEach((player, index) => {
+                  if (index === 0) {
+                    rankings.push({ rank: 1, isTied: false });
+                  } else {
+                    const prevPlayer = sortedPlayers[index - 1];
+                    if (player.points === prevPlayer.points) {
+                      // Same points as previous - tie
+                      rankings[index - 1].isTied = true;
+                      rankings.push({ rank: rankings[index - 1].rank, isTied: true });
+                    } else {
+                      // Different points - new rank (skips tied positions)
+                      rankings.push({ rank: index + 1, isTied: false });
+                    }
+                  }
+                });
+
+                return sortedPlayers.map((player, index) => {
+                  const points = player.points;
+                  const { rank, isTied } = rankings[index];
+                  const rankDisplay = isTied ? `T-${rank}` : rank;
                   const isCurrentUser = player.id === currentUser.id;
                   const isExpanded = expandedPlayer === player.id;
                   const breakdown = getPointBreakdown(player.id);
@@ -2272,13 +2297,13 @@ export default function SurvivorFantasyApp() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4">
                             {/* Rank Badge */}
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${
-                              index === 0 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/50' :
-                              index === 1 ? 'bg-gray-400 text-black shadow-lg shadow-gray-400/50' :
-                              index === 2 ? 'bg-amber-700 text-white shadow-lg shadow-amber-700/50' :
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold ${isTied ? 'text-sm' : 'text-lg'} ${
+                              rank === 1 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/50' :
+                              rank === 2 ? 'bg-gray-400 text-black shadow-lg shadow-gray-400/50' :
+                              rank === 3 ? 'bg-amber-700 text-white shadow-lg shadow-amber-700/50' :
                               'bg-amber-600/50 text-white'
                             }`}>
-                              {index + 1}
+                              {rankDisplay}
                             </div>
 
                             {/* Player Initial Circle */}
@@ -2368,9 +2393,10 @@ export default function SurvivorFantasyApp() {
                       )}
                     </div>
                   );
-                })}
+                });
+              })()}
             </div>
-            
+
             {/* Stats Summary */}
             <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-gradient-to-br from-yellow-900/60 to-amber-900/60 p-4 rounded-lg border border-yellow-600">
@@ -2392,9 +2418,14 @@ export default function SurvivorFantasyApp() {
                   <p className="text-purple-300 font-semibold">Your Rank</p>
                 </div>
                 <p className="text-white text-xl font-bold">
-                  #{[...players]
-                    .sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))
-                    .findIndex(p => p.id === currentUser.id) + 1}
+                  {(() => {
+                    const myPoints = calculateTotalPoints(currentUser.id);
+                    // Rank = 1 + number of players with MORE points than me
+                    const playersAbove = players.filter(p => calculateTotalPoints(p.id) > myPoints).length;
+                    const rank = playersAbove + 1;
+                    const isTied = players.filter(p => calculateTotalPoints(p.id) === myPoints).length > 1;
+                    return isTied ? `T-${rank}` : `#${rank}`;
+                  })()}
                 </p>
                 <p className="text-purple-400 text-sm">
                   of {players.length} players
@@ -6238,12 +6269,17 @@ function WordleGame({
     return () => clearInterval(interval);
   }, [attempt, lastSaveTime]);
 
-  // Visibility change handler - save progress when user leaves
+  // Visibility change handler - save progress when user leaves, resume when returning
   useEffect(() => {
     const handleVisibilityChange = async () => {
-      if (document.hidden && attempt?.status === 'in_progress' && lastSaveTime) {
-        const elapsed = Date.now() - lastSaveTime;
-        await saveChallengeTimeProgress(attempt.id, elapsed);
+      if (attempt?.status === 'in_progress' && lastSaveTime) {
+        if (document.hidden) {
+          // User is leaving - save progress
+          const elapsed = Date.now() - lastSaveTime;
+          await saveChallengeTimeProgress(attempt.id, elapsed);
+        }
+        // Reset lastSaveTime when tab becomes visible again OR when leaving
+        // This ensures timer continues from correct point when returning
         setLastSaveTime(Date.now());
       }
     };
