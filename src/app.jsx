@@ -3495,8 +3495,18 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     // Create backup before elimination status change
     await backup.createSnapshot(`before-${action}-contestant`);
 
+    // Determine current episode from latest questionnaire
+    const currentEpisode = questionnaires.length > 0
+      ? Math.max(...questionnaires.map(q => q.episodeNumber || 1))
+      : 1;
+
     const updated = contestants.map(c =>
-      c.id === contestantId ? { ...c, eliminated: !isCurrentlyEliminated } : c
+      c.id === contestantId ? {
+        ...c,
+        eliminated: !isCurrentlyEliminated,
+        // Track which episode they were eliminated in (or clear if un-eliminating)
+        eliminatedEpisode: !isCurrentlyEliminated ? currentEpisode : null
+      } : c
     );
     setContestants(updated);
     await storage.set('contestants', JSON.stringify(updated));
@@ -5432,7 +5442,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
         // Determine current episode based on completion status
         const getWeeklyStatus = () => {
           if (questionnaires.length === 0) {
-            return { episode: 1, questionnaire: 'not-created', qotw: 'not-open', pickScoring: false, allDone: false };
+            return { episode: 1, questionnaire: 'not-created', qotw: 'not-open', pickScoring: false, eliminations: false, wordle: 'none', allDone: false };
           }
 
           // Sort questionnaires by episode number
@@ -5444,21 +5454,34 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
             const hasPickScoring = pickScores.some(ps => ps.episode === ep);
             const qStatus = q.scoresReleased ? 'released' : (q.status === 'scored' ? 'graded' : 'collecting');
             const qotwStatus = q.scoresReleased ? 'awarded' : (q.qotwVotingOpen ? 'voting' : 'not-open');
-            const allDone = qStatus === 'released' && hasPickScoring;
+            const hasEliminations = contestants.some(c => c.eliminatedEpisode === ep);
+
+            // Check Wordle status
+            const activeChallenge = challenges.find(c => c.status === 'active');
+            const completedThisWeek = challenges.find(c => c.status === 'ended' && c.winnerId);
+            const wordleStatus = completedThisWeek ? 'awarded' : (activeChallenge ? 'active' : 'none');
+
+            const allDone = qStatus === 'released' && hasPickScoring && hasEliminations && (wordleStatus === 'awarded' || wordleStatus === 'none');
 
             if (!allDone) {
-              return { episode: ep, questionnaire: qStatus, qotw: qotwStatus, pickScoring: hasPickScoring, allDone: false, q };
+              return { episode: ep, questionnaire: qStatus, qotw: qotwStatus, pickScoring: hasPickScoring, eliminations: hasEliminations, wordle: wordleStatus, allDone: false, q };
             }
           }
 
           // All episodes complete - show latest and prompt for next
           const latestQ = sortedQs[0];
           const latestEp = latestQ?.episodeNumber || 1;
+          const activeChallenge = challenges.find(c => c.status === 'active');
+          const completedThisWeek = challenges.find(c => c.status === 'ended' && c.winnerId);
+          const wordleStatus = completedThisWeek ? 'awarded' : (activeChallenge ? 'active' : 'none');
+
           return {
             episode: latestEp,
             questionnaire: 'released',
             qotw: 'awarded',
             pickScoring: true,
+            eliminations: true,
+            wordle: wordleStatus,
             allDone: true,
             nextEpisode: latestEp + 1
           };
@@ -5473,9 +5496,9 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
         const getQStatusText = (s) => {
           switch(s) {
             case 'not-created': return 'Not created';
-            case 'collecting': return 'Collecting responses';
-            case 'graded': return 'Graded (not released)';
-            case 'released': return 'Scores released';
+            case 'collecting': return 'Collecting';
+            case 'graded': return 'Graded';
+            case 'released': return 'Released';
             default: return s;
           }
         };
@@ -5483,8 +5506,17 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
         const getQotwStatusText = (s) => {
           switch(s) {
             case 'not-open': return 'Not open';
-            case 'voting': return 'Voting open';
-            case 'awarded': return 'Points awarded';
+            case 'voting': return 'Voting';
+            case 'awarded': return 'Awarded';
+            default: return s;
+          }
+        };
+
+        const getWordleStatusText = (s) => {
+          switch(s) {
+            case 'none': return 'No challenge';
+            case 'active': return 'Active';
+            case 'awarded': return 'Awarded';
             default: return s;
           }
         };
@@ -5500,26 +5532,40 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                 <span className="text-xs bg-green-600 text-white px-2 py-1 rounded">All Done!</span>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-              <div className="flex items-center gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-x-4 gap-y-2 text-sm">
+              <div className="flex items-center gap-1">
                 {getStatusIcon(status.questionnaire === 'released')}
-                <span className="text-slate-300">Questionnaire:</span>
+                <span className="text-slate-400">Q:</span>
                 <span className={status.questionnaire === 'released' ? 'text-green-400' : 'text-yellow-300'}>
                   {getQStatusText(status.questionnaire)}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 {getStatusIcon(status.qotw === 'awarded')}
-                <span className="text-slate-300">QotW:</span>
+                <span className="text-slate-400">QotW:</span>
                 <span className={status.qotw === 'awarded' ? 'text-green-400' : 'text-yellow-300'}>
                   {getQotwStatusText(status.qotw)}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 {getStatusIcon(status.pickScoring)}
-                <span className="text-slate-300">Pick Scoring:</span>
+                <span className="text-slate-400">Picks:</span>
                 <span className={status.pickScoring ? 'text-green-400' : 'text-yellow-300'}>
-                  {status.pickScoring ? 'Done' : 'Not done'}
+                  {status.pickScoring ? 'Scored' : 'Not done'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                {getStatusIcon(status.eliminations)}
+                <span className="text-slate-400">Elim:</span>
+                <span className={status.eliminations ? 'text-green-400' : 'text-yellow-300'}>
+                  {status.eliminations ? 'Done' : 'Not done'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                {getStatusIcon(status.wordle === 'awarded' || status.wordle === 'none')}
+                <span className="text-slate-400">Wordle:</span>
+                <span className={status.wordle === 'awarded' ? 'text-green-400' : (status.wordle === 'none' ? 'text-slate-500' : 'text-yellow-300')}>
+                  {getWordleStatusText(status.wordle)}
                 </span>
               </div>
             </div>
