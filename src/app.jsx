@@ -180,20 +180,7 @@ export default function SurvivorFantasyApp() {
     loadGameData();
   }, []);
 
-  // Check for weekly challenge on load and periodically
-  useEffect(() => {
-    if (currentUser && challenges.length >= 0) {
-      checkAndCreateWeeklyChallenge();
-      checkAndFinalizeChallenge();
-      
-      // Check every hour for challenge state
-      const interval = setInterval(() => {
-        checkAndFinalizeChallenge();
-      }, 60 * 60 * 1000);
-      
-      return () => clearInterval(interval);
-    }
-  }, [currentUser, challenges.length]);
+  // Wordle challenges are now fully admin-controlled (no auto-create or auto-end)
 
   // Check if current user has security question
   useEffect(() => {
@@ -1198,41 +1185,7 @@ export default function SurvivorFantasyApp() {
     });
   };
 
-  // Auto-create challenge on Monday (called in useEffect)
-  const checkAndCreateWeeklyChallenge = async () => {
-    const now = new Date();
-    const weekStart = getWeekStart(now);
-    const weekEnd = getWeekEnd(now);
-
-    const existingChallenge = getChallengeForWeek(weekStart);
-
-    // Only auto-create if it's Monday and no challenge exists for this week
-    if (now.getDay() === 1 && !existingChallenge) {
-      const newChallenge = {
-        id: Date.now(),
-        word: getRandomWord(),
-        weekStart: weekStart.toISOString(),
-        weekEnd: weekEnd.toISOString(),
-        status: 'active',
-        createdBy: 'auto',
-        createdAt: now.toISOString(),
-        winnerId: null,
-        winnerData: null
-      };
-
-      const updated = [...challenges, newChallenge];
-      setChallenges(updated);
-      await storage.set('challenges', JSON.stringify(updated));
-
-      await addNotification({
-        type: 'challenge_started',
-        message: 'New Survivor Wordle Challenge is live! Guess the word before Sunday.',
-        targetPlayerId: null
-      });
-    }
-  };
-
-  // Finalize challenge and determine winner
+  // Finalize challenge and determine winner (called by admin)
   const finalizeChallenge = async (challengeId) => {
     const challenge = challenges.find(c => c.id === challengeId);
     if (!challenge || challenge.status !== 'active') return;
@@ -1283,19 +1236,6 @@ export default function SurvivorFantasyApp() {
     );
     setChallenges(updatedChallenges);
     await storage.set('challenges', JSON.stringify(updatedChallenges));
-  };
-
-  // Check and finalize expired challenges
-  const checkAndFinalizeChallenge = async () => {
-    const activeChallenge = getActiveChallenge();
-    if (!activeChallenge) return;
-
-    const now = new Date();
-    const weekEnd = new Date(activeChallenge.weekEnd);
-
-    if (now > weekEnd) {
-      await finalizeChallenge(activeChallenge.id);
-    }
   };
 
   // Get player's attempt for a challenge

@@ -128,11 +128,12 @@ survivor-fantasy-app/
 - QotW Winner: +5 points
 
 ### 7. Leaderboard
-- Real-time rankings
-- Medal badges (gold, silver, bronze)
+- Real-time rankings with **tie display** (T-1, T-1, 3 instead of 1, 2, 3)
+- Medal badges (gold, silver, bronze) based on rank
 - Player initials in Survivor-style circles
-- Total points from picks + questionnaires + QotW wins
-- Expandable player details
+- Total points from picks + questionnaires + QotW wins + challenges
+- Expandable player details with point history
+- "Your Rank" stat shows ties (T-X format)
 
 ### 8. Admin Controls (Jeff's Panel)
 
@@ -247,8 +248,50 @@ survivor-fantasy-app/
 - Advantage purchased/played (anonymous broadcasts)
 - Vote/advantage stolen (targeted alerts)
 - Double Trouble/Immunity Idol applied
+- Wordle challenge started/ended
 
-### 10. Advantages System
+### 10. Wordle Challenge
+Weekly mini-game where players guess a 5-letter Survivor-themed word.
+
+**Gameplay**:
+- 6 attempts to guess the word
+- Color feedback: Green (correct), Yellow (wrong position), Gray (not in word)
+- Timer tracks how long player takes (continues when switching tabs)
+- Winner determined by: fewest guesses, then fastest time
+- Progress auto-saved every 30 seconds and when leaving tab
+
+**Admin Control** (Fully Manual):
+- **Create Challenge**: Start a new challenge with random word
+- **End Challenge**: Finalize and award points to winner
+- No automatic creation or ending - admin has full control
+- Challenges not tied to episodes (can run anytime)
+
+**Points**:
+- Winner: +3 points
+
+### 11. Weekly Admin Checklist
+Compact status card at top of Admin Panel showing progress for current episode.
+
+**Tracked Items**:
+| Item | States |
+|------|--------|
+| **Q** (Questionnaire) | Not created → Collecting → Graded → Released |
+| **QotW** | Not open → Voting → Awarded |
+| **Picks** | Not done → Scored |
+| **Elim** | Not done → Done |
+| **Wordle** | No challenge → Active → Awarded |
+
+**Week Progression**:
+- Episode number based on questionnaire episode numbers
+- Only advances to next episode when ALL tasks complete
+- Shows "All Done!" badge when episode is complete
+- Prompts admin to create next episode's questionnaire
+
+**Elimination Tracking**:
+- Contestants marked eliminated now store `eliminatedEpisode`
+- Checklist checks if any contestant was eliminated in current episode
+
+### 12. Advantages System
 
 **Scarcity Rule**: Only ONE of each advantage can exist in the game at a time. Once purchased, no one else can buy it. Once PLAYED, it returns to the shop for others to purchase.
 
@@ -328,7 +371,8 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
   name: string,
   tribe: string,
   image: string,
-  eliminated?: boolean
+  eliminated?: boolean,
+  eliminatedEpisode?: number  // Episode number when eliminated (for checklist tracking)
 }
 ```
 
