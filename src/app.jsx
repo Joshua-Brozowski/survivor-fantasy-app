@@ -5427,6 +5427,109 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
         </div>
       </div>
 
+      {/* Weekly Admin Checklist */}
+      {(() => {
+        // Determine current episode based on completion status
+        const getWeeklyStatus = () => {
+          if (questionnaires.length === 0) {
+            return { episode: 1, questionnaire: 'not-created', qotw: 'not-open', pickScoring: false, allDone: false };
+          }
+
+          // Sort questionnaires by episode number
+          const sortedQs = [...questionnaires].sort((a, b) => (b.episodeNumber || 0) - (a.episodeNumber || 0));
+
+          // Find the current working episode (first incomplete, or latest if all done)
+          for (const q of sortedQs) {
+            const ep = q.episodeNumber || 1;
+            const hasPickScoring = pickScores.some(ps => ps.episode === ep);
+            const qStatus = q.scoresReleased ? 'released' : (q.status === 'scored' ? 'graded' : 'collecting');
+            const qotwStatus = q.scoresReleased ? 'awarded' : (q.qotwVotingOpen ? 'voting' : 'not-open');
+            const allDone = qStatus === 'released' && hasPickScoring;
+
+            if (!allDone) {
+              return { episode: ep, questionnaire: qStatus, qotw: qotwStatus, pickScoring: hasPickScoring, allDone: false, q };
+            }
+          }
+
+          // All episodes complete - show latest and prompt for next
+          const latestQ = sortedQs[0];
+          const latestEp = latestQ?.episodeNumber || 1;
+          return {
+            episode: latestEp,
+            questionnaire: 'released',
+            qotw: 'awarded',
+            pickScoring: true,
+            allDone: true,
+            nextEpisode: latestEp + 1
+          };
+        };
+
+        const status = getWeeklyStatus();
+
+        const getStatusIcon = (done) => done
+          ? <span className="text-green-400">✓</span>
+          : <span className="text-yellow-400">○</span>;
+
+        const getQStatusText = (s) => {
+          switch(s) {
+            case 'not-created': return 'Not created';
+            case 'collecting': return 'Collecting responses';
+            case 'graded': return 'Graded (not released)';
+            case 'released': return 'Scores released';
+            default: return s;
+          }
+        };
+
+        const getQotwStatusText = (s) => {
+          switch(s) {
+            case 'not-open': return 'Not open';
+            case 'voting': return 'Voting open';
+            case 'awarded': return 'Points awarded';
+            default: return s;
+          }
+        };
+
+        return (
+          <div className="bg-gradient-to-r from-slate-800/80 to-slate-900/80 p-4 rounded-lg border border-slate-600">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-slate-200 font-semibold flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Episode {status.episode} Checklist
+              </h3>
+              {status.allDone && (
+                <span className="text-xs bg-green-600 text-white px-2 py-1 rounded">All Done!</span>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+              <div className="flex items-center gap-2">
+                {getStatusIcon(status.questionnaire === 'released')}
+                <span className="text-slate-300">Questionnaire:</span>
+                <span className={status.questionnaire === 'released' ? 'text-green-400' : 'text-yellow-300'}>
+                  {getQStatusText(status.questionnaire)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {getStatusIcon(status.qotw === 'awarded')}
+                <span className="text-slate-300">QotW:</span>
+                <span className={status.qotw === 'awarded' ? 'text-green-400' : 'text-yellow-300'}>
+                  {getQotwStatusText(status.qotw)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {getStatusIcon(status.pickScoring)}
+                <span className="text-slate-300">Pick Scoring:</span>
+                <span className={status.pickScoring ? 'text-green-400' : 'text-yellow-300'}>
+                  {status.pickScoring ? 'Done' : 'Not done'}
+                </span>
+              </div>
+            </div>
+            {status.allDone && (
+              <p className="text-green-300 text-xs mt-2">Ready to create Episode {status.nextEpisode} questionnaire!</p>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-yellow-600">
         <h2 className="text-2xl font-bold text-yellow-400 mb-6 flex items-center gap-2">
           <Crown className="w-6 h-6" />
