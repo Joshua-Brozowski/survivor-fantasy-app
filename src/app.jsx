@@ -5393,15 +5393,21 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
             const ep = q.episodeNumber || 1;
             const hasPickScoring = pickScores.some(ps => ps.episode === ep);
             const qStatus = q.scoresReleased ? 'released' : (q.status === 'scored' ? 'graded' : 'collecting');
-            const qotwStatus = q.scoresReleased ? 'awarded' : (q.qotwVotingOpen ? 'voting' : 'not-open');
-            const hasEliminations = contestants.some(c => c.eliminatedEpisode === ep);
+
+            // QotW: Check if winner was awarded (qotwAwarded flag or qotwWinner exists)
+            const qotwAwarded = q.qotwAwarded || q.qotwWinner;
+            const qotwStatus = qotwAwarded ? 'awarded' : (q.qotwVotingOpen ? 'voting' : 'not-open');
+
+            // Eliminations: Check explicit tracking OR fallback to scoresReleased (for existing data)
+            const hasEliminatedThisEp = contestants.some(c => c.eliminatedEpisode === ep);
+            const hasEliminations = hasEliminatedThisEp || q.scoresReleased;
 
             // Check Wordle status
             const activeChallenge = challenges.find(c => c.status === 'active');
             const completedThisWeek = challenges.find(c => c.status === 'ended' && c.winnerId);
             const wordleStatus = completedThisWeek ? 'awarded' : (activeChallenge ? 'active' : 'none');
 
-            const allDone = qStatus === 'released' && hasPickScoring && hasEliminations && (wordleStatus === 'awarded' || wordleStatus === 'none');
+            const allDone = qStatus === 'released' && hasPickScoring && qotwAwarded && hasEliminations && (wordleStatus === 'awarded' || wordleStatus === 'none');
 
             if (!allDone) {
               return { episode: ep, questionnaire: qStatus, qotw: qotwStatus, pickScoring: hasPickScoring, eliminations: hasEliminations, wordle: wordleStatus, allDone: false, q };
