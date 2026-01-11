@@ -247,7 +247,8 @@ survivor-fantasy-app/
 - Admin custom messages (Tree Mail)
 - Advantage purchased/played (anonymous broadcasts)
 - Vote/advantage stolen (targeted alerts)
-- Double Trouble/Immunity Idol applied
+- Double Trouble applied (during score release)
+- Point Steal (immediate point transfer notification)
 - Wordle challenge started/ended
 
 ### 10. Wordle Challenge
@@ -302,7 +303,7 @@ Compact status card at top of Admin Panel showing progress for current episode.
 | Extra Vote | 15 pts | Cast an additional vote in QOTW voting |
 | Vote Steal | 20 pts | Steal a player's vote (blocks them from voting, auto-votes for you) |
 | Double Trouble | 25 pts | Double ALL your weekly points when scores are released |
-| Immunity Idol | 30 pts | Negate all negative points for the week |
+| Point Steal | 30 pts | Steal 5 points from another player (they lose 5, you gain 5) - immediate effect |
 | Knowledge is Power | 35 pts | Steal another player's advantage (wasted if they have none) |
 
 **Shop UI States**:
@@ -313,10 +314,11 @@ Compact status card at top of Admin Panel showing progress for current episode.
 
 **Playing Advantages**:
 - Owned advantages appear above shop with "Play Advantage" button
-- Some advantages require target selection (Vote Steal, Knowledge is Power)
+- Some advantages require target selection (Vote Steal, Point Steal, Knowledge is Power)
 - QOTW advantages (Extra Vote, Vote Steal) require voting to be open
-- Weekly advantages (Double Trouble, Immunity Idol) link to active questionnaire
-- Effects apply automatically when admin releases scores
+- Weekly advantages (Double Trouble) link to active questionnaire
+- Point Steal takes immediate effect (5 point transfer)
+- Double Trouble effects apply automatically when admin releases scores
 
 **Notifications**:
 - Anonymous broadcast when any advantage is purchased

@@ -92,7 +92,7 @@ const DEFAULT_ADVANTAGES = [
   { id: 'extra-vote', name: 'Extra Vote', description: 'Cast an additional vote for another player\'s Question of the Week answer', cost: 15, type: 'qotw' },
   { id: 'vote-steal', name: 'Vote Steal', description: 'Steal a vote from another player (prevents them from voting) and auto-apply it to yourself', cost: 20, type: 'qotw' },
   { id: 'double-trouble', name: 'Double Trouble', description: 'Double ALL your points for the week (questionnaire, picks, QOTW) when scores are released', cost: 25, type: 'multiplier' },
-  { id: 'immunity-idol', name: 'Immunity Idol', description: 'Negate all your negative points for the week when scores are released', cost: 30, type: 'protection' },
+  { id: 'point-steal', name: 'Point Steal', description: 'Steal 5 points from another player (they lose 5, you gain 5)', cost: 30, type: 'steal' },
   { id: 'knowledge-is-power', name: 'Knowledge is Power', description: 'Steal another player\'s advantage (if they have none, the advantage is wasted)', cost: 35, type: 'steal' }
 ];
 
@@ -1126,7 +1126,7 @@ export default function SurvivorFantasyApp() {
     return true;
   };
 
-  // Activate Double Trouble or Immunity Idol (effect applies when scores are released)
+  // Activate Double Trouble (effect applies when scores are released)
   const activateWeeklyAdvantage = async (playerAdvantageId, questionnaireId) => {
     const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
     if (!myAdvantage || myAdvantage.used) {
@@ -1170,6 +1170,59 @@ export default function SurvivorFantasyApp() {
       ? `${advantageName} activated for Episode ${episodeNum}! The effect will apply when scores are released. (Demo mode - not saved)`
       : `${advantageName} activated for Episode ${episodeNum}! The effect will apply when scores are released.`);
     return true;
+  };
+
+  // Execute Point Steal - steal 5 points from target player
+  const executePointSteal = async (playerAdvantageId, targetPlayerId) => {
+    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
+    if (!myAdvantage || myAdvantage.used) {
+      alert('This advantage has already been used!');
+      return;
+    }
+
+    const targetPlayer = players.find(p => p.id === targetPlayerId);
+
+    // Mark advantage as used
+    const updated = playerAdvantages.map(a => {
+      if (a.id === myAdvantage.id) {
+        return {
+          ...a,
+          used: true,
+          usedAt: new Date().toISOString(),
+          activated: true,
+          targetPlayerId
+        };
+      }
+      return a;
+    });
+    setPlayerAdvantages(updated);
+    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
+
+    // Transfer 5 points
+    if (!isGuestMode()) {
+      // Deduct from target
+      await updatePlayerScore(targetPlayerId, -5, `Points stolen by ${currentUser.name}`, 'advantage');
+      // Add to current user
+      await updatePlayerScore(currentUser.id, 5, `Point Steal from ${targetPlayer?.name}`, 'advantage');
+
+      // Notify target
+      await addNotification({
+        type: 'points_stolen',
+        message: `${currentUser.name} used Point Steal on you! You lost 5 points.`,
+        targetPlayerId: targetPlayerId
+      });
+
+      // Public broadcast
+      await addNotification({
+        type: 'advantage_played',
+        message: `${currentUser.name} played Point Steal and stole 5 points from ${targetPlayer?.name}! The advantage is now back in the shop.`,
+        targetPlayerId: null
+      });
+    }
+
+    alert(isGuestMode()
+      ? `Point Steal activated! You stole 5 points from ${targetPlayer?.name}! (Demo mode - not saved)`
+      : `Point Steal activated! You stole 5 points from ${targetPlayer?.name}!`);
   };
 
   // ============ WORDLE CHALLENGE FUNCTIONS ============
@@ -2908,42 +2961,46 @@ export default function SurvivorFantasyApp() {
                     </div>
                   )}
 
-                  {/* Immunity Idol - Activate for current week */}
-                  {advantageModal.advantage.advantageId === 'immunity-idol' && (
+                  {/* Point Steal - Select target player */}
+                  {advantageModal.advantage.advantageId === 'point-steal' && (
                     <div>
-                      {activeQuestionnaire && (
-                        <p className="text-cyan-400 text-sm mb-2">Playing for: Episode {activeQuestionnaire.episodeNumber}</p>
-                      )}
-                      <p className="text-amber-200 mb-4">Activate Immunity Idol to negate all negative points for this episode when scores are released.</p>
-                      {!activeQuestionnaire ? (
-                        <div>
-                          <p className="text-red-400 mb-4">No active questionnaire. Wait for a new questionnaire to use this advantage.</p>
+                      <p className="text-amber-200 mb-4">Select a player to steal 5 points from. They will lose 5 points, and you will gain 5 points!</p>
+                      <div className="space-y-2 mb-4">
+                        {players.filter(p => p.id !== currentUser.id).map(player => (
                           <button
-                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
-                            className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                            key={player.id}
+                            onClick={() => setAdvantageTarget(player.id)}
+                            className={`w-full p-3 rounded-lg border-2 transition ${
+                              advantageTarget === player.id
+                                ? 'border-amber-500 bg-amber-900/40 text-white'
+                                : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:border-amber-600'
+                            }`}
                           >
-                            Close
+                            {player.name}
                           </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
-                            className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={async () => {
-                              await activateWeeklyAdvantage(advantageModal.advantage.id, activeQuestionnaire.id);
+                        ))}
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); setAdvantageTarget(null); }}
+                          className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (advantageTarget) {
+                              executePointSteal(advantageModal.advantage.id, advantageTarget);
                               setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
-                            }}
-                            className="flex-1 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded font-semibold hover:from-blue-500 hover:to-cyan-500 transition"
-                          >
-                            Activate Immunity Idol
-                          </button>
-                        </div>
-                      )}
+                              setAdvantageTarget(null);
+                            }
+                          }}
+                          disabled={!advantageTarget}
+                          className="flex-1 py-2 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded font-semibold hover:from-red-500 hover:to-orange-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Steal 5 Points
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3374,16 +3431,9 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     const winners = Object.keys(voteCounts).filter(k => voteCounts[k] === maxVotes);
     const winnerPlayerIds = winners.map(answerId => parseInt(answerId.split('-')[0]));
 
-    // Check for Double Trouble and Immunity Idol advantages
+    // Check for Double Trouble advantage
     const doubleTroubleAdvantages = playerAdvantages.filter(
       a => a.advantageId === 'double-trouble' &&
-           a.used &&
-           a.activated &&
-           a.linkedQuestionnaireId === scoringQ.id
-    );
-
-    const immunityIdolAdvantages = playerAdvantages.filter(
-      a => a.advantageId === 'immunity-idol' &&
            a.used &&
            a.activated &&
            a.linkedQuestionnaireId === scoringQ.id
@@ -3427,28 +3477,6 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
         await addNotification({
           type: 'double_trouble_applied',
           message: `${playerName} used Double Trouble and doubled their weekly points! (+${totalWeeklyPoints} bonus)`,
-          targetPlayerId: null
-        });
-      }
-    }
-
-    // Apply Immunity Idol effect - negate negative points
-    for (const iiAdv of immunityIdolAdvantages) {
-      const baseScore = newScores[iiAdv.playerId] || 0;
-
-      // If the questionnaire score is negative, add points to offset it to 0
-      if (baseScore < 0) {
-        await updatePlayerScore(
-          iiAdv.playerId,
-          Math.abs(baseScore), // Add enough to offset to 0
-          `Immunity Idol Protection (${scoringQ.title})`,
-          'advantage'
-        );
-
-        const playerName = players.find(p => p.id === iiAdv.playerId)?.name;
-        await addNotification({
-          type: 'immunity_idol_applied',
-          message: `${playerName} used Immunity Idol and negated ${Math.abs(baseScore)} negative points!`,
           targetPlayerId: null
         });
       }
@@ -3867,7 +3895,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                 Re-Scoring Mode
               </p>
               <p className="text-amber-200 text-sm mt-1">
-                Changing correct answers will calculate score adjustments for each player. Advantages (Double Trouble, Immunity Idol) will NOT be re-applied.
+                Changing correct answers will calculate score adjustments for each player. Advantages (Double Trouble) will NOT be re-applied.
               </p>
             </div>
           )}
@@ -5849,8 +5877,8 @@ function NotificationBanners({ notifications, currentUser, markNotificationSeen,
         return 'from-red-600 to-rose-600 border-red-400';
       case 'double_trouble_applied':
         return 'from-yellow-500 to-amber-500 border-yellow-400';
-      case 'immunity_idol_applied':
-        return 'from-blue-600 to-cyan-600 border-blue-400';
+      case 'points_stolen':
+        return 'from-red-600 to-rose-600 border-red-400';
       case 'final_picks_open':
         return 'from-indigo-600 to-purple-600 border-indigo-400';
       case 'new_questionnaire':
@@ -5882,8 +5910,8 @@ function NotificationBanners({ notifications, currentUser, markNotificationSeen,
         return '⚠️';
       case 'double_trouble_applied':
         return '✨';
-      case 'immunity_idol_applied':
-        return '🛡️';
+      case 'points_stolen':
+        return '💸';
       case 'final_picks_open':
         return '🎯';
       case 'new_questionnaire':
