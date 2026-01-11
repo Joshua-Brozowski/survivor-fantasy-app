@@ -857,10 +857,10 @@ export default function SurvivorFantasyApp() {
       // Deduct points
       await updatePlayerScore(currentUser.id, -advantage.cost, `Purchased: ${advantage.name}`, 'advantage');
 
-      // Send anonymous notification to all players
+      // Send notification showing who purchased
       await addNotification({
         type: 'advantage_purchased',
-        message: `An advantage has been purchased! One less available in the shop.`,
+        message: `${currentUser.name} purchased ${advantage.name}! It's no longer available in the shop.`,
         targetPlayerId: null // Broadcast to all
       });
     }
@@ -927,6 +927,8 @@ export default function SurvivorFantasyApp() {
       a => a.playerId === targetPlayerId && !a.used
     );
 
+    const targetPlayer = players.find(p => p.id === targetPlayerId);
+
     if (targetAdvantage) {
       // Steal the advantage - transfer ownership
       const updated = playerAdvantages.map(a => {
@@ -943,21 +945,19 @@ export default function SurvivorFantasyApp() {
       setPlayerAdvantages(updated);
       await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
-      const targetPlayer = players.find(p => p.id === targetPlayerId);
-
       // Skip notifications for guest mode
       if (!isGuestMode()) {
         // Notify the target that their advantage was stolen
         await addNotification({
           type: 'advantage_stolen',
-          message: `Your ${targetAdvantage.name} was stolen by another player using Knowledge is Power!`,
+          message: `Your ${targetAdvantage.name} was stolen by ${currentUser.name} using Knowledge is Power!`,
           targetPlayerId: targetPlayerId
         });
 
-        // Anonymous broadcast
+        // Public broadcast showing who played it
         await addNotification({
           type: 'advantage_played',
-          message: `An advantage has been played and returned to the game!`,
+          message: `${currentUser.name} played Knowledge is Power and stole an advantage from ${targetPlayer?.name}! Knowledge is Power is now back in the shop.`,
           targetPlayerId: null
         });
       }
@@ -978,15 +978,14 @@ export default function SurvivorFantasyApp() {
 
       // Skip notifications for guest mode
       if (!isGuestMode()) {
-        // Anonymous broadcast
+        // Public broadcast showing who played it (but it was wasted)
         await addNotification({
           type: 'advantage_played',
-          message: `An advantage has been played and returned to the game!`,
+          message: `${currentUser.name} played Knowledge is Power on ${targetPlayer?.name}, but they had no advantage! Knowledge is Power is now back in the shop.`,
           targetPlayerId: null
         });
       }
 
-      const targetPlayer = players.find(p => p.id === targetPlayerId);
       alert(isGuestMode()
         ? `${targetPlayer?.name || 'That player'} had no advantage to steal. Knowledge is Power was wasted. (Demo mode - not saved)`
         : `${targetPlayer?.name || 'That player'} had no advantage to steal. Knowledge is Power was wasted and returned to the game.`);
@@ -1001,6 +1000,9 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
+    const questionnaire = questionnaires.find(q => q.id === questionnaireId);
+    const episodeNum = questionnaire?.episodeNumber || '?';
+
     // Mark advantage as used with target info
     const updated = playerAdvantages.map(a => {
       if (a.id === myAdvantage.id) {
@@ -1010,7 +1012,8 @@ export default function SurvivorFantasyApp() {
           usedAt: new Date().toISOString(),
           activated: true,
           targetPlayerId,
-          linkedQuestionnaireId: questionnaireId
+          linkedQuestionnaireId: questionnaireId,
+          linkedEpisode: episodeNum
         };
       }
       return a;
@@ -1018,9 +1021,25 @@ export default function SurvivorFantasyApp() {
     setPlayerAdvantages(updated);
     await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
+    // Check if target already voted and remove their vote
+    const targetExistingVote = qotWVotes.find(v =>
+      v.questionnaireId === questionnaireId &&
+      v.voterId === targetPlayerId
+    );
+
+    let updatedVotes = [...qotWVotes];
+    let voteWasRemoved = false;
+
+    if (targetExistingVote) {
+      // Remove the target's existing vote
+      updatedVotes = updatedVotes.filter(v =>
+        !(v.questionnaireId === questionnaireId && v.voterId === targetPlayerId)
+      );
+      voteWasRemoved = true;
+    }
+
     // Find current user's submission for this questionnaire to get their QOTW answer ID
     const mySubmission = submissions.find(s => s.questionnaireId === questionnaireId && s.playerId === currentUser.id);
-    const questionnaire = questionnaires.find(q => q.id === questionnaireId);
 
     if (mySubmission && questionnaire?.qotw?.id) {
       // Auto-add a "stolen vote" for the current user
@@ -1032,11 +1051,11 @@ export default function SurvivorFantasyApp() {
         stolenFrom: targetPlayerId,
         stolenBy: currentUser.id
       };
-
-      const updatedVotes = [...qotWVotes, stolenVote];
-      setQotWVotes(updatedVotes);
-      await guestSafeSet('qotWVotes', JSON.stringify(updatedVotes));
+      updatedVotes.push(stolenVote);
     }
+
+    setQotWVotes(updatedVotes);
+    await guestSafeSet('qotWVotes', JSON.stringify(updatedVotes));
 
     const targetPlayer = players.find(p => p.id === targetPlayerId);
 
@@ -1045,21 +1064,22 @@ export default function SurvivorFantasyApp() {
       // Notify target that their vote was stolen
       await addNotification({
         type: 'vote_stolen',
-        message: `Your QOTW vote was stolen! You cannot vote on this week's Question of the Week.`,
+        message: `Your QOTW vote was stolen by ${currentUser.name}! You cannot vote on Episode ${episodeNum}'s Question of the Week.${voteWasRemoved ? ' Your existing vote has been removed.' : ''}`,
         targetPlayerId: targetPlayerId
       });
 
-      // Anonymous broadcast
+      // Public broadcast showing who played it
       await addNotification({
         type: 'advantage_played',
-        message: `An advantage has been played and returned to the game!`,
+        message: `${currentUser.name} played Vote Steal for Episode ${episodeNum}! The advantage is now back in the shop.`,
         targetPlayerId: null
       });
     }
 
+    const removedMsg = voteWasRemoved ? ' Their existing vote has been removed.' : '';
     alert(isGuestMode()
-      ? `Vote Steal activated! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you! (Demo mode - not saved)`
-      : `Vote Steal activated! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you!`);
+      ? `Vote Steal activated for Episode ${episodeNum}! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you!${removedMsg} (Demo mode - not saved)`
+      : `Vote Steal activated for Episode ${episodeNum}! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you!${removedMsg}`);
   };
 
   // Activate Extra Vote - allows additional QOTW vote
@@ -1070,6 +1090,9 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
+    const questionnaire = questionnaires.find(q => q.id === questionnaireId);
+    const episodeNum = questionnaire?.episodeNumber || '?';
+
     // Mark advantage as used
     const updated = playerAdvantages.map(a => {
       if (a.id === myAdvantage.id) {
@@ -1078,7 +1101,8 @@ export default function SurvivorFantasyApp() {
           used: true,
           usedAt: new Date().toISOString(),
           activated: true,
-          linkedQuestionnaireId: questionnaireId
+          linkedQuestionnaireId: questionnaireId,
+          linkedEpisode: episodeNum
         };
       }
       return a;
@@ -1088,17 +1112,17 @@ export default function SurvivorFantasyApp() {
 
     // Skip notifications for guest mode
     if (!isGuestMode()) {
-      // Anonymous broadcast
+      // Public broadcast showing who played it
       await addNotification({
         type: 'advantage_played',
-        message: `An advantage has been played and returned to the game!`,
+        message: `${currentUser.name} played Extra Vote for Episode ${episodeNum}! The advantage is now back in the shop.`,
         targetPlayerId: null
       });
     }
 
     alert(isGuestMode()
-      ? `Extra Vote activated! You can now cast an additional vote in QOTW voting. (Demo mode - not saved)`
-      : `Extra Vote activated! You can now cast an additional vote in QOTW voting.`);
+      ? `Extra Vote activated for Episode ${episodeNum}! You can now cast an additional vote in QOTW voting. (Demo mode - not saved)`
+      : `Extra Vote activated for Episode ${episodeNum}! You can now cast an additional vote in QOTW voting.`);
     return true;
   };
 
@@ -1110,6 +1134,9 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
+    const questionnaire = questionnaires.find(q => q.id === questionnaireId);
+    const episodeNum = questionnaire?.episodeNumber || '?';
+
     // Mark advantage as used and link to questionnaire
     const updated = playerAdvantages.map(a => {
       if (a.id === myAdvantage.id) {
@@ -1118,7 +1145,8 @@ export default function SurvivorFantasyApp() {
           used: true,
           usedAt: new Date().toISOString(),
           activated: true,
-          linkedQuestionnaireId: questionnaireId
+          linkedQuestionnaireId: questionnaireId,
+          linkedEpisode: episodeNum
         };
       }
       return a;
@@ -1126,20 +1154,21 @@ export default function SurvivorFantasyApp() {
     setPlayerAdvantages(updated);
     await guestSafeSet('playerAdvantages', JSON.stringify(updated));
 
+    const advantageName = myAdvantage.name;
+
     // Skip notifications for guest mode
     if (!isGuestMode()) {
-      // Anonymous broadcast
+      // Public broadcast showing who played it
       await addNotification({
         type: 'advantage_played',
-        message: `An advantage has been played and returned to the game!`,
+        message: `${currentUser.name} played ${advantageName} for Episode ${episodeNum}! The advantage is now back in the shop.`,
         targetPlayerId: null
       });
     }
 
-    const advantageName = myAdvantage.name;
     alert(isGuestMode()
-      ? `${advantageName} activated! The effect will apply when this week's scores are released. (Demo mode - not saved)`
-      : `${advantageName} activated! The effect will apply when this week's scores are released.`);
+      ? `${advantageName} activated for Episode ${episodeNum}! The effect will apply when scores are released. (Demo mode - not saved)`
+      : `${advantageName} activated for Episode ${episodeNum}! The effect will apply when scores are released.`);
     return true;
   };
 
@@ -2744,6 +2773,9 @@ export default function SurvivorFantasyApp() {
                   {/* Vote Steal - Select target player */}
                   {advantageModal.advantage.advantageId === 'vote-steal' && (
                     <div>
+                      {activeQuestionnaire && (
+                        <p className="text-cyan-400 text-sm mb-2">Playing for: Episode {activeQuestionnaire.episodeNumber}</p>
+                      )}
                       <p className="text-amber-200 mb-4">Select a player to steal their QOTW vote. They will be blocked from voting, and a vote will automatically be added for you!</p>
                       {!activeQuestionnaire?.qotwVotingOpen ? (
                         <div>
@@ -2801,6 +2833,9 @@ export default function SurvivorFantasyApp() {
                   {/* Extra Vote - Activate for QOTW voting */}
                   {advantageModal.advantage.advantageId === 'extra-vote' && (
                     <div>
+                      {activeQuestionnaire && (
+                        <p className="text-cyan-400 text-sm mb-2">Playing for: Episode {activeQuestionnaire.episodeNumber}</p>
+                      )}
                       <p className="text-amber-200 mb-4">Activate Extra Vote to cast an additional vote in Question of the Week voting.</p>
                       {!activeQuestionnaire?.qotwVotingOpen ? (
                         <div>
@@ -2837,7 +2872,10 @@ export default function SurvivorFantasyApp() {
                   {/* Double Trouble - Activate for current week */}
                   {advantageModal.advantage.advantageId === 'double-trouble' && (
                     <div>
-                      <p className="text-amber-200 mb-4">Activate Double Trouble to double ALL your points for the current week when scores are released (questionnaire, picks, and QOTW).</p>
+                      {activeQuestionnaire && (
+                        <p className="text-cyan-400 text-sm mb-2">Playing for: Episode {activeQuestionnaire.episodeNumber}</p>
+                      )}
+                      <p className="text-amber-200 mb-4">Activate Double Trouble to double ALL your points for this episode when scores are released (questionnaire, picks, and QOTW).</p>
                       {!activeQuestionnaire ? (
                         <div>
                           <p className="text-red-400 mb-4">No active questionnaire. Wait for a new questionnaire to use this advantage.</p>
@@ -2873,7 +2911,10 @@ export default function SurvivorFantasyApp() {
                   {/* Immunity Idol - Activate for current week */}
                   {advantageModal.advantage.advantageId === 'immunity-idol' && (
                     <div>
-                      <p className="text-amber-200 mb-4">Activate Immunity Idol to negate all negative points for the current week when scores are released.</p>
+                      {activeQuestionnaire && (
+                        <p className="text-cyan-400 text-sm mb-2">Playing for: Episode {activeQuestionnaire.episodeNumber}</p>
+                      )}
+                      <p className="text-amber-200 mb-4">Activate Immunity Idol to negate all negative points for this episode when scores are released.</p>
                       {!activeQuestionnaire ? (
                         <div>
                           <p className="text-red-400 mb-4">No active questionnaire. Wait for a new questionnaire to use this advantage.</p>
