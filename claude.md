@@ -112,14 +112,22 @@ survivor-fantasy-app/
 **Creation** (Admin):
 - Title, episode number
 - Add questions with "+ Multiple Choice", "+ Dropdown (Remaining Cast)", or "+ True/False"
+- "Include Question of the Week" toggle (default: on, turn off for finale)
 - Question of the Week text (can be anonymous during voting)
 - Auto-deadline: Next Wednesday 7:59 PM EST
 - Auto-lock: Wednesday 9:00 PM EST (episode start)
 
 **Submission** (Players):
 - Answer questions before deadline
-- Question of the Week (required text response)
+- Question of the Week (required text response, if enabled)
+- **Vote on LAST week's QotW** - voting happens during next week's questionnaire
 - Late penalties: -1, -2, -3... (cumulative per season)
+
+**QotW Voting Flow**:
+- Week 1: Players answer Episode 1 QotW (no voting yet)
+- Week 2: Players fill out Episode 2 questionnaire AND vote on Episode 1's QotW answers
+- Voting is available until admin clicks "Close Voting" in QOTW Management
+- Admin awards winner (+5 points) after closing voting
 
 **Scoring**:
 - Correct answer: +2
@@ -176,11 +184,11 @@ survivor-fantasy-app/
 - Track immunity wins, advantages found, etc.
 
 **QOTW Management**:
-- **Open Voting**: Makes "Vote on QOTW" button visible to players who submitted
-- **Close Voting**: Ends the voting period
+- Voting opens automatically when next week's questionnaire is created
+- **Close Voting**: Ends the voting period for that week's QotW
 - **Award Winner**: Gives +5 points to the player(s) with most votes
 - View all answers with vote counts
-- Players see voting button on Questionnaire tab when voting is open
+- Status indicators: "Voting Open", "Voting Closed", "Winner Awarded"
 
 **Phase Control**:
 - Visual display of current phase (1 of 5)
@@ -277,7 +285,7 @@ Compact status card at top of Admin Panel showing progress for current episode.
 | Item | States |
 |------|--------|
 | **Q** (Questionnaire) | Not created → Collecting → Graded → Released |
-| **QotW** | Not open → Voting → Awarded |
+| **QotW** | Voting (auto when next Q created) → Closed → Awarded |
 | **Picks** | Not done → Scored |
 | **Elim** | Not done → Done |
 | **Wordle** | No challenge → Active → Awarded |

@@ -3197,6 +3197,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     title: '',
     episodeNumber: episodes.length + 1,
     questions: [],
+    hasQotw: true,
     qotw: { id: 'qotw', text: '', anonymous: false }
   });
   const [scoringQ, setScoringQ] = useState(null);
@@ -3235,7 +3236,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   const createQuestionnaire = async () => {
     if (!requireRealUser('Create Questionnaire')) return;
-    if (!newQ.title || newQ.questions.length === 0 || !newQ.qotw.text) {
+    if (!newQ.title || newQ.questions.length === 0 || (newQ.hasQotw && !newQ.qotw.text)) {
       alert('Please fill in all fields!');
       return;
     }
@@ -3275,7 +3276,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
     alert('Questionnaire created and sent to all players!');
     setAdminView('main');
-    setNewQ({ title: '', episodeNumber: episodes.length + 1, questions: [], qotw: { id: 'qotw', text: '', anonymous: false } });
+    setNewQ({ title: '', episodeNumber: episodes.length + 1, questions: [], hasQotw: true, qotw: { id: 'qotw', text: '', anonymous: false } });
   };
 
   const addQuestion = (type) => {
@@ -3656,11 +3657,11 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   const closeQotwVoting = async (questionnaire) => {
     const updated = questionnaires.map(q =>
-      q.id === questionnaire.id ? { ...q, qotwVotingOpen: false, qotwVotingClosed: true } : q
+      q.id === questionnaire.id ? { ...q, qotwVotingClosed: true } : q
     );
     setQuestionnaires(updated);
     await storage.set('questionnaires', JSON.stringify(updated));
-    alert('QOTW voting closed!');
+    alert('QOTW voting closed! Players can no longer vote on this questionnaire.');
   };
 
   const awardQotwWinner = async (questionnaire) => {
@@ -3821,23 +3822,35 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
             </div>
 
             <div>
-              <label className="block text-purple-300 mb-2 font-semibold">⭐ Question of the Week</label>
-              <input
-                type="text"
-                value={newQ.qotw.text}
-                onChange={(e) => setNewQ({...newQ, qotw: {...newQ.qotw, text: e.target.value}})}
-                placeholder="Enter Question of the Week..."
-                className="w-full px-4 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-400 mb-2"
-              />
-              <label className="flex items-center gap-2 text-purple-300">
+              <label className="flex items-center gap-2 text-purple-300 mb-3 font-semibold">
                 <input
                   type="checkbox"
-                  checked={newQ.qotw.anonymous}
-                  onChange={(e) => setNewQ({...newQ, qotw: {...newQ.qotw, anonymous: e.target.checked}})}
-                  className="w-4 h-4"
+                  checked={newQ.hasQotw}
+                  onChange={(e) => setNewQ({...newQ, hasQotw: e.target.checked})}
+                  className="w-5 h-5"
                 />
-                Make answers anonymous during voting
+                ⭐ Include Question of the Week
               </label>
+              {newQ.hasQotw && (
+                <>
+                  <input
+                    type="text"
+                    value={newQ.qotw.text}
+                    onChange={(e) => setNewQ({...newQ, qotw: {...newQ.qotw, text: e.target.value}})}
+                    placeholder="Enter Question of the Week..."
+                    className="w-full px-4 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-400 mb-2"
+                  />
+                  <label className="flex items-center gap-2 text-purple-300">
+                    <input
+                      type="checkbox"
+                      checked={newQ.qotw.anonymous}
+                      onChange={(e) => setNewQ({...newQ, qotw: {...newQ.qotw, anonymous: e.target.checked}})}
+                      className="w-4 h-4"
+                    />
+                    Make answers anonymous during voting
+                  </label>
+                </>
+              )}
             </div>
 
             <div className="flex gap-4">
@@ -4233,11 +4246,25 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
                 return (
                   <div key={q.id} className="bg-purple-900/20 border border-purple-600 p-4 rounded-lg">
-                    <h3 className="text-white font-bold mb-2">{q.title}</h3>
-                    <p className="text-purple-300 mb-4">QOTW: {q.qotw.text}</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-white font-bold">{q.title}</h3>
+                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                        q.qotwAwarded ? 'bg-green-900 text-green-300' :
+                        q.qotwVotingClosed ? 'bg-yellow-900 text-yellow-300' :
+                        'bg-indigo-900 text-indigo-300'
+                      }`}>
+                        {q.qotwAwarded ? 'Winner Awarded' :
+                         q.qotwVotingClosed ? 'Voting Closed' :
+                         'Voting Open'}
+                      </span>
+                    </div>
+                    <p className="text-purple-300 mb-2">QOTW: {q.qotw.text}</p>
+                    {!q.qotwVotingClosed && (
+                      <p className="text-indigo-300 text-sm mb-4">Players vote on this during the next week's questionnaire</p>
+                    )}
 
                     <div className="mb-4">
-                      <p className="text-purple-200 text-sm mb-2">Answers & Votes:</p>
+                      <p className="text-purple-200 text-sm mb-2">Answers & Votes ({qotwVotesForThis.length} total votes):</p>
                       <div className="space-y-2 max-h-60 overflow-y-auto">
                         {qotwSubmissions.map((sub, idx) => (
                           <div key={idx} className="flex items-center justify-between bg-black/30 p-2 rounded">
@@ -4252,15 +4279,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                     </div>
 
                     <div className="flex gap-2">
-                      {!q.qotwVotingOpen && !q.qotwVotingClosed && (
-                        <button
-                          onClick={() => openQotwVoting(q)}
-                          className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition"
-                        >
-                          Open Voting
-                        </button>
-                      )}
-                      {q.qotwVotingOpen && (
+                      {/* Voting is now automatic - opens when next questionnaire is created */}
+                      {!q.qotwVotingClosed && !q.qotwAwarded && (
                         <button
                           onClick={() => closeQotwVoting(q)}
                           className="px-4 py-2 bg-yellow-600 text-white rounded font-semibold hover:bg-yellow-500 transition"
@@ -5972,26 +5992,36 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
   const archivedQuestionnaires = questionnaires.filter(q => q.status === 'archived' && q.scoresReleased);
 
-  // Check if current user's vote was stolen for this questionnaire
-  const voteWasStolen = activeQ && playerAdvantages?.some(
+  // Find the previous questionnaire for voting (voting happens during next week's questionnaire)
+  // It must have QotW enabled, voting not closed, and be from a previous episode
+  const votingQuestionnaire = activeQ ? questionnaires.find(q =>
+    q.id !== activeQ.id &&                      // Not current questionnaire
+    q.hasQotw !== false &&                      // Has QotW (or legacy without field)
+    q.qotw?.text &&                             // Actually has a QotW question
+    !q.qotwVotingClosed &&                      // Voting not closed by admin
+    q.episodeNumber < activeQ.episodeNumber     // From previous episode
+  ) : null;
+
+  // Check if current user's vote was stolen for the VOTING questionnaire (not active)
+  const voteWasStolen = votingQuestionnaire && playerAdvantages?.some(
     a => a.advantageId === 'vote-steal' &&
          a.used &&
-         a.linkedQuestionnaireId === activeQ.id &&
+         a.linkedQuestionnaireId === votingQuestionnaire.id &&
          a.targetPlayerId === currentUser.id
   );
 
-  // Check if current user has an active Extra Vote for this questionnaire
-  const hasExtraVote = activeQ && playerAdvantages?.some(
+  // Check if current user has an active Extra Vote for the VOTING questionnaire
+  const hasExtraVote = votingQuestionnaire && playerAdvantages?.some(
     a => a.advantageId === 'extra-vote' &&
          a.used &&
          a.activated &&
-         a.linkedQuestionnaireId === activeQ.id &&
+         a.linkedQuestionnaireId === votingQuestionnaire.id &&
          a.playerId === currentUser.id
   );
 
-  // Count how many votes the user has cast for this questionnaire
-  const myVoteCount = activeQ ? qotWVotes.filter(
-    v => v.questionnaireId === activeQ.id && v.voterId === currentUser.id
+  // Count how many votes the user has cast for the VOTING questionnaire
+  const myVoteCount = votingQuestionnaire ? qotWVotes.filter(
+    v => v.questionnaireId === votingQuestionnaire.id && v.voterId === currentUser.id
   ).length : 0;
 
   // Can cast another vote? (1 normally, 2 with Extra Vote)
@@ -6009,7 +6039,8 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
       return;
     }
 
-    if (!answers[activeQ.qotw.id]) {
+    // Only require QotW answer if this questionnaire has QotW enabled
+    if (activeQ.hasQotw !== false && activeQ.qotw?.text && !answers[activeQ.qotw.id]) {
       alert('Please answer the Question of the Week!');
       return;
     }
@@ -6041,15 +6072,24 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
   };
 
   const handleVote = async (qotWAnswerId) => {
-    if (!activeQ) return;
+    if (!votingQuestionnaire) return;
 
     const newVote = {
-      questionnaireId: activeQ.id,
+      questionnaireId: votingQuestionnaire.id,
       voterId: currentUser.id,
       answerId: qotWAnswerId
     };
 
-    const updatedVotes = [...qotWVotes.filter(v => !(v.questionnaireId === activeQ.id && v.voterId === currentUser.id)), newVote];
+    // If not using Extra Vote, replace existing vote. If Extra Vote, allow adding second vote.
+    const existingVotesForQ = qotWVotes.filter(v => v.questionnaireId === votingQuestionnaire.id && v.voterId === currentUser.id);
+    let updatedVotes;
+    if (hasExtraVote && existingVotesForQ.length < 2) {
+      // Extra Vote: allow up to 2 votes
+      updatedVotes = [...qotWVotes, newVote];
+    } else {
+      // Normal: replace existing vote
+      updatedVotes = [...qotWVotes.filter(v => !(v.questionnaireId === votingQuestionnaire.id && v.voterId === currentUser.id)), newVote];
+    }
     setQotWVotes(updatedVotes);
     await guestSafeSet('qotWVotes', JSON.stringify(updatedVotes));
     alert(isGuestMode() ? 'Vote submitted! (Demo mode - not saved)' : 'Vote submitted!');
@@ -6068,23 +6108,23 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
     );
   }
 
-  const allQotWSubmitted = activeQ ? players.every(p => {
-    const sub = submissions.find(s => s.questionnaireId === activeQ.id && s.playerId === p.id);
-    return sub && sub.answers[activeQ.qotw.id];
-  }) : false;
-
+  // QotW question for current week (if applicable)
   const qotwQuestion = activeQ?.qotw;
-  const myVote = activeQ ? qotWVotes.find(v => v.questionnaireId === activeQ.id && v.voterId === currentUser.id) : null;
 
-  if (votingFor === 'qotw' && activeQ?.qotwVotingOpen && activeQ) {
+  // QotW question from previous week (for voting)
+  const votingQotwQuestion = votingQuestionnaire?.qotw;
+  const myVote = votingQuestionnaire ? qotWVotes.find(v => v.questionnaireId === votingQuestionnaire.id && v.voterId === currentUser.id) : null;
+
+  // Voting view - now uses votingQuestionnaire (previous week)
+  if (votingFor === 'qotw' && votingQuestionnaire) {
     // Check if vote was stolen
     if (voteWasStolen) {
       return (
         <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-red-600">
-          <h2 className="text-2xl font-bold text-red-400 mb-4">⭐ Question of the Week Voting</h2>
+          <h2 className="text-2xl font-bold text-red-400 mb-4">⭐ Vote on Last Week's Question</h2>
           <div className="bg-red-900/30 p-6 rounded-lg border border-red-600 text-center">
             <p className="text-red-300 text-xl mb-4">🚫 Your Vote Was Stolen!</p>
-            <p className="text-red-200">Another player used the Vote Steal advantage on you. You cannot vote on this week's Question of the Week.</p>
+            <p className="text-red-200">Another player used the Vote Steal advantage on you. You cannot vote on Episode {votingQuestionnaire.episodeNumber}'s Question of the Week.</p>
             <p className="text-red-400 text-sm mt-4">The stolen vote was automatically applied to the player who stole it.</p>
           </div>
           <button
@@ -6098,40 +6138,40 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
     }
 
     const qotwAnswers = submissions
-      .filter(s => s.questionnaireId === activeQ.id && s.answers[qotwQuestion.id])
+      .filter(s => s.questionnaireId === votingQuestionnaire.id && s.answers[votingQotwQuestion.id])
       .map(s => ({
         playerId: s.playerId,
         playerName: players.find(p => p.id === s.playerId)?.name,
-        answer: s.answers[qotwQuestion.id]
+        answer: s.answers[votingQotwQuestion.id]
       }))
       .filter(a => a.playerId !== currentUser.id);
 
     return (
       <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
-        <h2 className="text-2xl font-bold text-purple-400 mb-4">⭐ Question of the Week Voting</h2>
+        <h2 className="text-2xl font-bold text-purple-400 mb-4">⭐ Vote on Episode {votingQuestionnaire.episodeNumber}'s Question</h2>
 
         {/* Extra Vote indicator */}
         {hasExtraVote && (
           <div className="bg-green-900/30 p-3 rounded-lg border border-green-600 mb-4">
-            <p className="text-green-300 font-semibold">🎯 Extra Vote Active! You can cast {maxVotes} votes this week.</p>
+            <p className="text-green-300 font-semibold">🎯 Extra Vote Active! You can cast {maxVotes} votes.</p>
             <p className="text-green-400 text-sm">Votes used: {myVoteCount}/{maxVotes}</p>
           </div>
         )}
 
         <div className="bg-purple-900/30 p-4 rounded-lg border border-purple-600 mb-6">
-          <p className="text-purple-300 font-semibold mb-2">Question:</p>
-          <p className="text-white text-lg">{qotwQuestion.text}</p>
+          <p className="text-purple-300 font-semibold mb-2">Question (Episode {votingQuestionnaire.episodeNumber}):</p>
+          <p className="text-white text-lg">{votingQotwQuestion.text}</p>
         </div>
 
         <div className="space-y-4">
           {qotwAnswers.map((answer, idx) => (
             <div key={idx} className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-4 rounded-lg border border-purple-600">
-              {!qotwQuestion.anonymous && (
+              {!votingQotwQuestion.anonymous && (
                 <p className="text-purple-400 font-semibold mb-2">{answer.playerName}</p>
               )}
               <p className="text-white mb-3">{answer.answer}</p>
               <button
-                onClick={() => handleVote(`${answer.playerId}-${qotwQuestion.id}`)}
+                onClick={() => handleVote(`${answer.playerId}-${votingQotwQuestion.id}`)}
                 disabled={!canVoteAgain}
                 className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded font-semibold hover:from-purple-500 hover:to-pink-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -6317,17 +6357,48 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
                 </div>
               ))}
 
-              <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-4 rounded-lg border-2 border-purple-600">
-                <p className="text-purple-300 font-semibold mb-2">⭐ Question of the Week</p>
-                <p className="text-white font-semibold mb-3">{qotwQuestion.text}</p>
-                <textarea
-                  value={answers[qotwQuestion.id] || ''}
-                  onChange={(e) => setAnswers({...answers, [qotwQuestion.id]: e.target.value})}
-                  placeholder="Enter your answer..."
-                  rows={3}
-                  className="w-full px-4 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-400"
-                />
-              </div>
+              {/* Vote on LAST week's QotW (if available) */}
+              {votingQuestionnaire && (
+                <div className="bg-gradient-to-r from-indigo-900/40 to-purple-900/40 p-4 rounded-lg border-2 border-indigo-600">
+                  <p className="text-indigo-300 font-semibold mb-2">🗳️ Vote on Last Week's Question (Episode {votingQuestionnaire.episodeNumber})</p>
+                  <p className="text-white text-sm mb-3">{votingQotwQuestion?.text}</p>
+                  {voteWasStolen ? (
+                    <button
+                      onClick={() => setVotingFor('qotw')}
+                      className="w-full py-2 bg-gradient-to-r from-red-800 to-red-900 text-red-200 rounded font-semibold cursor-pointer"
+                    >
+                      🚫 Your Vote Was Stolen
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setVotingFor('qotw')}
+                      className="w-full py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded font-semibold hover:from-indigo-500 hover:to-purple-500 transition"
+                    >
+                      {!canVoteAgain
+                        ? `✓ Voted (${myVoteCount}/${maxVotes})`
+                        : hasExtraVote
+                        ? `Vote Now (${myVoteCount}/${maxVotes} votes used)`
+                        : myVote ? '✓ Voted - Change Vote?' : 'Vote Now'
+                      }
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* THIS week's QotW answer (if enabled) */}
+              {activeQ.hasQotw !== false && qotwQuestion?.text && (
+                <div className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-4 rounded-lg border-2 border-purple-600">
+                  <p className="text-purple-300 font-semibold mb-2">⭐ Question of the Week</p>
+                  <p className="text-white font-semibold mb-3">{qotwQuestion.text}</p>
+                  <textarea
+                    value={answers[qotwQuestion.id] || ''}
+                    onChange={(e) => setAnswers({...answers, [qotwQuestion.id]: e.target.value})}
+                    placeholder="Enter your answer..."
+                    rows={3}
+                    className="w-full px-4 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-400"
+                  />
+                </div>
+              )}
 
               <button
                 onClick={handleSubmit}
@@ -6338,24 +6409,25 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
             </div>
           )}
 
-          {mySubmission && activeQ?.qotwVotingOpen && (
+          {/* Voting button shown after submission (for previous week's QotW) */}
+          {mySubmission && votingQuestionnaire && (
             voteWasStolen ? (
               <button
                 onClick={() => setVotingFor('qotw')}
                 className="w-full mt-4 py-3 bg-gradient-to-r from-red-800 to-red-900 text-red-200 rounded-lg font-semibold cursor-pointer"
               >
-                🚫 Your Vote Was Stolen
+                🚫 Your Vote Was Stolen (Episode {votingQuestionnaire.episodeNumber})
               </button>
             ) : (
               <button
                 onClick={() => setVotingFor('qotw')}
-                className="w-full mt-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg font-semibold hover:from-purple-500 hover:to-pink-500 transition"
+                className="w-full mt-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:from-indigo-500 hover:to-purple-500 transition"
               >
                 {!canVoteAgain
                   ? `✓ All Votes Used (${myVoteCount}/${maxVotes})`
                   : hasExtraVote
-                  ? `Vote on QOTW (${myVoteCount}/${maxVotes} votes used)`
-                  : 'Vote on Question of the Week'
+                  ? `Vote on Episode ${votingQuestionnaire.episodeNumber} QOTW (${myVoteCount}/${maxVotes} votes used)`
+                  : `Vote on Episode ${votingQuestionnaire.episodeNumber}'s Question of the Week`
                 }
               </button>
             )
