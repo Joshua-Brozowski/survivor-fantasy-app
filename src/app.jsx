@@ -4123,81 +4123,99 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                 <div key={player.id} className="bg-blue-900/20 border border-blue-600 p-4 rounded-lg">
                   <h4 className="text-white font-bold mb-3">{player.name}</h4>
 
-                  {instinctPick && (
-                    <div className="mb-4 p-3 bg-amber-900/20 rounded-lg border border-amber-600">
-                      <p className="text-amber-300 font-semibold mb-2">
-                        Instinct Pick: {contestants.find(c => c.id === instinctPick.contestantId)?.name}
-                      </p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {[
-                          { key: 'survived', label: 'Survived (+1)' },
-                          { key: 'immunity', label: 'Won Immunity (+1)' },
-                          { key: 'reward', label: 'Won Reward (+1)' },
-                          { key: 'journey', label: 'Went on Journey (+1)' },
-                          { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
-                          { key: 'playedIdol', label: 'Played Idol (+1)' },
-                          { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
-                        ].map(({ key, label }) => (
-                          <label key={key} className="flex items-center gap-2 text-white text-sm">
-                            <input
-                              type="checkbox"
-                              checked={episodeScoring.pickScoresData[instinctPick.id]?.[key] || false}
-                              onChange={(e) => {
-                                const current = episodeScoring.pickScoresData[instinctPick.id] || {};
-                                setEpisodeScoring({
-                                  ...episodeScoring,
-                                  pickScoresData: {
-                                    ...episodeScoring.pickScoresData,
-                                    [instinctPick.id]: { ...current, [key]: e.target.checked }
-                                  }
-                                });
-                              }}
-                              className="w-4 h-4"
-                            />
-                            {label}
-                          </label>
-                        ))}
+                  {instinctPick && (() => {
+                    const instinctContestant = contestants.find(c => c.id === instinctPick.contestantId);
+                    const isEliminated = instinctContestant?.eliminated;
+                    return (
+                      <div className={`mb-4 p-3 rounded-lg border ${isEliminated ? 'bg-gray-900/40 border-gray-600 opacity-60' : 'bg-amber-900/20 border-amber-600'}`}>
+                        <p className={`font-semibold mb-2 flex items-center gap-2 ${isEliminated ? 'text-gray-400' : 'text-amber-300'}`}>
+                          Instinct Pick: {instinctContestant?.name}
+                          {isEliminated && <span className="text-red-400 text-xs bg-red-900/50 px-2 py-0.5 rounded">ELIMINATED</span>}
+                        </p>
+                        {isEliminated ? (
+                          <p className="text-gray-400 text-sm italic">This contestant has been eliminated - no more points can be scored.</p>
+                        ) : (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {[
+                              { key: 'survived', label: 'Survived (+1)' },
+                              { key: 'immunity', label: 'Won Immunity (+1)' },
+                              { key: 'reward', label: 'Won Reward (+1)' },
+                              { key: 'journey', label: 'Went on Journey (+1)' },
+                              { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
+                              { key: 'playedIdol', label: 'Played Idol (+1)' },
+                              { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
+                            ].map(({ key, label }) => (
+                              <label key={key} className="flex items-center gap-2 text-white text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={episodeScoring.pickScoresData[instinctPick.id]?.[key] || false}
+                                  onChange={(e) => {
+                                    const current = episodeScoring.pickScoresData[instinctPick.id] || {};
+                                    setEpisodeScoring({
+                                      ...episodeScoring,
+                                      pickScoresData: {
+                                        ...episodeScoring.pickScoresData,
+                                        [instinctPick.id]: { ...current, [key]: e.target.checked }
+                                      }
+                                    });
+                                  }}
+                                  className="w-4 h-4"
+                                />
+                                {label}
+                              </label>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
-                  {finalPick && (
-                    <div className="p-3 bg-purple-900/20 rounded-lg border border-purple-600">
-                      <p className="text-purple-300 font-semibold mb-2">
-                        Final Pick: {contestants.find(c => c.id === finalPick.contestantId)?.name}
-                      </p>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {[
-                          { key: 'survived', label: 'Survived (+1)' },
-                          { key: 'immunity', label: 'Won Immunity (+1)' },
-                          { key: 'reward', label: 'Won Reward (+1)' },
-                          { key: 'journey', label: 'Went on Journey (+1)' },
-                          { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
-                          { key: 'playedIdol', label: 'Played Idol (+1)' },
-                          { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
-                        ].map(({ key, label }) => (
-                          <label key={key} className="flex items-center gap-2 text-white text-sm">
-                            <input
-                              type="checkbox"
-                              checked={episodeScoring.pickScoresData[finalPick.id]?.[key] || false}
-                              onChange={(e) => {
-                                const current = episodeScoring.pickScoresData[finalPick.id] || {};
-                                setEpisodeScoring({
-                                  ...episodeScoring,
-                                  pickScoresData: {
-                                    ...episodeScoring.pickScoresData,
-                                    [finalPick.id]: { ...current, [key]: e.target.checked }
-                                  }
-                                });
-                              }}
-                              className="w-4 h-4"
-                            />
-                            {label}
-                          </label>
-                        ))}
+                  {finalPick && (() => {
+                    const finalContestant = contestants.find(c => c.id === finalPick.contestantId);
+                    const isEliminated = finalContestant?.eliminated;
+                    return (
+                      <div className={`p-3 rounded-lg border ${isEliminated ? 'bg-gray-900/40 border-gray-600 opacity-60' : 'bg-purple-900/20 border-purple-600'}`}>
+                        <p className={`font-semibold mb-2 flex items-center gap-2 ${isEliminated ? 'text-gray-400' : 'text-purple-300'}`}>
+                          Final Pick: {finalContestant?.name}
+                          {isEliminated && <span className="text-red-400 text-xs bg-red-900/50 px-2 py-0.5 rounded">ELIMINATED</span>}
+                        </p>
+                        {isEliminated ? (
+                          <p className="text-gray-400 text-sm italic">This contestant has been eliminated - no more points can be scored.</p>
+                        ) : (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {[
+                              { key: 'survived', label: 'Survived (+1)' },
+                              { key: 'immunity', label: 'Won Immunity (+1)' },
+                              { key: 'reward', label: 'Won Reward (+1)' },
+                              { key: 'journey', label: 'Went on Journey (+1)' },
+                              { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
+                              { key: 'playedIdol', label: 'Played Idol (+1)' },
+                              { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
+                            ].map(({ key, label }) => (
+                              <label key={key} className="flex items-center gap-2 text-white text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={episodeScoring.pickScoresData[finalPick.id]?.[key] || false}
+                                  onChange={(e) => {
+                                    const current = episodeScoring.pickScoresData[finalPick.id] || {};
+                                    setEpisodeScoring({
+                                      ...episodeScoring,
+                                      pickScoresData: {
+                                        ...episodeScoring.pickScoresData,
+                                        [finalPick.id]: { ...current, [key]: e.target.checked }
+                                      }
+                                    });
+                                  }}
+                                  className="w-4 h-4"
+                                />
+                                {label}
+                              </label>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })}
