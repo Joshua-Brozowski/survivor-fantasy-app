@@ -168,6 +168,7 @@ export default function SurvivorFantasyApp() {
         const player = INITIAL_PLAYERS.find(p => p.id === userData.id);
         if (player) {
           setCurrentUser(player);
+          setCurrentView('home'); // Always start on home page
         }
       } catch (e) {
         localStorage.removeItem('survivorFantasyUser');
@@ -341,6 +342,7 @@ export default function SurvivorFantasyApp() {
 
       if (result.success) {
         setCurrentUser(player);
+        setCurrentView('home'); // Always start on home page after login
         if (loginForm.rememberMe) {
           localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
         }
@@ -361,6 +363,7 @@ export default function SurvivorFantasyApp() {
       isGuest: true  // Flag to prevent writes
     };
     setCurrentUser(guestUser);
+    setCurrentView('home'); // Always start on home page
   };
 
   const handleFindPlayer = async () => {
