@@ -3603,12 +3603,18 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
       if (scoreData.incorrectVote) points -= 1;
 
       if (points !== 0 || scoreData.survived) {
+        // Find the pick and contestant to include in description
+        const pick = picks.find(p => p.id === parseInt(pickId));
+        const contestant = pick ? contestants.find(c => c.id === pick.contestantId) : null;
+        const pickType = pick?.type === 'instinct' ? 'Instinct' : 'Final';
+        const contestantName = contestant?.name || 'Unknown';
+
         newScores.push({
           id: Date.now() + parseInt(pickId),
           pickId: parseInt(pickId),
           episode: episodeScoring.episodeNumber,
           points,
-          description: `Episode ${episodeScoring.episodeNumber} Pick Performance`,
+          description: `Ep ${episodeScoring.episodeNumber} - ${pickType} Pick (${contestantName})`,
           date: new Date().toISOString(),
           breakdown: scoreData
         });
