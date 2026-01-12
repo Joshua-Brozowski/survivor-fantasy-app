@@ -3672,7 +3672,15 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     });
 
     if (Object.keys(voteCounts).length === 0) {
-      alert('No votes have been cast yet!');
+      const skipConfirm = confirm('No votes have been cast. Skip QotW for this week (no winner)?');
+      if (skipConfirm) {
+        const updated = questionnaires.map(q =>
+          q.id === questionnaire.id ? { ...q, qotwWinner: [], qotwAwarded: true } : q
+        );
+        setQuestionnaires(updated);
+        await storage.set('questionnaires', JSON.stringify(updated));
+        alert('QotW skipped for this week (no winner awarded).');
+      }
       return;
     }
 
@@ -4278,7 +4286,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                       </div>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       {/* Voting is now automatic - opens when next questionnaire is created */}
                       {!q.qotwVotingClosed && !q.qotwAwarded && (
                         <button
@@ -4286,6 +4294,21 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                           className="px-4 py-2 bg-yellow-600 text-white rounded font-semibold hover:bg-yellow-500 transition"
                         >
                           Close Voting
+                        </button>
+                      )}
+                      {q.qotwVotingClosed && !q.qotwAwarded && (
+                        <button
+                          onClick={async () => {
+                            const updated = questionnaires.map(qst =>
+                              qst.id === q.id ? { ...qst, qotwVotingClosed: false } : qst
+                            );
+                            setQuestionnaires(updated);
+                            await storage.set('questionnaires', JSON.stringify(updated));
+                            alert('Voting re-opened!');
+                          }}
+                          className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition"
+                        >
+                          Re-open Voting
                         </button>
                       )}
                       {q.qotwVotingClosed && !q.qotwAwarded && (
@@ -5993,14 +6016,17 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
   const archivedQuestionnaires = questionnaires.filter(q => q.status === 'archived' && q.scoresReleased);
 
   // Find the previous questionnaire for voting (voting happens during next week's questionnaire)
-  // It must have QotW enabled, voting not closed, and be from a previous episode
-  const votingQuestionnaire = activeQ ? questionnaires.find(q =>
-    q.id !== activeQ.id &&                      // Not current questionnaire
-    q.hasQotw !== false &&                      // Has QotW (or legacy without field)
-    q.qotw?.text &&                             // Actually has a QotW question
-    !q.qotwVotingClosed &&                      // Voting not closed by admin
-    q.episodeNumber < activeQ.episodeNumber     // From previous episode
-  ) : null;
+  // It must have QotW enabled, not yet awarded, and be from a previous episode
+  const votingQuestionnaire = activeQ ? questionnaires
+    .filter(q =>
+      q.id !== activeQ.id &&                      // Not current questionnaire
+      q.hasQotw !== false &&                      // Has QotW (or legacy without field)
+      q.qotw?.text &&                             // Actually has a QotW question
+      !q.qotwAwarded &&                           // Not yet awarded
+      !q.qotwVotingClosed                         // Voting not closed by admin
+    )
+    .sort((a, b) => (b.episodeNumber || 0) - (a.episodeNumber || 0))  // Most recent first
+    [0] || null : null;
 
   // Check if current user's vote was stolen for the VOTING questionnaire (not active)
   const voteWasStolen = votingQuestionnaire && playerAdvantages?.some(
