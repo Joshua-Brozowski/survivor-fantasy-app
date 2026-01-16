@@ -1416,11 +1416,8 @@ export default function SurvivorFantasyApp() {
     await guestSafeSet('challengeAttempts', JSON.stringify(updated));
   };
 
-  // Admin: manually create challenge
+  // Admin: manually create challenge (no auto-expiration - admin must end it)
   const adminCreateChallenge = async (word) => {
-    const weekStart = getWeekStart();
-    const weekEnd = getWeekEnd();
-
     // Cancel any existing active challenge
     const updatedChallenges = challenges.map(c =>
       c.status === 'active' ? { ...c, status: 'cancelled' } : c
@@ -1429,8 +1426,6 @@ export default function SurvivorFantasyApp() {
     const newChallenge = {
       id: Date.now(),
       word: word.toUpperCase(),
-      weekStart: weekStart.toISOString(),
-      weekEnd: weekEnd.toISOString(),
       status: 'active',
       createdBy: currentUser.id,
       createdAt: new Date().toISOString(),
@@ -1444,7 +1439,7 @@ export default function SurvivorFantasyApp() {
 
     await addNotification({
       type: 'challenge_started',
-      message: 'New Survivor Wordle Challenge is live! Guess the word before Sunday.',
+      message: 'New Survivor Wordle Challenge is live! Guess the word before Jeff closes it.',
       targetPlayerId: null
     });
 
@@ -5497,21 +5492,20 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
             {activeChallenge ? (
               <div>
                 <p className="text-white">Active Challenge: <span className="font-mono tracking-widest text-cyan-300">{activeChallenge.word}</span></p>
-                <p className="text-cyan-200 text-sm">Ends: {new Date(activeChallenge.weekEnd).toLocaleString()}</p>
                 <p className="text-cyan-200 text-sm">
                   Attempts: {challengeAttempts.filter(a => a.challengeId === activeChallenge.id).length} started,
                   {' '}{challengeAttempts.filter(a => a.challengeId === activeChallenge.id && a.solved).length} solved
                 </p>
                 <button
                   onClick={async () => {
-                    if (window.confirm('End this challenge early and calculate winner?')) {
+                    if (window.confirm('End this challenge and calculate winner?')) {
                       await adminEndChallenge(activeChallenge.id);
                       alert('Challenge ended!');
                     }
                   }}
                   className="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500 transition"
                 >
-                  End Challenge Early
+                  End Challenge
                 </button>
               </div>
             ) : (
@@ -6648,7 +6642,6 @@ function WordleGame({
   const [displayTime, setDisplayTime] = useState(0);
 
   const activeChallenge = challenges.find(c => c.status === 'active');
-  const isExpired = activeChallenge && new Date() > new Date(activeChallenge.weekEnd);
 
   // Load existing attempt on mount
   useEffect(() => {
@@ -6918,21 +6911,6 @@ function WordleGame({
     );
   }
 
-  // Challenge expired but not yet finalized
-  if (isExpired && activeChallenge.status === 'active') {
-    return (
-      <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
-        <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
-          <Zap className="w-6 h-6" />
-          Challenge Ended
-        </h2>
-        <p className="text-amber-200 text-center py-8">
-          This week's challenge has ended. Results will be announced soon!
-        </p>
-      </div>
-    );
-  }
-
   // Player hasn't started yet
   if (!attempt) {
     return (
@@ -6961,10 +6939,6 @@ function WordleGame({
             </p>
           </div>
 
-          <p className="text-amber-300 text-sm mb-6">
-            Ends: {new Date(activeChallenge.weekEnd).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-          </p>
-
           <button
             onClick={handleStartPlaying}
             className="px-8 py-4 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-lg font-bold text-xl hover:from-amber-500 hover:to-orange-500 transition"
@@ -6974,6 +6948,9 @@ function WordleGame({
 
           <p className="text-red-400 text-sm mt-4 font-semibold">
             Warning: You only get ONE attempt! Choose wisely.
+          </p>
+          <p className="text-amber-400 text-xs mt-2">
+            Challenge stays open until Jeff closes it.
           </p>
         </div>
       </div>
