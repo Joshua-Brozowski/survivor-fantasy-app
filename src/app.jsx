@@ -3601,6 +3601,10 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
       if (scoreData.votesReceived) points += scoreData.votesReceived;
       if (scoreData.playedIdol) points += 1;
       if (scoreData.incorrectVote) points -= 1;
+      // Finale bonuses
+      if (scoreData.final5) points += 10;
+      if (scoreData.final3) points += 15;
+      if (scoreData.soleSurvivor) points += 20;
 
       if (points !== 0 || scoreData.survived) {
         // Find the pick and contestant to include in description
@@ -4144,36 +4148,68 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                         {isEliminated ? (
                           <p className="text-gray-400 text-sm italic">This contestant has been eliminated - no more points can be scored.</p>
                         ) : (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            {[
-                              { key: 'survived', label: 'Survived (+1)' },
-                              { key: 'immunity', label: 'Won Immunity (+1)' },
-                              { key: 'reward', label: 'Won Reward (+1)' },
-                              { key: 'journey', label: 'Went on Journey (+1)' },
-                              { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
-                              { key: 'playedIdol', label: 'Played Idol (+1)' },
-                              { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
-                            ].map(({ key, label }) => (
-                              <label key={key} className="flex items-center gap-2 text-white text-sm">
-                                <input
-                                  type="checkbox"
-                                  checked={episodeScoring.pickScoresData[instinctPick.id]?.[key] || false}
-                                  onChange={(e) => {
-                                    const current = episodeScoring.pickScoresData[instinctPick.id] || {};
-                                    setEpisodeScoring({
-                                      ...episodeScoring,
-                                      pickScoresData: {
-                                        ...episodeScoring.pickScoresData,
-                                        [instinctPick.id]: { ...current, [key]: e.target.checked }
-                                      }
-                                    });
-                                  }}
-                                  className="w-4 h-4"
-                                />
-                                {label}
-                              </label>
-                            ))}
-                          </div>
+                          <>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                              {[
+                                { key: 'survived', label: 'Survived (+1)' },
+                                { key: 'immunity', label: 'Won Immunity (+1)' },
+                                { key: 'reward', label: 'Won Reward (+1)' },
+                                { key: 'journey', label: 'Went on Journey (+1)' },
+                                { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
+                                { key: 'playedIdol', label: 'Played Idol (+1)' },
+                                { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
+                              ].map(({ key, label }) => (
+                                <label key={key} className="flex items-center gap-2 text-white text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={episodeScoring.pickScoresData[instinctPick.id]?.[key] || false}
+                                    onChange={(e) => {
+                                      const current = episodeScoring.pickScoresData[instinctPick.id] || {};
+                                      setEpisodeScoring({
+                                        ...episodeScoring,
+                                        pickScoresData: {
+                                          ...episodeScoring.pickScoresData,
+                                          [instinctPick.id]: { ...current, [key]: e.target.checked }
+                                        }
+                                      });
+                                    }}
+                                    className="w-4 h-4"
+                                  />
+                                  {label}
+                                </label>
+                              ))}
+                            </div>
+                            {/* Final Placement Bonuses - Gold styling to stand out */}
+                            <div className="mt-2 pt-2 border-t border-yellow-600/50">
+                              <p className="text-yellow-400 text-xs font-semibold mb-2">⭐ FINALE BONUSES (use only at end of season!):</p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {[
+                                  { key: 'final5', label: 'Final 5 (+10)' },
+                                  { key: 'final3', label: 'Final 3 (+15)' },
+                                  { key: 'soleSurvivor', label: 'Sole Survivor (+20)' }
+                                ].map(({ key, label }) => (
+                                  <label key={key} className="flex items-center gap-2 text-yellow-300 text-sm bg-yellow-900/30 px-2 py-1 rounded border border-yellow-600/50">
+                                    <input
+                                      type="checkbox"
+                                      checked={episodeScoring.pickScoresData[instinctPick.id]?.[key] || false}
+                                      onChange={(e) => {
+                                        const current = episodeScoring.pickScoresData[instinctPick.id] || {};
+                                        setEpisodeScoring({
+                                          ...episodeScoring,
+                                          pickScoresData: {
+                                            ...episodeScoring.pickScoresData,
+                                            [instinctPick.id]: { ...current, [key]: e.target.checked }
+                                          }
+                                        });
+                                      }}
+                                      className="w-4 h-4 accent-yellow-500"
+                                    />
+                                    {label}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
                     );
@@ -4191,36 +4227,68 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                         {isEliminated ? (
                           <p className="text-gray-400 text-sm italic">This contestant has been eliminated - no more points can be scored.</p>
                         ) : (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            {[
-                              { key: 'survived', label: 'Survived (+1)' },
-                              { key: 'immunity', label: 'Won Immunity (+1)' },
-                              { key: 'reward', label: 'Won Reward (+1)' },
-                              { key: 'journey', label: 'Went on Journey (+1)' },
-                              { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
-                              { key: 'playedIdol', label: 'Played Idol (+1)' },
-                              { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
-                            ].map(({ key, label }) => (
-                              <label key={key} className="flex items-center gap-2 text-white text-sm">
-                                <input
-                                  type="checkbox"
-                                  checked={episodeScoring.pickScoresData[finalPick.id]?.[key] || false}
-                                  onChange={(e) => {
-                                    const current = episodeScoring.pickScoresData[finalPick.id] || {};
-                                    setEpisodeScoring({
-                                      ...episodeScoring,
-                                      pickScoresData: {
-                                        ...episodeScoring.pickScoresData,
-                                        [finalPick.id]: { ...current, [key]: e.target.checked }
-                                      }
-                                    });
-                                  }}
-                                  className="w-4 h-4"
-                                />
-                                {label}
-                              </label>
-                            ))}
-                          </div>
+                          <>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                              {[
+                                { key: 'survived', label: 'Survived (+1)' },
+                                { key: 'immunity', label: 'Won Immunity (+1)' },
+                                { key: 'reward', label: 'Won Reward (+1)' },
+                                { key: 'journey', label: 'Went on Journey (+1)' },
+                                { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
+                                { key: 'playedIdol', label: 'Played Idol (+1)' },
+                                { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
+                              ].map(({ key, label }) => (
+                                <label key={key} className="flex items-center gap-2 text-white text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={episodeScoring.pickScoresData[finalPick.id]?.[key] || false}
+                                    onChange={(e) => {
+                                      const current = episodeScoring.pickScoresData[finalPick.id] || {};
+                                      setEpisodeScoring({
+                                        ...episodeScoring,
+                                        pickScoresData: {
+                                          ...episodeScoring.pickScoresData,
+                                          [finalPick.id]: { ...current, [key]: e.target.checked }
+                                        }
+                                      });
+                                    }}
+                                    className="w-4 h-4"
+                                  />
+                                  {label}
+                                </label>
+                              ))}
+                            </div>
+                            {/* Final Placement Bonuses - Gold styling to stand out */}
+                            <div className="mt-2 pt-2 border-t border-yellow-600/50">
+                              <p className="text-yellow-400 text-xs font-semibold mb-2">⭐ FINALE BONUSES (use only at end of season!):</p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {[
+                                  { key: 'final5', label: 'Final 5 (+10)' },
+                                  { key: 'final3', label: 'Final 3 (+15)' },
+                                  { key: 'soleSurvivor', label: 'Sole Survivor (+20)' }
+                                ].map(({ key, label }) => (
+                                  <label key={key} className="flex items-center gap-2 text-yellow-300 text-sm bg-yellow-900/30 px-2 py-1 rounded border border-yellow-600/50">
+                                    <input
+                                      type="checkbox"
+                                      checked={episodeScoring.pickScoresData[finalPick.id]?.[key] || false}
+                                      onChange={(e) => {
+                                        const current = episodeScoring.pickScoresData[finalPick.id] || {};
+                                        setEpisodeScoring({
+                                          ...episodeScoring,
+                                          pickScoresData: {
+                                            ...episodeScoring.pickScoresData,
+                                            [finalPick.id]: { ...current, [key]: e.target.checked }
+                                          }
+                                        });
+                                      }}
+                                      className="w-4 h-4 accent-yellow-500"
+                                    />
+                                    {label}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
                     );
