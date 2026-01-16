@@ -98,9 +98,10 @@ survivor-fantasy-app/
 - Voted Out with Idol in Pocket: -2
 - Episode Survived (Instinct only): +1
 - Made Merge (Instinct only): +5
-- Final 5: +10
-- Final 3: +15
-- Sole Survivor: +20
+- **Finale Bonuses** (mutually exclusive - only ONE awarded per pick):
+  - Final 5: +10
+  - Final 3: +15
+  - Sole Survivor: +20
 
 ### 6. Weekly Questionnaire
 **Question Types** (Simplified):
