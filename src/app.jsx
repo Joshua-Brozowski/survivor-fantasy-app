@@ -129,6 +129,7 @@ export default function SurvivorFantasyApp() {
   const [hasSecurityQuestion, setHasSecurityQuestion] = useState(false);
   const [currentSeason, setCurrentSeason] = useState(48);
   const [seasonHistory, setSeasonHistory] = useState([]);
+  const [seasonFinalized, setSeasonFinalized] = useState(false);
   const [castAccordionOpen, setCastAccordionOpen] = useState(false);
   
   // Wordle Challenge state
@@ -240,6 +241,7 @@ export default function SurvivorFantasyApp() {
       const playerScoresData = await storage.get('playerScores');
       const currentSeasonData = await storage.get('currentSeason');
       const seasonHistoryData = await storage.get('seasonHistory');
+      const seasonFinalizedData = await storage.get('seasonFinalized');
       const challengesData = await storage.get('challenges');
       const challengeAttemptsData = await storage.get('challengeAttempts');
 
@@ -247,6 +249,7 @@ export default function SurvivorFantasyApp() {
       setContestants(contestantsData ? JSON.parse(contestantsData.value) : SURVIVOR_48_CAST);
       setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 48);
       setSeasonHistory(seasonHistoryData ? JSON.parse(seasonHistoryData.value) : []);
+      setSeasonFinalized(seasonFinalizedData ? JSON.parse(seasonFinalizedData.value) : false);
       setChallenges(challengesData ? JSON.parse(challengesData.value) : []);
       setChallengeAttempts(challengeAttemptsData ? JSON.parse(challengeAttemptsData.value) : []);
       setPicks(picksData ? JSON.parse(picksData.value) : []);
@@ -560,10 +563,12 @@ export default function SurvivorFantasyApp() {
     setEpisodes([]);
     setGamePhase('instinct-picks');
     setPlayerAdvantages([]);
+    setSeasonFinalized(false);
     // Keep playerScores - they carry over between seasons or reset based on your preference
     // For now, let's keep them to maintain the economy
 
     await storage.set('currentSeason', newSeasonNumber.toString());
+    await storage.set('seasonFinalized', JSON.stringify(false));
     await storage.set('contestants', JSON.stringify(defaultCast));
     await storage.set('picks', JSON.stringify([]));
     await storage.set('picksLocked', JSON.stringify({ instinct: false, final: false }));
@@ -2264,13 +2269,28 @@ export default function SurvivorFantasyApp() {
         )}
 
         {currentView === 'leaderboard' && (
-          <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
-            <h2 className="text-2xl font-bold text-amber-400 mb-6 flex items-center gap-2">
-              <Trophy className="w-6 h-6" />
-              Leaderboard - Season 48
-            </h2>
+          <div className="space-y-6">
+            {/* Season Winners Display - Shows when season is finalized */}
+            {seasonFinalized && (
+              <SeasonWinnersDisplay
+                players={players}
+                pickScores={pickScores}
+                submissions={submissions}
+                questionnaires={questionnaires}
+                challenges={challenges}
+                playerAdvantages={playerAdvantages}
+                currentSeason={currentSeason}
+                compact={true}
+              />
+            )}
 
-            <div className="space-y-3">
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+              <h2 className="text-2xl font-bold text-amber-400 mb-6 flex items-center gap-2">
+                <Trophy className="w-6 h-6" />
+                Leaderboard - Season {currentSeason}
+              </h2>
+
+              <div className="space-y-3">
               {(() => {
                 // Calculate rankings with ties
                 const sortedPlayers = [...players]
@@ -2465,6 +2485,7 @@ export default function SurvivorFantasyApp() {
                 </p>
               </div>
             </div>
+            </div>
           </div>
         )}
 
@@ -2521,6 +2542,8 @@ export default function SurvivorFantasyApp() {
             startNewSeason={startNewSeason}
             archiveCurrentSeason={archiveCurrentSeason}
             seasonHistory={seasonHistory}
+            seasonFinalized={seasonFinalized}
+            setSeasonFinalized={setSeasonFinalized}
             challenges={challenges}
             setChallenges={setChallenges}
             challengeAttempts={challengeAttempts}
@@ -2550,6 +2573,19 @@ export default function SurvivorFantasyApp() {
               markNotificationSeen={markNotificationSeen}
               onVisibleNotifications={setVisibleBannerIds}
             />
+
+            {/* Season Winners Display - Shows when season is finalized */}
+            {seasonFinalized && (
+              <SeasonWinnersDisplay
+                players={players}
+                pickScores={pickScores}
+                submissions={submissions}
+                questionnaires={questionnaires}
+                challenges={challenges}
+                playerAdvantages={playerAdvantages}
+                currentSeason={currentSeason}
+              />
+            )}
 
             {/* Combined Welcome Section */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
@@ -3180,7 +3216,7 @@ export default function SurvivorFantasyApp() {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots }) {
+function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots }) {
   const [adminView, setAdminView] = useState('main');
 
   // Helper to check guest mode and show alert
@@ -4780,6 +4816,263 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   }
 
   // Season Management View
+  // Finalize Season View
+  if (adminView === 'finalize-season') {
+    // Calculate player rankings
+    const playerRankings = players.map(player => {
+      // Calculate total points from all sources
+      let totalPoints = 0;
+
+      // Pick scores
+      const playerPickScores = pickScores.filter(ps => ps.playerId === player.id);
+      playerPickScores.forEach(ps => { totalPoints += ps.points; });
+
+      // Questionnaire scores
+      submissions.forEach(sub => {
+        if (sub.playerId === player.id && sub.score !== undefined) {
+          totalPoints += sub.score;
+        }
+      });
+
+      // QotW wins (+5 each)
+      questionnaires.forEach(q => {
+        if (q.qotwWinnerId === player.id) {
+          totalPoints += 5;
+        }
+      });
+
+      // Wordle wins (+3 each)
+      const wordleWins = challenges.filter(c => c.winnerId === player.id).length;
+      totalPoints += wordleWins * 3;
+
+      return { ...player, totalPoints, wordleWins };
+    }).sort((a, b) => b.totalPoints - a.totalPoints);
+
+    // Calculate fun stats
+    const funStats = {
+      // Most Wordle Wins
+      wordleChampion: playerRankings.reduce((best, p) =>
+        (p.wordleWins > (best?.wordleWins || 0)) ? p : best, null),
+
+      // Most QotW Wins
+      qotwKing: players.map(p => ({
+        ...p,
+        qotwWins: questionnaires.filter(q => q.qotwWinnerId === p.id).length
+      })).sort((a, b) => b.qotwWins - a.qotwWins)[0],
+
+      // Most Correct Answers
+      quizWhiz: players.map(p => {
+        const playerSubs = submissions.filter(s => s.playerId === p.id);
+        let correct = 0;
+        playerSubs.forEach(sub => {
+          if (sub.answers) {
+            Object.entries(sub.answers).forEach(([qId, ans]) => {
+              const q = questionnaires.find(quest => quest.id === sub.questionnaireId);
+              if (q?.correctAnswers?.[qId] === ans) correct++;
+            });
+          }
+        });
+        return { ...p, correctAnswers: correct };
+      }).sort((a, b) => b.correctAnswers - a.correctAnswers)[0],
+
+      // Most Late Submissions
+      procrastinator: players.map(p => ({
+        ...p,
+        lateCount: submissions.filter(s => s.playerId === p.id && s.isLate).length
+      })).sort((a, b) => b.lateCount - a.lateCount)[0],
+
+      // Best Pick (most points from picks)
+      pickMaster: players.map(p => ({
+        ...p,
+        pickPoints: pickScores.filter(ps => ps.playerId === p.id).reduce((sum, ps) => sum + ps.points, 0)
+      })).sort((a, b) => b.pickPoints - a.pickPoints)[0],
+
+      // Most Advantages Purchased
+      shopaholic: players.map(p => ({
+        ...p,
+        advantagesBought: playerAdvantages.filter(a => a.playerId === p.id).length
+      })).sort((a, b) => b.advantagesBought - a.advantagesBought)[0],
+
+      // Total questionnaires
+      totalQuestionnaires: questionnaires.length,
+
+      // Total Wordle challenges
+      totalWordles: challenges.filter(c => c.status === 'completed').length,
+    };
+
+    const handleFinalizeSeason = async () => {
+      if (!requireRealUser('Finalize Season')) return;
+
+      if (seasonFinalized) {
+        // Allow un-finalizing
+        if (window.confirm('Un-finalize the season? The winners display will be hidden.')) {
+          setSeasonFinalized(false);
+          await storage.set('seasonFinalized', JSON.stringify(false));
+          alert('Season un-finalized.');
+        }
+        return;
+      }
+
+      if (window.confirm('🏆 Finalize Season ' + currentSeason + '? This will display the winners podium on the Home and Leaderboard tabs for all players!')) {
+        setSeasonFinalized(true);
+        await storage.set('seasonFinalized', JSON.stringify(true));
+
+        // Send notification to all players
+        await addNotification({
+          type: 'season_finalized',
+          message: `🏆 Season ${currentSeason} is complete! Check out the final standings and awards!`,
+          targetPlayerId: null
+        });
+
+        alert('Season finalized! Winners are now displayed on Home and Leaderboard tabs.');
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-yellow-600">
+          <h2 className="text-2xl font-bold text-yellow-400 mb-6 flex items-center gap-2">
+            <Trophy className="w-6 h-6" />
+            Finalize Season {currentSeason}
+          </h2>
+
+          {/* Current Standings Preview */}
+          <div className="mb-6 p-4 bg-yellow-900/30 border border-yellow-600 rounded-lg">
+            <h3 className="text-yellow-300 font-semibold mb-4">Current Standings Preview</h3>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              {/* Podium Preview */}
+              {playerRankings.slice(0, 3).map((player, idx) => (
+                <div key={player.id} className={`text-center p-4 rounded-lg ${
+                  idx === 0 ? 'bg-yellow-600/40 border-2 border-yellow-400' :
+                  idx === 1 ? 'bg-gray-400/30 border-2 border-gray-300' :
+                  'bg-amber-700/30 border-2 border-amber-600'
+                }`}>
+                  <div className="text-4xl mb-2">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}</div>
+                  <p className="text-white font-bold text-lg">{player.name}</p>
+                  <p className="text-yellow-300 font-semibold">{player.totalPoints} pts</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Rest of standings */}
+            <div className="space-y-2">
+              {playerRankings.slice(3).map((player, idx) => (
+                <div key={player.id} className="flex justify-between items-center bg-black/30 p-2 rounded">
+                  <span className="text-gray-400">#{idx + 4}</span>
+                  <span className="text-white">{player.name}</span>
+                  <span className="text-yellow-300">{player.totalPoints} pts</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Fun Stats Preview */}
+          <div className="mb-6 p-4 bg-purple-900/30 border border-purple-600 rounded-lg">
+            <h3 className="text-purple-300 font-semibold mb-4">🎉 Season Awards Preview</h3>
+            <div className="grid md:grid-cols-2 gap-3">
+              {funStats.wordleChampion && funStats.wordleChampion.wordleWins > 0 && (
+                <div className="bg-black/30 p-3 rounded flex items-center gap-3">
+                  <span className="text-2xl">🧩</span>
+                  <div>
+                    <p className="text-cyan-300 font-semibold">Wordle Champion</p>
+                    <p className="text-white">{funStats.wordleChampion.name} ({funStats.wordleChampion.wordleWins} wins)</p>
+                  </div>
+                </div>
+              )}
+              {funStats.qotwKing && funStats.qotwKing.qotwWins > 0 && (
+                <div className="bg-black/30 p-3 rounded flex items-center gap-3">
+                  <span className="text-2xl">👑</span>
+                  <div>
+                    <p className="text-amber-300 font-semibold">QotW King/Queen</p>
+                    <p className="text-white">{funStats.qotwKing.name} ({funStats.qotwKing.qotwWins} wins)</p>
+                  </div>
+                </div>
+              )}
+              {funStats.quizWhiz && funStats.quizWhiz.correctAnswers > 0 && (
+                <div className="bg-black/30 p-3 rounded flex items-center gap-3">
+                  <span className="text-2xl">🧠</span>
+                  <div>
+                    <p className="text-green-300 font-semibold">Quiz Whiz</p>
+                    <p className="text-white">{funStats.quizWhiz.name} ({funStats.quizWhiz.correctAnswers} correct)</p>
+                  </div>
+                </div>
+              )}
+              {funStats.pickMaster && funStats.pickMaster.pickPoints > 0 && (
+                <div className="bg-black/30 p-3 rounded flex items-center gap-3">
+                  <span className="text-2xl">🎯</span>
+                  <div>
+                    <p className="text-orange-300 font-semibold">Pick Master</p>
+                    <p className="text-white">{funStats.pickMaster.name} ({funStats.pickMaster.pickPoints} pts from picks)</p>
+                  </div>
+                </div>
+              )}
+              {funStats.procrastinator && funStats.procrastinator.lateCount > 0 && (
+                <div className="bg-black/30 p-3 rounded flex items-center gap-3">
+                  <span className="text-2xl">🐢</span>
+                  <div>
+                    <p className="text-red-300 font-semibold">Procrastinator Award</p>
+                    <p className="text-white">{funStats.procrastinator.name} ({funStats.procrastinator.lateCount} late submissions)</p>
+                  </div>
+                </div>
+              )}
+              {funStats.shopaholic && funStats.shopaholic.advantagesBought > 0 && (
+                <div className="bg-black/30 p-3 rounded flex items-center gap-3">
+                  <span className="text-2xl">🛒</span>
+                  <div>
+                    <p className="text-pink-300 font-semibold">Shopaholic</p>
+                    <p className="text-white">{funStats.shopaholic.name} ({funStats.shopaholic.advantagesBought} advantages)</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Season Stats */}
+          <div className="mb-6 p-4 bg-blue-900/30 border border-blue-600 rounded-lg">
+            <h3 className="text-blue-300 font-semibold mb-3">📊 Season Stats</h3>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div className="bg-black/30 p-3 rounded">
+                <p className="text-2xl font-bold text-white">{funStats.totalQuestionnaires}</p>
+                <p className="text-blue-300 text-sm">Questionnaires</p>
+              </div>
+              <div className="bg-black/30 p-3 rounded">
+                <p className="text-2xl font-bold text-white">{funStats.totalWordles}</p>
+                <p className="text-blue-300 text-sm">Wordle Challenges</p>
+              </div>
+              <div className="bg-black/30 p-3 rounded">
+                <p className="text-2xl font-bold text-white">{contestants.filter(c => c.eliminated).length}</p>
+                <p className="text-blue-300 text-sm">Eliminations</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Finalize Button */}
+          <div className="text-center">
+            <button
+              onClick={handleFinalizeSeason}
+              className={`px-8 py-4 ${seasonFinalized ? 'bg-gradient-to-r from-red-600 to-orange-600' : 'bg-gradient-to-r from-yellow-500 to-amber-500'} text-white rounded-lg font-bold text-xl hover:opacity-90 transition`}
+            >
+              {seasonFinalized ? '🔓 Un-Finalize Season' : '🏆 Finalize Season ' + currentSeason}
+            </button>
+            <p className="text-yellow-200 text-sm mt-3">
+              {seasonFinalized
+                ? 'Season is finalized. Winners are being displayed to all players.'
+                : 'This will show the winners podium and awards on Home and Leaderboard tabs.'}
+            </p>
+          </div>
+
+          {/* Back Button */}
+          <button
+            onClick={() => setAdminView('main')}
+            className="mt-6 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500 transition flex items-center gap-2"
+          >
+            <ChevronLeft className="w-4 h-4" /> Back to Jeff's Controls
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (adminView === 'season-management') {
     return (
       <div className="space-y-6">
@@ -5850,6 +6143,20 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
             </div>
           </button>
 
+          {/* Finalize Season Button - Gold/Special styling */}
+          <button
+            onClick={() => setAdminView('finalize-season')}
+            className={`${seasonFinalized ? 'bg-gradient-to-r from-green-600 to-emerald-600' : 'bg-gradient-to-r from-yellow-600 to-amber-600'} text-white py-4 px-6 rounded-lg font-semibold hover:opacity-90 transition text-left`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-5 h-5" />
+                <span>{seasonFinalized ? '🏆 Season Finalized!' : '🎬 Finalize Season'}</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
           <button
             onClick={() => setAdminView('season-management')}
             className="bg-gradient-to-r from-cyan-600 to-teal-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-cyan-500 hover:to-teal-500 transition text-left"
@@ -6003,6 +6310,195 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Season Winners Display Component - Shows podium and awards when season is finalized
+function SeasonWinnersDisplay({ players, pickScores, submissions, questionnaires, challenges, playerAdvantages, currentSeason, compact = false }) {
+  // Calculate player rankings
+  const playerRankings = players.map(player => {
+    let totalPoints = 0;
+
+    // Pick scores
+    const playerPickScores = pickScores.filter(ps => ps.playerId === player.id);
+    playerPickScores.forEach(ps => { totalPoints += ps.points; });
+
+    // Questionnaire scores
+    submissions.forEach(sub => {
+      if (sub.playerId === player.id && sub.score !== undefined) {
+        totalPoints += sub.score;
+      }
+    });
+
+    // QotW wins (+5 each)
+    questionnaires.forEach(q => {
+      if (q.qotwWinnerId === player.id) {
+        totalPoints += 5;
+      }
+    });
+
+    // Wordle wins (+3 each)
+    const wordleWins = challenges.filter(c => c.winnerId === player.id).length;
+    totalPoints += wordleWins * 3;
+
+    return { ...player, totalPoints, wordleWins };
+  }).sort((a, b) => b.totalPoints - a.totalPoints);
+
+  // Calculate fun stats
+  const funStats = {
+    wordleChampion: playerRankings.reduce((best, p) =>
+      (p.wordleWins > (best?.wordleWins || 0)) ? p : best, null),
+
+    qotwKing: players.map(p => ({
+      ...p,
+      qotwWins: questionnaires.filter(q => q.qotwWinnerId === p.id).length
+    })).sort((a, b) => b.qotwWins - a.qotwWins)[0],
+
+    quizWhiz: players.map(p => {
+      const playerSubs = submissions.filter(s => s.playerId === p.id);
+      let correct = 0;
+      playerSubs.forEach(sub => {
+        if (sub.answers) {
+          Object.entries(sub.answers).forEach(([qId, ans]) => {
+            const q = questionnaires.find(quest => quest.id === sub.questionnaireId);
+            if (q?.correctAnswers?.[qId] === ans) correct++;
+          });
+        }
+      });
+      return { ...p, correctAnswers: correct };
+    }).sort((a, b) => b.correctAnswers - a.correctAnswers)[0],
+
+    procrastinator: players.map(p => ({
+      ...p,
+      lateCount: submissions.filter(s => s.playerId === p.id && s.isLate).length
+    })).sort((a, b) => b.lateCount - a.lateCount)[0],
+
+    pickMaster: players.map(p => ({
+      ...p,
+      pickPoints: pickScores.filter(ps => ps.playerId === p.id).reduce((sum, ps) => sum + ps.points, 0)
+    })).sort((a, b) => b.pickPoints - a.pickPoints)[0],
+
+    shopaholic: players.map(p => ({
+      ...p,
+      advantagesBought: playerAdvantages.filter(a => a.playerId === p.id).length
+    })).sort((a, b) => b.advantagesBought - a.advantagesBought)[0],
+  };
+
+  const top3 = playerRankings.slice(0, 3);
+
+  return (
+    <div className="bg-gradient-to-br from-yellow-900/80 via-amber-900/80 to-orange-900/80 backdrop-blur-sm p-6 rounded-lg border-2 border-yellow-500 shadow-lg shadow-yellow-500/20">
+      {/* Header */}
+      <div className="text-center mb-6">
+        <h2 className="text-3xl font-bold text-yellow-300 flex items-center justify-center gap-3">
+          <Trophy className="w-8 h-8 text-yellow-400" />
+          Season {currentSeason} Champions!
+          <Trophy className="w-8 h-8 text-yellow-400" />
+        </h2>
+        <p className="text-amber-200 mt-1">Congratulations to all players!</p>
+      </div>
+
+      {/* Podium */}
+      <div className="flex justify-center items-end gap-4 mb-8">
+        {/* 2nd Place - Left */}
+        {top3[1] && (
+          <div className="flex flex-col items-center">
+            <div className="text-5xl mb-2">🥈</div>
+            <div className="bg-gradient-to-b from-gray-300 to-gray-400 w-24 sm:w-32 rounded-t-lg p-4 text-center" style={{ height: '120px' }}>
+              <p className="text-gray-800 font-bold text-lg truncate">{top3[1].name}</p>
+              <p className="text-gray-700 font-semibold">{top3[1].totalPoints} pts</p>
+              <p className="text-gray-600 text-sm mt-1">2nd Place</p>
+            </div>
+          </div>
+        )}
+
+        {/* 1st Place - Center (Tallest) */}
+        {top3[0] && (
+          <div className="flex flex-col items-center">
+            <div className="text-6xl mb-2 animate-bounce">🥇</div>
+            <div className="bg-gradient-to-b from-yellow-400 to-yellow-600 w-28 sm:w-36 rounded-t-lg p-4 text-center shadow-lg shadow-yellow-500/50" style={{ height: '150px' }}>
+              <p className="text-yellow-900 font-bold text-xl truncate">{top3[0].name}</p>
+              <p className="text-yellow-800 font-semibold text-lg">{top3[0].totalPoints} pts</p>
+              <p className="text-yellow-700 font-semibold mt-1">🏆 WINNER!</p>
+            </div>
+          </div>
+        )}
+
+        {/* 3rd Place - Right */}
+        {top3[2] && (
+          <div className="flex flex-col items-center">
+            <div className="text-4xl mb-2">🥉</div>
+            <div className="bg-gradient-to-b from-amber-600 to-amber-700 w-24 sm:w-32 rounded-t-lg p-4 text-center" style={{ height: '100px' }}>
+              <p className="text-amber-100 font-bold text-lg truncate">{top3[2].name}</p>
+              <p className="text-amber-200 font-semibold">{top3[2].totalPoints} pts</p>
+              <p className="text-amber-300 text-sm mt-1">3rd Place</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Season Awards - Only show if not compact mode */}
+      {!compact && (
+        <div className="bg-black/40 rounded-lg p-4 mb-4">
+          <h3 className="text-purple-300 font-bold text-center mb-4 text-lg">🎉 Season Awards 🎉</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {funStats.wordleChampion && funStats.wordleChampion.wordleWins > 0 && (
+              <div className="bg-cyan-900/50 p-3 rounded-lg text-center border border-cyan-600">
+                <span className="text-2xl">🧩</span>
+                <p className="text-cyan-300 font-semibold text-sm">Wordle Champion</p>
+                <p className="text-white font-bold">{funStats.wordleChampion.name}</p>
+                <p className="text-cyan-400 text-xs">{funStats.wordleChampion.wordleWins} wins</p>
+              </div>
+            )}
+            {funStats.qotwKing && funStats.qotwKing.qotwWins > 0 && (
+              <div className="bg-amber-900/50 p-3 rounded-lg text-center border border-amber-600">
+                <span className="text-2xl">👑</span>
+                <p className="text-amber-300 font-semibold text-sm">QotW Royalty</p>
+                <p className="text-white font-bold">{funStats.qotwKing.name}</p>
+                <p className="text-amber-400 text-xs">{funStats.qotwKing.qotwWins} wins</p>
+              </div>
+            )}
+            {funStats.quizWhiz && funStats.quizWhiz.correctAnswers > 0 && (
+              <div className="bg-green-900/50 p-3 rounded-lg text-center border border-green-600">
+                <span className="text-2xl">🧠</span>
+                <p className="text-green-300 font-semibold text-sm">Quiz Whiz</p>
+                <p className="text-white font-bold">{funStats.quizWhiz.name}</p>
+                <p className="text-green-400 text-xs">{funStats.quizWhiz.correctAnswers} correct</p>
+              </div>
+            )}
+            {funStats.pickMaster && funStats.pickMaster.pickPoints > 0 && (
+              <div className="bg-orange-900/50 p-3 rounded-lg text-center border border-orange-600">
+                <span className="text-2xl">🎯</span>
+                <p className="text-orange-300 font-semibold text-sm">Pick Master</p>
+                <p className="text-white font-bold">{funStats.pickMaster.name}</p>
+                <p className="text-orange-400 text-xs">{funStats.pickMaster.pickPoints} pts</p>
+              </div>
+            )}
+            {funStats.procrastinator && funStats.procrastinator.lateCount > 0 && (
+              <div className="bg-red-900/50 p-3 rounded-lg text-center border border-red-600">
+                <span className="text-2xl">🐢</span>
+                <p className="text-red-300 font-semibold text-sm">Procrastinator</p>
+                <p className="text-white font-bold">{funStats.procrastinator.name}</p>
+                <p className="text-red-400 text-xs">{funStats.procrastinator.lateCount} late</p>
+              </div>
+            )}
+            {funStats.shopaholic && funStats.shopaholic.advantagesBought > 0 && (
+              <div className="bg-pink-900/50 p-3 rounded-lg text-center border border-pink-600">
+                <span className="text-2xl">🛒</span>
+                <p className="text-pink-300 font-semibold text-sm">Shopaholic</p>
+                <p className="text-white font-bold">{funStats.shopaholic.name}</p>
+                <p className="text-pink-400 text-xs">{funStats.shopaholic.advantagesBought} advantages</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Confetti effect hint */}
+      <p className="text-center text-yellow-300 text-sm animate-pulse">
+        ✨ Thank you for an amazing season! ✨
+      </p>
     </div>
   );
 }
