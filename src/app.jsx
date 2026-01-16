@@ -4179,10 +4179,30 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                                 </label>
                               ))}
                             </div>
-                            {/* Final Placement Bonuses - Gold styling to stand out */}
+                            {/* Final Placement Bonuses - Gold styling, mutually exclusive (radio buttons) */}
                             <div className="mt-2 pt-2 border-t border-yellow-600/50">
-                              <p className="text-yellow-400 text-xs font-semibold mb-2">⭐ FINALE BONUSES (use only at end of season!):</p>
-                              <div className="grid grid-cols-3 gap-2">
+                              <p className="text-yellow-400 text-xs font-semibold mb-2">⭐ FINALE BONUS - select ONE (use only at end of season!):</p>
+                              <div className="grid grid-cols-4 gap-2">
+                                {/* None option to clear selection */}
+                                <label className="flex items-center gap-2 text-gray-400 text-sm bg-gray-800/50 px-2 py-1 rounded border border-gray-600/50">
+                                  <input
+                                    type="radio"
+                                    name={`finale-instinct-${instinctPick.id}`}
+                                    checked={!episodeScoring.pickScoresData[instinctPick.id]?.final5 && !episodeScoring.pickScoresData[instinctPick.id]?.final3 && !episodeScoring.pickScoresData[instinctPick.id]?.soleSurvivor}
+                                    onChange={() => {
+                                      const current = episodeScoring.pickScoresData[instinctPick.id] || {};
+                                      setEpisodeScoring({
+                                        ...episodeScoring,
+                                        pickScoresData: {
+                                          ...episodeScoring.pickScoresData,
+                                          [instinctPick.id]: { ...current, final5: false, final3: false, soleSurvivor: false }
+                                        }
+                                      });
+                                    }}
+                                    className="w-4 h-4 accent-gray-500"
+                                  />
+                                  None
+                                </label>
                                 {[
                                   { key: 'final5', label: 'Final 5 (+10)' },
                                   { key: 'final3', label: 'Final 3 (+15)' },
@@ -4190,15 +4210,16 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                                 ].map(({ key, label }) => (
                                   <label key={key} className="flex items-center gap-2 text-yellow-300 text-sm bg-yellow-900/30 px-2 py-1 rounded border border-yellow-600/50">
                                     <input
-                                      type="checkbox"
+                                      type="radio"
+                                      name={`finale-instinct-${instinctPick.id}`}
                                       checked={episodeScoring.pickScoresData[instinctPick.id]?.[key] || false}
-                                      onChange={(e) => {
+                                      onChange={() => {
                                         const current = episodeScoring.pickScoresData[instinctPick.id] || {};
                                         setEpisodeScoring({
                                           ...episodeScoring,
                                           pickScoresData: {
                                             ...episodeScoring.pickScoresData,
-                                            [instinctPick.id]: { ...current, [key]: e.target.checked }
+                                            [instinctPick.id]: { ...current, final5: false, final3: false, soleSurvivor: false, [key]: true }
                                           }
                                         });
                                       }}
@@ -4258,10 +4279,30 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                                 </label>
                               ))}
                             </div>
-                            {/* Final Placement Bonuses - Gold styling to stand out */}
+                            {/* Final Placement Bonuses - Gold styling, mutually exclusive (radio buttons) */}
                             <div className="mt-2 pt-2 border-t border-yellow-600/50">
-                              <p className="text-yellow-400 text-xs font-semibold mb-2">⭐ FINALE BONUSES (use only at end of season!):</p>
-                              <div className="grid grid-cols-3 gap-2">
+                              <p className="text-yellow-400 text-xs font-semibold mb-2">⭐ FINALE BONUS - select ONE (use only at end of season!):</p>
+                              <div className="grid grid-cols-4 gap-2">
+                                {/* None option to clear selection */}
+                                <label className="flex items-center gap-2 text-gray-400 text-sm bg-gray-800/50 px-2 py-1 rounded border border-gray-600/50">
+                                  <input
+                                    type="radio"
+                                    name={`finale-final-${finalPick.id}`}
+                                    checked={!episodeScoring.pickScoresData[finalPick.id]?.final5 && !episodeScoring.pickScoresData[finalPick.id]?.final3 && !episodeScoring.pickScoresData[finalPick.id]?.soleSurvivor}
+                                    onChange={() => {
+                                      const current = episodeScoring.pickScoresData[finalPick.id] || {};
+                                      setEpisodeScoring({
+                                        ...episodeScoring,
+                                        pickScoresData: {
+                                          ...episodeScoring.pickScoresData,
+                                          [finalPick.id]: { ...current, final5: false, final3: false, soleSurvivor: false }
+                                        }
+                                      });
+                                    }}
+                                    className="w-4 h-4 accent-gray-500"
+                                  />
+                                  None
+                                </label>
                                 {[
                                   { key: 'final5', label: 'Final 5 (+10)' },
                                   { key: 'final3', label: 'Final 3 (+15)' },
@@ -4269,15 +4310,16 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                                 ].map(({ key, label }) => (
                                   <label key={key} className="flex items-center gap-2 text-yellow-300 text-sm bg-yellow-900/30 px-2 py-1 rounded border border-yellow-600/50">
                                     <input
-                                      type="checkbox"
+                                      type="radio"
+                                      name={`finale-final-${finalPick.id}`}
                                       checked={episodeScoring.pickScoresData[finalPick.id]?.[key] || false}
-                                      onChange={(e) => {
+                                      onChange={() => {
                                         const current = episodeScoring.pickScoresData[finalPick.id] || {};
                                         setEpisodeScoring({
                                           ...episodeScoring,
                                           pickScoresData: {
                                             ...episodeScoring.pickScoresData,
-                                            [finalPick.id]: { ...current, [key]: e.target.checked }
+                                            [finalPick.id]: { ...current, final5: false, final3: false, soleSurvivor: false, [key]: true }
                                           }
                                         });
                                       }}
