@@ -122,7 +122,7 @@ survivor-fantasy-app/
 - Answer questions before deadline
 - Question of the Week (required text response, if enabled)
 - **Vote on LAST week's QotW** - voting happens during next week's questionnaire
-- Late penalties: -1, -2, -3... (cumulative per season)
+- Late penalty: -5 points (flat rate for any late submission)
 
 **QotW Voting Flow**:
 - Week 1: Players answer Episode 1 QotW (no voting yet)
@@ -133,7 +133,8 @@ survivor-fantasy-app/
 **Scoring**:
 - Correct answer: +2
 - Incorrect: -1 (optional questions) or 0 (required)
-- Late penalty: Variable based on offense count
+- Late penalty: -5 points (flat)
+- No submission: 0 points (no penalty, just nothing scored)
 - QotW Winner: +5 points
 
 ### 7. Leaderboard
@@ -200,8 +201,20 @@ survivor-fantasy-app/
 
 **Season Management**:
 - Archive current season
-- Start new season
+- Start new season (resets all game data - see below)
 - View season history
+
+**What gets reset on new season:**
+- All picks (instinct and final)
+- All questionnaires and submissions
+- All QotW votes
+- All pick scores
+- All player advantages
+- Player point totals (playerScores)
+- Late penalties tracking
+- Game phase (returns to instinct-picks)
+- Season finalized flag
+- Contestant elimination status (all reset to not eliminated)
 
 **Tree Mail** (Notifications):
 - Send notifications to specific players or broadcast to all
@@ -345,14 +358,14 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 
 **Key Structure**:
 - `players` - Array of player objects
-- `contestants` - Array of Survivor 48 cast
+- `contestants` - Array of current season's cast
 - `picks` - Array of player picks (instinct/final)
 - `picksLocked` - Object with `{ instinct: boolean, final: boolean }`
 - `gamePhase` - Current phase string
 - `questionnaires` - Array of questionnaire objects
 - `submissions` - Array of player questionnaire submissions
 - `qotWVotes` - Array of QotW votes
-- `latePenalties` - Object of player late penalty counts
+- `latePenalties` - Legacy field (late penalties are now flat -5, not tracked)
 - `pickScores` - Array of pick scoring events
 - `playerAdvantages` - Array of player-owned advantages (with scarcity tracking)
 - `episodes` - Array of episode recaps
@@ -524,11 +537,20 @@ npm run dev
 8. Kaleigh
 9. Sarah
 
-## Survivor 48 Cast
-18 contestants across 3 tribes:
-- **Civa** (6 contestants) - Green theme
-- **Lagi** (6 contestants) - Orange theme
-- **Vula** (6 contestants) - Blue theme
+## Cast Management
+Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in Survivor history.
+
+**Current Tribes (Season 50):**
+- **Purple** (8 players) - Colby, Kyle, Q, Rizo, Angelina, Aubry, Genevieve, Stephenie
+- **Orange** (8 players) - Christian, Joe, Ozzy, Rick, Cirie, Emily, Jenna, Savannah
+- **Teal** (8 players) - Charlie, Coach, Jonathan, Mike, Chrissy, Dee, Kamilla, Tiffany
+
+**Updating for a new season:**
+1. Update cast names, tribes, and images via "Edit Cast" in Admin Panel
+2. Update `CONTESTANT_BIOS` object in app.jsx (or clear bios)
+3. Upload cast photos to `public/cast/` folder
+4. Update tribe color mapping in app.jsx if tribe names change
+5. Note: The `DEFAULT_CAST` constant in app.jsx contains default/fallback data
 
 Cast photos stored in `public/cast/` folder. Bios in `CONTESTANT_BIOS` object in app.jsx.
 
@@ -627,7 +649,7 @@ Created for Joshua's annual Survivor Fantasy League with college friends.
 Built with assistance from Claude (Anthropic) - December 2024.
 
 **Game Master**: Joshua
-**Season**: Survivor 48 (premieres February 2026)
+**Current Season**: Stored in MongoDB `currentSeason` key (dynamically displayed in app)
 **Hosting**: Vercel
 **Database**: MongoDB Atlas
 

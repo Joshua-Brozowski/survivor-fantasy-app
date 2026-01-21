@@ -2,54 +2,66 @@ import React, { useState, useEffect } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, Key, Download, Database, RotateCcw } from 'lucide-react';
 import { storage, auth, backup } from './db.js';
 
-// Survivor 48 Cast
-const SURVIVOR_48_CAST = [
-  // CIVA Tribe (Green)
-  { id: 1, name: "Kyle Fraser", tribe: "Civa", image: "/cast/Kyle Fraser.jpg" },
-  { id: 2, name: "Cedrek McFadden", tribe: "Civa", image: "/cast/Cedrek McFadden.jpg" },
-  { id: 3, name: "Charity Nelms", tribe: "Civa", image: "/cast/Charity Nelms.jpg" },
-  { id: 4, name: "Chrissy Sarnowsky", tribe: "Civa", image: "/cast/Chrissy Sarnowsky.jpg" },
-  { id: 5, name: "Kamilla Karthigesu", tribe: "Civa", image: "/cast/Kamilla Karthigesu.jpg" },
-  { id: 6, name: "David Kinne", tribe: "Civa", image: "/cast/David Kinne.jpg" },
-  // LAGI Tribe (Orange)
-  { id: 7, name: "Thomas Krottinger", tribe: "Lagi", image: "/cast/Thomas Krottinger.jpg" },
-  { id: 8, name: "Star Toomey", tribe: "Lagi", image: "/cast/Star Toomey.jpg" },
-  { id: 9, name: "Shauhin Davari", tribe: "Lagi", image: "/cast/Shauhin Davari.jpg" },
-  { id: 10, name: "Joe Hunter", tribe: "Lagi", image: "/cast/Joe Hunter.jpg" },
-  { id: 11, name: "Bianca Roses", tribe: "Lagi", image: "/cast/Bianca Roses.jpg" },
-  { id: 12, name: "Eva Erickson", tribe: "Lagi", image: "/cast/Eva Erickson.jpg" },
-  // VULA Tribe (Blue)
-  { id: 13, name: "Stephanie Burger", tribe: "Vula", image: "/cast/Stephanie Burger.jpg" },
-  { id: 14, name: "Mary Zheng", tribe: "Vula", image: "/cast/Mary Zheng.jpg" },
-  { id: 15, name: "Kevin Leung", tribe: "Vula", image: "/cast/Kevin Leung.jpg" },
-  { id: 16, name: "Saiounia 'Sai' Hughley", tribe: "Vula", image: "/cast/Saiounia 'Sai' Hughley.jpg" },
-  { id: 17, name: "Justin Pioppi", tribe: "Vula", image: "/cast/Justin Pioppi.jpg" },
-  { id: 18, name: "Mitch Guerra", tribe: "Vula", image: "/cast/Mitch Guerra.jpg" }
+// Survivor 50 Default Cast (24 returning players)
+const DEFAULT_CAST = [
+  // PURPLE Tribe (8 players)
+  { id: 1, name: "Colby Donaldson", tribe: "Purple", image: "/cast/Colby Donaldson.jpg" },
+  { id: 2, name: "Kyle Fraser", tribe: "Purple", image: "/cast/Kyle Fraser.jpg" },
+  { id: 3, name: "Q Burdette", tribe: "Purple", image: "/cast/Q Burdette.jpg" },
+  { id: 4, name: "Rizo Velovic", tribe: "Purple", image: "/cast/Rizo Velovic.jpg" },
+  { id: 5, name: "Angelina Keeley", tribe: "Purple", image: "/cast/Angelina Keeley.jpg" },
+  { id: 6, name: "Aubry Bracco", tribe: "Purple", image: "/cast/Aubry Bracco.jpg" },
+  { id: 7, name: "Genevieve Mushaluk", tribe: "Purple", image: "/cast/Genevieve Mushaluk.jpg" },
+  { id: 8, name: "Stephenie LaGrossa", tribe: "Purple", image: "/cast/Stephenie LaGrossa.jpg" },
+  // ORANGE Tribe (8 players)
+  { id: 9, name: "Christian Hubicki", tribe: "Orange", image: "/cast/Christian Hubicki.jpg" },
+  { id: 10, name: "Joe Hunter", tribe: "Orange", image: "/cast/Joe Hunter.jpg" },
+  { id: 11, name: "Ozzy Lusth", tribe: "Orange", image: "/cast/Ozzy Lusth.jpg" },
+  { id: 12, name: "Rick Devens", tribe: "Orange", image: "/cast/Rick Devens.jpg" },
+  { id: 13, name: "Cirie Fields", tribe: "Orange", image: "/cast/Cirie Fields.jpg" },
+  { id: 14, name: "Emily Flippen", tribe: "Orange", image: "/cast/Emily Flippen.jpg" },
+  { id: 15, name: "Jenna Lewis", tribe: "Orange", image: "/cast/Jenna Lewis.jpg" },
+  { id: 16, name: "Savannah Louie", tribe: "Orange", image: "/cast/Savannah Louie.jpg" },
+  // TEAL Tribe (8 players)
+  { id: 17, name: "Charlie Davis", tribe: "Teal", image: "/cast/Charlie Davis.jpg" },
+  { id: 18, name: "Coach Wade", tribe: "Teal", image: "/cast/Coach Wade.jpg" },
+  { id: 19, name: "Jonathan Young", tribe: "Teal", image: "/cast/Jonathan Young.jpg" },
+  { id: 20, name: "Mike White", tribe: "Teal", image: "/cast/Mike White.jpg" },
+  { id: 21, name: "Chrissy Hofbeck", tribe: "Teal", image: "/cast/Chrissy Hofbeck.jpg" },
+  { id: 22, name: "Dee Valladares", tribe: "Teal", image: "/cast/Dee Valladares.jpg" },
+  { id: 23, name: "Kamilla Karthigesu", tribe: "Teal", image: "/cast/Kamilla Karthigesu.jpg" },
+  { id: 24, name: "Tiffany Ervin", tribe: "Teal", image: "/cast/Tiffany Ervin.jpg" }
 ];
 
-// Contestant bios (placeholder data - update with real bios)
+// Contestant bios for Survivor 50
 const CONTESTANT_BIOS = {
-  // CIVA Tribe
-  1: "Kyle Fraser is ready to outwit, outplay, and outlast on Survivor 48. Representing the Civa tribe, he's bringing his A-game to Fiji.",
-  2: "Cedrek McFadden joins the Civa tribe with a strategic mindset and determination to go far in the game.",
-  3: "Charity Nelms is competing on Civa tribe this season. She's ready to form alliances and make her mark on Survivor 48.",
-  4: "Chrissy Sarnowsky brings her competitive spirit to the Civa tribe. She's not here to make friends - she's here to win.",
-  5: "Kamilla Karthigesu represents Civa tribe on Survivor 48. Her social game and strategic thinking could take her far.",
-  6: "David Kinne rounds out the Civa tribe. He's ready to prove he has what it takes to be the Sole Survivor.",
-  // LAGI Tribe
-  7: "Thomas Krottinger is competing on Lagi tribe this season. He's bringing physical strength and mental fortitude to the game.",
-  8: "Star Toomey shines bright on the Lagi tribe. Her charisma and determination make her a player to watch.",
-  9: "Shauhin Davari joins Lagi tribe ready to adapt and overcome any challenge thrown his way.",
-  10: "Joe Hunter brings his survival skills to Lagi tribe. As a natural provider, he hopes to be an asset to his team.",
-  11: "Bianca Roses represents Lagi tribe on Survivor 48. She's ready to bloom in the game and outlast the competition.",
-  12: "Eva Erickson completes the Lagi tribe lineup. Her strategic mind and social awareness could be her ticket to the end.",
-  // VULA Tribe
-  13: "Stephanie Burger is competing on Vula tribe this season. She's hungry for the win and ready to fight for it.",
-  14: "Mary Zheng brings her analytical skills to Vula tribe. She's playing the long game from day one.",
-  15: "Kevin Leung represents Vula tribe on Survivor 48. His adaptability and calm demeanor could serve him well.",
-  16: "Saiounia 'Sai' Hughley joins Vula tribe with a positive attitude and fierce competitive spirit.",
-  17: "Justin Pioppi brings his determination to Vula tribe. He's ready to prove he deserves to be the Sole Survivor.",
-  18: "Mitch Guerra rounds out the Vula tribe. His physical and social game make him a triple threat in the competition."
+  // PURPLE Tribe
+  1: "Colby Donaldson is a Survivor legend from The Australian Outback (Season 2), where he famously took Tina to the final two. He also competed in All-Stars and Heroes vs. Villains. This Texas cowboy returns for his fourth time to prove he can finally claim the title.",
+  2: "Kyle Fraser won Survivor 48, showcasing strategic prowess and social finesse throughout his winning game. The Brooklyn native returns to defend his title and prove his win was no fluke.",
+  3: "Quintavius 'Q' Burdette was a dominant force on Survivor 46, finishing in sixth place. Known for his bold gameplay and physical presence, Q is back to finish what he started.",
+  4: "Rizo Velovic was eliminated at the fire-making challenge on Survivor 49, just days before being asked to return for Season 50. He's ready to prove he can go all the way.",
+  5: "Angelina Keeley placed third on David vs. Goliath (Season 37) and is remembered for her infamous jacket negotiation and rice deal. The strategic player returns to climb even higher.",
+  6: "Aubry Bracco is a three-time player from Kaoh Rong, Game Changers, and Edge of Extinction. The fan favorite known for her emotional gameplay and strategic mind returns for her fourth shot at the title.",
+  7: "Genevieve Mushaluk finished fifth on Survivor 47 after lying low early then orchestrating major blindsides. Her penchant for big moves made her one of the biggest threats in her season.",
+  8: "Stephenie LaGrossa is a Survivor icon who competed in Palau, Guatemala, and Heroes vs. Villains. Famous for being the last member of Ulong tribe, she returns for her fourth attempt at becoming Sole Survivor.",
+  // ORANGE Tribe
+  9: "Christian Hubicki was a fan favorite on David vs. Goliath (Season 37). The robotics scientist charmed audiences with his quirky personality and surprising challenge performances.",
+  10: "Joe Hunter placed third on Survivor 48 after an emotional journey honoring his late sister. The fire captain's heart and determination made him a beloved player.",
+  11: "Ozzy Lusth is one of Survivor's greatest challenge competitors, having played in Cook Islands, Micronesia, South Pacific, and Game Changers. This will be his record-tying fifth appearance.",
+  12: "Rick Devens came in fourth on Edge of Extinction (Season 38) and received the Sia Award for his entertaining gameplay. The news anchor's idol plays and dramatic Tribal Councils made him a standout.",
+  13: "Cirie Fields is widely regarded as one of the greatest players to never win. After Panama, Micronesia, Heroes vs. Villains, and Game Changers, the 'woman who got off the couch' returns for her fifth time.",
+  14: "Emily Flippen competed on Survivor 45, where the financial analyst was known for her candid confessionals and strategic gameplay after a rocky start.",
+  15: "Jenna Lewis competed on the very first season of Survivor (Borneo) and returned for All-Stars. The original era player brings old-school Survivor knowledge to the game.",
+  16: "Savannah Louie won Survivor 49 and was asked to return for Season 50 just hours after becoming Sole Survivor. The back-to-back appearance is unprecedented in Survivor history.",
+  // TEAL Tribe
+  17: "Charlie Davis was the runner-up on Survivor 46, known for his strong social bonds and strategic positioning. The Boston native returns hoping to finish one spot higher.",
+  18: "Benjamin 'Coach' Wade is one of Survivor's most memorable characters from Tocantins, Heroes vs. Villains, and South Pacific. The 'Dragon Slayer' returns for his fourth adventure.",
+  19: "Jonathan Young was a standout physical competitor on Survivor 42, finishing fourth. The challenge beast from Alabama is ready to use his strength to dominate once again.",
+  20: "Mike White finished as runner-up on David vs. Goliath (Season 37) before creating the Emmy-winning series The White Lotus. The writer-actor returns to prove he can also win at Survivor.",
+  21: "Chrissy Hofbeck made it to the final three on Heroes vs. Healers vs. Hustlers (Season 35). The actuary's strategic gameplay and challenge wins made her a formidable competitor.",
+  22: "Dee Valladares won Survivor 45 with a dominant strategic and social game. The Miami native returns to prove she can do it all over again.",
+  23: "Kamilla Karthigesu finished fourth on Survivor 48 after forming a powerful duo with eventual winner Kyle Fraser. She was eliminated at fire-making and is back for redemption.",
+  24: "Tiffany Ervin competed on Survivor 46, finishing in eighth place. Known for her clashes with Q, she returns ready to write a different story this time around."
 };
 
 const INITIAL_PLAYERS = [
@@ -246,7 +258,7 @@ export default function SurvivorFantasyApp() {
       const challengeAttemptsData = await storage.get('challengeAttempts');
 
       setPlayers(playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS);
-      setContestants(contestantsData ? JSON.parse(contestantsData.value) : SURVIVOR_48_CAST);
+      setContestants(contestantsData ? JSON.parse(contestantsData.value) : DEFAULT_CAST);
       setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 48);
       setSeasonHistory(seasonHistoryData ? JSON.parse(seasonHistoryData.value) : []);
       setSeasonFinalized(seasonFinalizedData ? JSON.parse(seasonFinalizedData.value) : false);
@@ -293,7 +305,7 @@ export default function SurvivorFantasyApp() {
       console.error('Error loading data:', error);
       // First time setup - initialize with defaults
       setPlayers(INITIAL_PLAYERS);
-      setContestants(SURVIVOR_48_CAST);
+      setContestants(DEFAULT_CAST);
       setPicks([]);
       setGamePhase('instinct-picks');
       setQuestionnaires([]);
@@ -311,7 +323,7 @@ export default function SurvivorFantasyApp() {
 
       // Save initial data
       await storage.set('players', JSON.stringify(INITIAL_PLAYERS));
-      await storage.set('contestants', JSON.stringify(SURVIVOR_48_CAST));
+      await storage.set('contestants', JSON.stringify(DEFAULT_CAST));
       await storage.set('picks', JSON.stringify([]));
       await storage.set('gamePhase', 'instinct-picks');
       await storage.set('questionnaires', JSON.stringify([]));
@@ -564,10 +576,12 @@ export default function SurvivorFantasyApp() {
     setGamePhase('instinct-picks');
     setPlayerAdvantages([]);
     setSeasonFinalized(false);
-    // Keep playerScores - they carry over between seasons or reset based on your preference
-    // For now, let's keep them to maintain the economy
+    setPlayerScores({});
+    setLatePenalties({});
 
     await storage.set('currentSeason', newSeasonNumber.toString());
+    await storage.set('playerScores', JSON.stringify({}));
+    await storage.set('latePenalties', JSON.stringify({}));
     await storage.set('seasonFinalized', JSON.stringify(false));
     await storage.set('contestants', JSON.stringify(defaultCast));
     await storage.set('picks', JSON.stringify([]));
@@ -1670,7 +1684,7 @@ export default function SurvivorFantasyApp() {
               <Flame className="w-6 h-6 sm:w-8 sm:h-8 text-orange-500 flex-shrink-0" />
               <div>
                 <h1 className="text-lg sm:text-2xl font-bold text-amber-400">Survivor Fantasy</h1>
-                <p className="text-amber-200 text-xs sm:text-sm">Season 48</p>
+                <p className="text-amber-200 text-xs sm:text-sm">Season {currentSeason}</p>
               </div>
             </div>
 
@@ -2591,7 +2605,7 @@ export default function SurvivorFantasyApp() {
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
               <h2 className="text-2xl font-bold text-amber-400 mb-2 flex items-center gap-2">
                 <Flame className="w-6 h-6" />
-                Welcome to Survivor Fantasy Season 48!
+                Welcome to Survivor Fantasy Season {currentSeason}!
               </h2>
               <p className="text-amber-200 mb-4">
                 Hey {currentUser.name}! Compete with your friends by making picks, answering weekly questionnaires, and earning points throughout the season!
@@ -2772,7 +2786,7 @@ export default function SurvivorFantasyApp() {
                 <div className="px-6 pb-6">
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {contestants.map(contestant => {
-                      const tribeColor = contestant.tribe === 'Civa' ? 'green' : contestant.tribe === 'Lagi' ? 'orange' : 'blue';
+                      const tribeColor = contestant.tribe === 'Purple' ? 'purple' : contestant.tribe === 'Orange' ? 'orange' : contestant.tribe === 'Teal' ? 'teal' : 'gray';
                       return (
                         <div
                           key={contestant.id}
@@ -3207,7 +3221,7 @@ export default function SurvivorFantasyApp() {
             The tribe has spoken. May the odds be ever in your favor.
           </p>
           <p className="text-amber-500 text-sm mt-2">
-            Survivor Fantasy Game • Season 48
+            Survivor Fantasy Game • Season {currentSeason}
           </p>
         </div>
       </footer>
@@ -6698,7 +6712,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
       return;
     }
 
-    const penalty = isLate ? (latePenalties[currentUser.id] || 0) + 1 : 0;
+    const penalty = isLate ? 5 : 0;
 
     const newSubmission = {
       id: Date.now(),
@@ -6706,21 +6720,16 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
       playerId: currentUser.id,
       answers,
       submittedAt: new Date().toISOString(),
-      penalty
+      penalty,
+      isLate
     };
 
     const updatedSubmissions = [...submissions.filter(s => !(s.questionnaireId === activeQ.id && s.playerId === currentUser.id)), newSubmission];
     setSubmissions(updatedSubmissions);
     await guestSafeSet('submissions', JSON.stringify(updatedSubmissions));
 
-    if (penalty > 0) {
-      const updatedPenalties = { ...latePenalties, [currentUser.id]: penalty };
-      setLatePenalties(updatedPenalties);
-      await guestSafeSet('latePenalties', JSON.stringify(updatedPenalties));
-    }
-
     const demoSuffix = isGuestMode() ? ' (Demo mode - not saved)' : '';
-    alert(isLate ? `Submitted! Late penalty applied: -${penalty} points${demoSuffix}` : `Submitted successfully!${demoSuffix}`);
+    alert(isLate ? `Submitted! Late penalty applied: -5 points${demoSuffix}` : `Submitted successfully!${demoSuffix}`);
     setAnswers({});
   };
 
@@ -6924,7 +6933,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
           {isLate && !isLocked && (
             <div className="bg-yellow-900/40 border border-yellow-600 p-4 rounded-lg mb-4">
               <p className="text-yellow-200 font-semibold">⚠️ Late Submission</p>
-              <p className="text-yellow-300 text-sm mt-1">You will receive a -{(latePenalties[currentUser.id] || 0) + 1} point penalty for submitting after the deadline.</p>
+              <p className="text-yellow-300 text-sm mt-1">You will receive a -5 point penalty for submitting after the deadline.</p>
             </div>
           )}
 
