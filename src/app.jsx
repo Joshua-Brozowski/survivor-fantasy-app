@@ -152,6 +152,11 @@ export default function SurvivorFantasyApp() {
   const [snapshots, setSnapshots] = useState([]);
   const [loadingBackup, setLoadingBackup] = useState(false);
 
+  // Multi-league state
+  const [leagues, setLeagues] = useState([]);
+  const [leagueMemberships, setLeagueMemberships] = useState([]);
+  const [currentLeagueId, setCurrentLeagueId] = useState(null);
+
   // Advantage play modal state
   const [advantageModal, setAdvantageModal] = useState({ show: false, advantage: null, step: 'confirm' });
   const [advantageTarget, setAdvantageTarget] = useState(null);
@@ -260,8 +265,32 @@ export default function SurvivorFantasyApp() {
       const seasonFinalizedData = await storage.get('seasonFinalized');
       const challengesData = await storage.get('challenges');
       const challengeAttemptsData = await storage.get('challengeAttempts');
+      const leaguesData = await storage.get('leagues');
+      const leagueMembershipsData = await storage.get('leagueMemberships');
 
       setPlayers(playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS);
+
+      // Load leagues - create default if none exist
+      const loadedLeagues = leaguesData ? JSON.parse(leaguesData.value) : [];
+      const loadedMemberships = leagueMembershipsData ? JSON.parse(leagueMembershipsData.value) : [];
+
+      if (loadedLeagues.length === 0) {
+        // Create default league and add all existing players
+        const defaultLeague = { id: 1, name: 'Main League', createdAt: new Date().toISOString(), createdBy: 1, isDefault: true };
+        const loadedPlayers = playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS;
+        const defaultMemberships = loadedPlayers.map(p => ({ playerId: p.id, leagueId: 1 }));
+        setLeagues([defaultLeague]);
+        setLeagueMemberships(defaultMemberships);
+        setCurrentLeagueId(1);
+        await storage.set('leagues', JSON.stringify([defaultLeague]));
+        await storage.set('leagueMemberships', JSON.stringify(defaultMemberships));
+      } else {
+        setLeagues(loadedLeagues);
+        setLeagueMemberships(loadedMemberships);
+        // Default to first league or stored preference
+        const storedLeagueId = localStorage.getItem('survivorFantasyLeagueId');
+        setCurrentLeagueId(storedLeagueId ? parseInt(storedLeagueId) : loadedLeagues[0]?.id || 1);
+      }
       setContestants(contestantsData ? JSON.parse(contestantsData.value) : DEFAULT_CAST);
       setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 48);
       setSeasonHistory(seasonHistoryData ? JSON.parse(seasonHistoryData.value) : []);
@@ -557,6 +586,75 @@ export default function SurvivorFantasyApp() {
     await auth.resetToDefault(newPlayer.id);
 
     return newPlayer;
+  };
+
+  // League Management Functions
+  const createLeague = async (name) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return null;
+    if (leagues.some(l => l.name.toLowerCase() === trimmedName.toLowerCase())) {
+      alert('A league with that name already exists!');
+      return null;
+    }
+
+    const maxId = Math.max(...leagues.map(l => l.id), 0);
+    const newLeague = {
+      id: maxId + 1,
+      name: trimmedName,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser?.id || 1
+    };
+
+    const updatedLeagues = [...leagues, newLeague];
+    setLeagues(updatedLeagues);
+    await storage.set('leagues', JSON.stringify(updatedLeagues));
+
+    // Auto-add admin (Joshua) to the new league
+    const adminMembership = { playerId: 1, leagueId: newLeague.id };
+    const updatedMemberships = [...leagueMemberships, adminMembership];
+    setLeagueMemberships(updatedMemberships);
+    await storage.set('leagueMemberships', JSON.stringify(updatedMemberships));
+
+    return newLeague;
+  };
+
+  const addPlayerToLeague = async (playerId, leagueId) => {
+    if (leagueMemberships.some(m => m.playerId === playerId && m.leagueId === leagueId)) {
+      return false; // Already a member
+    }
+    const newMembership = { playerId, leagueId };
+    const updatedMemberships = [...leagueMemberships, newMembership];
+    setLeagueMemberships(updatedMemberships);
+    await storage.set('leagueMemberships', JSON.stringify(updatedMemberships));
+    return true;
+  };
+
+  const removePlayerFromLeague = async (playerId, leagueId) => {
+    // Don't allow removing admin from any league
+    if (playerId === 1) {
+      alert('Cannot remove admin from a league');
+      return false;
+    }
+    const updatedMemberships = leagueMemberships.filter(
+      m => !(m.playerId === playerId && m.leagueId === leagueId)
+    );
+    setLeagueMemberships(updatedMemberships);
+    await storage.set('leagueMemberships', JSON.stringify(updatedMemberships));
+    return true;
+  };
+
+  const getPlayerLeagues = (playerId) => {
+    const memberLeagueIds = leagueMemberships
+      .filter(m => m.playerId === playerId)
+      .map(m => m.leagueId);
+    return leagues.filter(l => memberLeagueIds.includes(l.id));
+  };
+
+  const getLeaguePlayers = (leagueId) => {
+    const memberPlayerIds = leagueMemberships
+      .filter(m => m.leagueId === leagueId)
+      .map(m => m.playerId);
+    return players.filter(p => memberPlayerIds.includes(p.id));
   };
 
   // Season Management Functions
@@ -2590,6 +2688,13 @@ export default function SurvivorFantasyApp() {
             removeContestant={removeContestant}
             updateTribeName={updateTribeName}
             addPlayer={addPlayer}
+            leagues={leagues}
+            leagueMemberships={leagueMemberships}
+            currentLeagueId={currentLeagueId}
+            createLeague={createLeague}
+            addPlayerToLeague={addPlayerToLeague}
+            removePlayerFromLeague={removePlayerFromLeague}
+            getLeaguePlayers={getLeaguePlayers}
             startNewSeason={startNewSeason}
             archiveCurrentSeason={archiveCurrentSeason}
             seasonHistory={seasonHistory}
@@ -3267,7 +3372,7 @@ export default function SurvivorFantasyApp() {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots }) {
+function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots }) {
   const [adminView, setAdminView] = useState('main');
 
   // Helper to check guest mode and show alert
@@ -3297,6 +3402,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   const [editTribeForm, setEditTribeForm] = useState({ oldName: '', newName: '' });
   const [newSeasonForm, setNewSeasonForm] = useState({ seasonNumber: currentSeason + 1 });
   const [newPlayerName, setNewPlayerName] = useState('');
+  const [newLeagueName, setNewLeagueName] = useState('');
+  const [selectedLeagueForMembers, setSelectedLeagueForMembers] = useState(null);
   const [dragOverNew, setDragOverNew] = useState(false);
   const [dragOverEdit, setDragOverEdit] = useState(null);
   const [notificationForm, setNotificationForm] = useState({ selectedPlayers: [], message: '', sendToAll: false });
@@ -5902,6 +6009,156 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     );
   }
 
+  if (adminView === 'league-management') {
+    const handleCreateLeague = async () => {
+      if (!requireRealUser('Create League')) return;
+      if (!newLeagueName.trim()) {
+        alert('Please enter a league name');
+        return;
+      }
+      const result = await createLeague(newLeagueName);
+      if (result) {
+        alert(`League "${result.name}" has been created!`);
+        setNewLeagueName('');
+      }
+    };
+
+    const handleAddToLeague = async (playerId) => {
+      if (!requireRealUser('Add Player to League')) return;
+      if (!selectedLeagueForMembers) return;
+      const success = await addPlayerToLeague(playerId, selectedLeagueForMembers);
+      if (success) {
+        alert('Player added to league!');
+      }
+    };
+
+    const handleRemoveFromLeague = async (playerId) => {
+      if (!requireRealUser('Remove Player from League')) return;
+      if (!selectedLeagueForMembers) return;
+      const success = await removePlayerFromLeague(playerId, selectedLeagueForMembers);
+      if (success) {
+        alert('Player removed from league!');
+      }
+    };
+
+    const selectedLeague = leagues.find(l => l.id === selectedLeagueForMembers);
+    const leaguePlayerIds = leagueMemberships
+      .filter(m => m.leagueId === selectedLeagueForMembers)
+      .map(m => m.playerId);
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-violet-600">
+          <h2 className="text-2xl font-bold text-violet-400 mb-6 flex items-center gap-2">
+            <Trophy className="w-6 h-6" />
+            League Management
+          </h2>
+
+          {/* Create New League */}
+          <div className="mb-6 p-4 bg-violet-900/30 border border-violet-600 rounded-lg">
+            <h3 className="text-violet-300 font-semibold mb-3">Create New League</h3>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={newLeagueName}
+                onChange={(e) => setNewLeagueName(e.target.value)}
+                placeholder="Enter league name"
+                className="flex-1 px-4 py-2 rounded bg-black/50 text-white border border-violet-600 focus:outline-none focus:border-violet-400"
+                onKeyPress={(e) => e.key === 'Enter' && handleCreateLeague()}
+              />
+              <button
+                onClick={handleCreateLeague}
+                className="px-6 py-2 bg-violet-600 text-white rounded font-semibold hover:bg-violet-500 transition flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Create League
+              </button>
+            </div>
+          </div>
+
+          {/* Current Leagues */}
+          <div className="mb-6">
+            <h3 className="text-violet-300 font-semibold mb-3">Your Leagues ({leagues.length})</h3>
+            <div className="grid gap-2">
+              {leagues.map(league => {
+                const memberCount = leagueMemberships.filter(m => m.leagueId === league.id).length;
+                return (
+                  <button
+                    key={league.id}
+                    onClick={() => setSelectedLeagueForMembers(league.id)}
+                    className={`flex items-center justify-between p-3 rounded-lg transition ${
+                      selectedLeagueForMembers === league.id
+                        ? 'bg-violet-600 border-2 border-violet-400'
+                        : 'bg-violet-900/20 border border-violet-700 hover:bg-violet-900/40'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Trophy className="w-5 h-5 text-violet-300" />
+                      <div className="text-left">
+                        <p className="text-white font-semibold">{league.name}</p>
+                        <p className="text-violet-300 text-sm">{memberCount} members</p>
+                      </div>
+                    </div>
+                    {league.isDefault && <span className="text-xs bg-violet-500 px-2 py-1 rounded">Default</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* League Members */}
+          {selectedLeagueForMembers && (
+            <div className="p-4 bg-violet-900/20 border border-violet-600 rounded-lg">
+              <h3 className="text-violet-300 font-semibold mb-3">
+                Members of "{selectedLeague?.name}"
+              </h3>
+              <div className="grid gap-2 mb-4">
+                {players.map(player => {
+                  const isMember = leaguePlayerIds.includes(player.id);
+                  return (
+                    <div
+                      key={player.id}
+                      className={`flex items-center justify-between p-2 rounded ${
+                        isMember ? 'bg-green-900/30 border border-green-600' : 'bg-gray-900/30 border border-gray-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={isMember ? 'text-green-400' : 'text-gray-400'}>
+                          {isMember ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                        </span>
+                        <span className="text-white">{player.name}</span>
+                        {player.isAdmin && <span className="text-xs text-amber-400">(Admin)</span>}
+                      </div>
+                      {!player.isAdmin && (
+                        <button
+                          onClick={() => isMember ? handleRemoveFromLeague(player.id) : handleAddToLeague(player.id)}
+                          className={`px-3 py-1 rounded text-sm ${
+                            isMember
+                              ? 'bg-red-600 hover:bg-red-500 text-white'
+                              : 'bg-green-600 hover:bg-green-500 text-white'
+                          }`}
+                        >
+                          {isMember ? 'Remove' : 'Add'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => setAdminView('main')}
+            className="mt-6 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500 transition"
+          >
+            Back to Controls
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (adminView === 'challenge-management') {
     const activeChallenge = challenges.find(c => c.status === 'active');
     const completedChallenges = challenges.filter(c => c.status === 'completed').slice(-10).reverse();
@@ -6365,6 +6622,19 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               <div className="flex items-center gap-2">
                 <Users className="w-5 h-5" />
                 <span>Player Management</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('league-management')}
+            className="bg-gradient-to-r from-violet-600 to-purple-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-violet-500 hover:to-purple-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-5 h-5" />
+                <span>League Management</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
