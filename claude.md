@@ -537,6 +537,36 @@ npm run dev
 8. Kaleigh
 9. Sarah
 
+## Player Management (Admin)
+- **Add Player**: Admin can add new players via Admin Panel → Player Management
+- New players get default password: `password123`
+- Players cannot be removed (to preserve data integrity)
+
+## Multi-League System (In Progress)
+The app supports multiple isolated leagues (e.g., Friends, Family, Work leagues).
+
+**Completed:**
+- League state: `leagues`, `leagueMemberships`, `currentLeagueId`
+- League Management admin panel (create leagues, assign players)
+- Auto-creates "Main League" on first load with all existing players
+- Admin (Joshua) auto-added to all leagues
+
+**TODO (Next Session):**
+- Update ~60 storage calls to use league-prefixed keys (e.g., `league_1_picks`)
+- Add league selector after login for multi-league players
+- Update backup system to handle multi-league data
+
+**Data Model:**
+```javascript
+// Global keys (shared)
+players, leagues, leagueMemberships, contestants, password_{id}, security_{id}
+
+// League-specific keys (to be prefixed with league_{id}_)
+picks, questionnaires, submissions, qotWVotes, pickScores, playerScores,
+latePenalties, playerAdvantages, episodes, notifications, challenges,
+challengeAttempts, gamePhase, currentSeason, seasonHistory, seasonFinalized
+```
+
 ## Cast Management
 Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in Survivor history.
 
