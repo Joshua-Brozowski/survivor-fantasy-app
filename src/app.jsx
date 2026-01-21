@@ -578,6 +578,8 @@ export default function SurvivorFantasyApp() {
     setSeasonFinalized(false);
     setPlayerScores({});
     setLatePenalties({});
+    setChallenges([]);
+    setChallengeAttempts([]);
 
     await storage.set('currentSeason', newSeasonNumber.toString());
     await storage.set('playerScores', JSON.stringify({}));
@@ -593,6 +595,8 @@ export default function SurvivorFantasyApp() {
     await storage.set('episodes', JSON.stringify([]));
     await storage.set('gamePhase', 'instinct-picks');
     await storage.set('playerAdvantages', JSON.stringify([]));
+    await storage.set('challenges', JSON.stringify([]));
+    await storage.set('challengeAttempts', JSON.stringify([]));
 
     await addNotification({
       type: 'new_season',
