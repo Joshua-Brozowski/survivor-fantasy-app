@@ -173,21 +173,25 @@ export default function SurvivorFantasyApp() {
     return storage.set(key, value);
   };
 
+  // Check remembered login after players load from MongoDB
   useEffect(() => {
+    if (players.length === 0) return; // Wait for players to load
     const remembered = localStorage.getItem('survivorFantasyUser');
-    if (remembered) {
+    if (remembered && !currentUser) {
       try {
         const userData = JSON.parse(remembered);
-        const player = INITIAL_PLAYERS.find(p => p.id === userData.id);
+        const player = players.find(p => p.id === userData.id);
         if (player) {
           setCurrentUser(player);
-          setCurrentView('home'); // Always start on home page
+          setCurrentView('home');
+        } else {
+          localStorage.removeItem('survivorFantasyUser');
         }
       } catch (e) {
         localStorage.removeItem('survivorFantasyUser');
       }
     }
-  }, []);
+  }, [players]);
 
   // Load data from storage
   useEffect(() => {
@@ -525,6 +529,34 @@ export default function SurvivorFantasyApp() {
     );
     setContestants(updated);
     await storage.set('contestants', JSON.stringify(updated));
+  };
+
+  // Player Management Function
+  const addPlayer = async (name) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return null;
+
+    // Check for duplicate names
+    if (players.some(p => p.name.toLowerCase() === trimmedName.toLowerCase())) {
+      alert('A player with that name already exists!');
+      return null;
+    }
+
+    const maxId = Math.max(...players.map(p => p.id), 0);
+    const newPlayer = {
+      id: maxId + 1,
+      name: trimmedName,
+      isAdmin: false
+    };
+
+    const updatedPlayers = [...players, newPlayer];
+    setPlayers(updatedPlayers);
+    await storage.set('players', JSON.stringify(updatedPlayers));
+
+    // Set default password
+    await auth.resetToDefault(newPlayer.id);
+
+    return newPlayer;
   };
 
   // Season Management Functions
@@ -2557,6 +2589,7 @@ export default function SurvivorFantasyApp() {
             addContestant={addContestant}
             removeContestant={removeContestant}
             updateTribeName={updateTribeName}
+            addPlayer={addPlayer}
             startNewSeason={startNewSeason}
             archiveCurrentSeason={archiveCurrentSeason}
             seasonHistory={seasonHistory}
@@ -3234,7 +3267,7 @@ export default function SurvivorFantasyApp() {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots }) {
+function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots }) {
   const [adminView, setAdminView] = useState('main');
 
   // Helper to check guest mode and show alert
@@ -3263,6 +3296,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   const [newContestantForm, setNewContestantForm] = useState({ name: '', tribe: '', image: '' });
   const [editTribeForm, setEditTribeForm] = useState({ oldName: '', newName: '' });
   const [newSeasonForm, setNewSeasonForm] = useState({ seasonNumber: currentSeason + 1 });
+  const [newPlayerName, setNewPlayerName] = useState('');
   const [dragOverNew, setDragOverNew] = useState(false);
   const [dragOverEdit, setDragOverEdit] = useState(null);
   const [notificationForm, setNotificationForm] = useState({ selectedPlayers: [], message: '', sendToAll: false });
@@ -5785,6 +5819,89 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     );
   }
 
+  if (adminView === 'player-management') {
+    const handleAddPlayer = async () => {
+      if (!requireRealUser('Add Player')) return;
+      if (!newPlayerName.trim()) {
+        alert('Please enter a player name');
+        return;
+      }
+      const result = await addPlayer(newPlayerName);
+      if (result) {
+        alert(`${result.name} has been added! Default password: password123`);
+        setNewPlayerName('');
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-emerald-600">
+          <h2 className="text-2xl font-bold text-emerald-400 mb-6 flex items-center gap-2">
+            <Users className="w-6 h-6" />
+            Player Management
+          </h2>
+
+          {/* Add New Player */}
+          <div className="mb-6 p-4 bg-emerald-900/30 border border-emerald-600 rounded-lg">
+            <h3 className="text-emerald-300 font-semibold mb-3">Add New Player</h3>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={newPlayerName}
+                onChange={(e) => setNewPlayerName(e.target.value)}
+                placeholder="Enter player name"
+                className="flex-1 px-4 py-2 rounded bg-black/50 text-white border border-emerald-600 focus:outline-none focus:border-emerald-400"
+                onKeyPress={(e) => e.key === 'Enter' && handleAddPlayer()}
+              />
+              <button
+                onClick={handleAddPlayer}
+                className="px-6 py-2 bg-emerald-600 text-white rounded font-semibold hover:bg-emerald-500 transition flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add Player
+              </button>
+            </div>
+            <p className="text-emerald-300/70 text-sm mt-2">New players will have the default password: password123</p>
+          </div>
+
+          {/* Current Players List */}
+          <div>
+            <h3 className="text-emerald-300 font-semibold mb-3">Current Players ({players.length})</h3>
+            <div className="grid gap-2">
+              {players.map(player => (
+                <div
+                  key={player.id}
+                  className={`flex items-center justify-between p-3 rounded-lg ${
+                    player.isAdmin ? 'bg-amber-900/30 border border-amber-600' : 'bg-emerald-900/20 border border-emerald-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
+                      player.isAdmin ? 'bg-amber-600' : 'bg-emerald-600'
+                    }`}>
+                      {player.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-white font-semibold">{player.name}</p>
+                      <p className="text-gray-400 text-sm">ID: {player.id} {player.isAdmin && '• Admin'}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={() => setAdminView('main')}
+            className="mt-6 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500 transition"
+          >
+            Back to Controls
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (adminView === 'challenge-management') {
     const activeChallenge = challenges.find(c => c.status === 'active');
     const completedChallenges = challenges.filter(c => c.status === 'completed').slice(-10).reverse();
@@ -6235,6 +6352,19 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               <div className="flex items-center gap-2">
                 <Database className="w-5 h-5" />
                 <span>Backup Management</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('player-management')}
+            className="bg-gradient-to-r from-emerald-600 to-green-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-emerald-500 hover:to-green-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                <span>Player Management</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
