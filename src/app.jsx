@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, Key, Download, Database, RotateCcw } from 'lucide-react';
+import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw } from 'lucide-react';
 import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi } from './db.js';
 
 // Survivor 50 Default Cast (24 returning players)
@@ -155,6 +155,7 @@ export default function SurvivorFantasyApp() {
   const [recoveryStep, setRecoveryStep] = useState('name'); // 'name', 'answer', 'reset'
   const [recoveryPlayer, setRecoveryPlayer] = useState(null);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Game state
   const [players, setPlayers] = useState([]);
@@ -532,10 +533,17 @@ export default function SurvivorFantasyApp() {
     if (!pendingLoginUser) return;
 
     setCurrentUser(pendingLoginUser);
-    await switchLeague(leagueId);
     setShowLeagueSelector(false);
     setPendingLoginUser(null);
-    setCurrentView('home');
+
+    // If already on this league, force view update to ensure re-render
+    if (leagueId === currentLeagueId) {
+      setCurrentView(null);
+      setTimeout(() => setCurrentView('home'), 0);
+    } else {
+      await switchLeague(leagueId);
+      setCurrentView('home');
+    }
   };
 
   const handleGuestLogin = () => {
@@ -1598,14 +1606,23 @@ export default function SurvivorFantasyApp() {
               </div>
               <div>
                 <label className="block text-amber-200 mb-2">Password</label>
-                <input
-                  type="password"
-                  value={loginForm.password}
-                  onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
-                  onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                  className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
-                  placeholder="Enter password"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={loginForm.password}
+                    onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                    onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                    className="w-full px-4 py-2 pr-10 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                    placeholder="Enter password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-amber-400 hover:text-amber-300 transition"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
               </div>
               <label className="flex items-center gap-2 text-amber-200 cursor-pointer">
                 <input
