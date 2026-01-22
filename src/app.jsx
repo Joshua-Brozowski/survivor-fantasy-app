@@ -2565,7 +2565,7 @@ export default function SurvivorFantasyApp() {
                         onClick={() => setExpandedPlayer(isExpanded ? null : player.id)}
                         className={`p-4 rounded-lg border-2 transition cursor-pointer ${
                           isCurrentUser
-                            ? 'bg-gradient-to-r from-yellow-900/50 to-amber-800/50 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)] hover:shadow-[0_0_20px_rgba(250,204,21,0.5)]'
+                            ? 'bg-gradient-to-r from-cyan-900/40 to-teal-900/40 border-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.5)] hover:shadow-[0_0_25px_rgba(34,211,238,0.6)]'
                             : 'bg-gradient-to-r from-amber-900/40 to-orange-900/40 border-amber-600 hover:bg-amber-900/50'
                         } ${isExpanded ? 'rounded-b-none' : ''}`}
                       >
@@ -2584,7 +2584,7 @@ export default function SurvivorFantasyApp() {
                             {/* Player Initial Circle */}
                             <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br flex items-center justify-center border-2 ${
                               isCurrentUser
-                                ? 'from-yellow-500 to-amber-500 border-yellow-300'
+                                ? 'from-cyan-500 to-teal-500 border-cyan-300'
                                 : 'from-amber-600 to-orange-600 border-amber-400'
                             }`}>
                               <span className="text-white font-bold text-lg sm:text-xl" style={{ fontFamily: 'Impact, fantasy' }}>
@@ -2595,7 +2595,7 @@ export default function SurvivorFantasyApp() {
                             {/* Player Info */}
                             <div>
                               <div className="flex items-center gap-2">
-                                <p className={`font-bold text-base sm:text-lg ${isCurrentUser ? 'text-yellow-200' : 'text-white'}`}>{player.name}</p>
+                                <p className={`font-bold text-base sm:text-lg ${isCurrentUser ? 'text-cyan-200' : 'text-white'}`}>{player.name}</p>
                                 {player.isAdmin && (
                                   <Crown className="w-4 h-4 text-yellow-400" title="Game Master" />
                                 )}
@@ -2615,7 +2615,7 @@ export default function SurvivorFantasyApp() {
                           {/* Points Display & Expand Button */}
                           <div className="flex items-center gap-2 sm:gap-4">
                             <div className="text-right">
-                              <div className={`text-2xl sm:text-3xl font-bold ${isCurrentUser ? 'text-yellow-300' : 'text-amber-400'}`}>
+                              <div className={`text-2xl sm:text-3xl font-bold ${isCurrentUser ? 'text-cyan-300' : 'text-amber-400'}`}>
                                 {points}
                               </div>
                               <div className="text-xs text-amber-300 hidden sm:block">
@@ -2634,7 +2634,7 @@ export default function SurvivorFantasyApp() {
                       {/* Expanded Breakdown */}
                       {isExpanded && (
                         <div className={`bg-black/80 border-2 border-t-0 rounded-b-lg p-4 ${
-                          isCurrentUser ? 'border-yellow-400' : 'border-amber-600'
+                          isCurrentUser ? 'border-cyan-400' : 'border-amber-600'
                         }`}>
                           <h4 className="text-amber-300 font-semibold mb-3">Point History</h4>
                           {breakdown.length === 0 ? (
