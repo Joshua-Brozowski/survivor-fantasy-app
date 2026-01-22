@@ -2373,14 +2373,15 @@ export default function SurvivorFantasyApp() {
       <nav className="bg-black/40 backdrop-blur-sm border-b border-amber-600/50">
         <div className="container mx-auto px-1 sm:px-4">
           <div className="flex justify-center gap-0 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-            {/* Home - icon only */}
+            {/* Home */}
             <button
               onClick={() => { setCurrentView('home'); setShowNotifications(false); }}
-              className={`px-2 sm:px-3 py-2.5 sm:py-3 transition flex items-center ${
+              className={`px-2 sm:px-3 py-2.5 sm:py-3 transition whitespace-nowrap flex items-center gap-1 sm:gap-1.5 ${
                 currentView === 'home' ? 'text-amber-400 border-b-2 border-amber-400' : 'text-amber-200 hover:text-amber-300'
               }`}
             >
-              <Home className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Home className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="picks-text text-xs sm:text-sm font-bold">HOME</span>
             </button>
             {/* Other tabs with labels */}
             {[

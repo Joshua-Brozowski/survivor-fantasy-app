@@ -11,7 +11,8 @@
       "WebFetch(domain:survivor.fandom.com)",
       "WebFetch(domain:en.wikipedia.org)",
       "WebSearch",
-      "WebFetch(domain:www.paramountplus.com)"
+      "WebFetch(domain:www.paramountplus.com)",
+      "Bash(git pull:*)"
     ]
   }
 }
