@@ -542,30 +542,48 @@ npm run dev
 - New players get default password: `password123`
 - Players cannot be removed (to preserve data integrity)
 
-## Multi-League System (In Progress)
-The app supports multiple isolated leagues (e.g., Friends, Family, Work leagues).
+## Multi-League System
+The app supports multiple isolated leagues (e.g., Friends, Family, Work leagues). Each league has completely independent game data.
 
-**Completed:**
+**Features:**
 - League state: `leagues`, `leagueMemberships`, `currentLeagueId`
 - League Management admin panel (create leagues, assign players)
 - Auto-creates "Main League" on first load with all existing players
-- Admin (Joshua) auto-added to all leagues
+- Admin (Joshua) auto-added to all new leagues
+- League selector shown after login for players in multiple leagues
+- League switcher dropdown in header for multi-league players
+- Automatic data migration from single-league to multi-league on upgrade
+- Backup system supports all leagues
 
-**TODO (Next Session):**
-- Update ~60 storage calls to use league-prefixed keys (e.g., `league_1_picks`)
-- Add league selector after login for multi-league players
-- Update backup system to handle multi-league data
+**Login Flow (Multi-League):**
+1. Player enters name + password
+2. System validates credentials
+3. If player is in 1 league → auto-loads that league
+4. If player is in multiple leagues → shows league selector
+5. Header shows "Season X • League Name" with dropdown to switch
 
 **Data Model:**
 ```javascript
-// Global keys (shared)
+// Global keys (shared across all leagues)
 players, leagues, leagueMemberships, contestants, password_{id}, security_{id}
 
-// League-specific keys (to be prefixed with league_{id}_)
-picks, questionnaires, submissions, qotWVotes, pickScores, playerScores,
-latePenalties, playerAdvantages, episodes, notifications, challenges,
-challengeAttempts, gamePhase, currentSeason, seasonHistory, seasonFinalized
+// League-specific keys (prefixed with league_{id}_)
+league_1_picks, league_1_questionnaires, league_1_submissions, league_1_qotWVotes,
+league_1_pickScores, league_1_playerScores, league_1_latePenalties,
+league_1_playerAdvantages, league_1_episodes, league_1_notifications,
+league_1_challenges, league_1_challengeAttempts, league_1_gamePhase,
+league_1_currentSeason, league_1_seasonHistory, league_1_seasonFinalized
 ```
+
+**Storage Helper (`src/db.js`):**
+- `createLeagueStorage(leagueId)` - Creates league-scoped storage interface
+- `LEAGUE_SPECIFIC_KEYS` - List of keys that are league-specific
+- `GLOBAL_KEYS` - List of keys shared across leagues
+
+**Backup System (`api/backup.js`):**
+- Version 2.0 backups include all leagues
+- Backwards compatible with version 1.0 (single-league) backups
+- Restore from legacy backups auto-migrates to league_1_
 
 ## Cast Management
 Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in Survivor history.

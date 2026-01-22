@@ -1,6 +1,101 @@
 // Simple storage wrapper for MongoDB API
 const API_BASE = '/api';
 
+// Keys that are league-specific (will be prefixed with league_{id}_)
+export const LEAGUE_SPECIFIC_KEYS = [
+  'picks',
+  'picksLocked',
+  'questionnaires',
+  'submissions',
+  'qotWVotes',
+  'pickScores',
+  'playerScores',
+  'latePenalties',
+  'playerAdvantages',
+  'advantages',
+  'episodes',
+  'notifications',
+  'challenges',
+  'challengeAttempts',
+  'gamePhase',
+  'currentSeason',
+  'seasonHistory',
+  'seasonFinalized'
+];
+
+// Keys that are global (shared across all leagues)
+export const GLOBAL_KEYS = [
+  'players',
+  'leagues',
+  'leagueMemberships',
+  'contestants'
+  // Note: password_{id} and security_{id} are also global but use dynamic keys
+];
+
+/**
+ * Creates a league-aware storage interface that automatically prefixes
+ * league-specific keys while leaving global keys unprefixed.
+ *
+ * @param {number} leagueId - The league ID to scope storage to
+ * @returns {Object} Storage interface with get, set, delete, list methods
+ */
+export const createLeagueStorage = (leagueId) => {
+  if (!leagueId || typeof leagueId !== 'number') {
+    throw new Error('createLeagueStorage requires a valid numeric leagueId');
+  }
+
+  const prefix = `league_${leagueId}_`;
+
+  // Determine if a key should be prefixed based on its base name
+  const shouldPrefix = (key) => {
+    // Check if the key (or its base name) is in the league-specific list
+    const baseKey = key.split('_')[0]; // Handle keys like 'picks' from 'league_1_picks'
+    return LEAGUE_SPECIFIC_KEYS.includes(key) || LEAGUE_SPECIFIC_KEYS.includes(baseKey);
+  };
+
+  // Get the full key (prefixed if league-specific)
+  const getFullKey = (key) => {
+    if (shouldPrefix(key)) {
+      return `${prefix}${key}`;
+    }
+    return key;
+  };
+
+  return {
+    // Get the current league ID
+    leagueId,
+
+    // Get the prefix for this league
+    prefix,
+
+    async get(key) {
+      return storage.get(getFullKey(key));
+    },
+
+    async set(key, value) {
+      return storage.set(getFullKey(key), value);
+    },
+
+    async delete(key) {
+      return storage.delete(getFullKey(key));
+    },
+
+    async list(keyPrefix) {
+      // When listing, always include the league prefix for league-specific data
+      const fullPrefix = keyPrefix ? `${prefix}${keyPrefix}` : prefix;
+      return storage.list(fullPrefix);
+    },
+
+    // Helper to check if using league-specific storage
+    isLeagueSpecific(key) {
+      return shouldPrefix(key);
+    },
+
+    // Get the raw unprefixed key for debugging
+    getFullKey
+  };
+};
+
 // Auth API wrapper for secure password handling
 export const auth = {
   async login(playerId, password) {

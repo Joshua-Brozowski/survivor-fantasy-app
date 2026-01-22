@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, Key, Download, Database, RotateCcw } from 'lucide-react';
-import { storage, auth, backup } from './db.js';
+import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS } from './db.js';
 
 // Survivor 50 Default Cast (24 returning players)
 const DEFAULT_CAST = [
@@ -108,6 +108,43 @@ const DEFAULT_ADVANTAGES = [
   { id: 'knowledge-is-power', name: 'Knowledge is Power', description: 'Steal another player\'s advantage (if they have none, the advantage is wasted)', cost: 35, type: 'steal' }
 ];
 
+/**
+ * Migrates existing non-prefixed game data to league-prefixed storage.
+ * This runs once when upgrading from single-league to multi-league.
+ * Data is copied to league_1_ prefixed keys, then original keys are deleted.
+ */
+const migrateToMultiLeague = async () => {
+  // Check if migration has already been done by looking for the migration flag
+  const migrationFlag = await storage.get('_multiLeagueMigrated');
+  if (migrationFlag?.value === 'true') {
+    console.log('Multi-league migration already completed');
+    return false;
+  }
+
+  console.log('Starting multi-league data migration...');
+
+  // Migrate each league-specific key to league_1_ prefix
+  for (const key of LEAGUE_SPECIFIC_KEYS) {
+    try {
+      const existingData = await storage.get(key);
+      if (existingData && existingData.value !== undefined) {
+        // Copy to prefixed key
+        await storage.set(`league_1_${key}`, existingData.value);
+        // Delete old unprefixed key
+        await storage.delete(key);
+        console.log(`Migrated ${key} to league_1_${key}`);
+      }
+    } catch (error) {
+      console.error(`Error migrating ${key}:`, error);
+    }
+  }
+
+  // Mark migration as complete
+  await storage.set('_multiLeagueMigrated', 'true');
+  console.log('Multi-league migration completed');
+  return true;
+};
+
 export default function SurvivorFantasyApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginView, setLoginView] = useState('login');
@@ -156,6 +193,8 @@ export default function SurvivorFantasyApp() {
   const [leagues, setLeagues] = useState([]);
   const [leagueMemberships, setLeagueMemberships] = useState([]);
   const [currentLeagueId, setCurrentLeagueId] = useState(null);
+  const [showLeagueSelector, setShowLeagueSelector] = useState(false);
+  const [pendingLoginUser, setPendingLoginUser] = useState(null);
 
   // Advantage play modal state
   const [advantageModal, setAdvantageModal] = useState({ show: false, advantage: null, step: 'confirm' });
@@ -169,13 +208,33 @@ export default function SurvivorFantasyApp() {
   // Helper function to check if current user is a guest
   const isGuestMode = () => currentUser?.isGuest === true;
 
-  // Helper function for guest-safe storage writes
+  // Helper function to get league-scoped storage
+  // Returns a storage interface that automatically prefixes league-specific keys
+  const getLeagueStorage = () => {
+    if (!currentLeagueId) {
+      console.warn('getLeagueStorage called with no currentLeagueId, defaulting to 1');
+      return createLeagueStorage(1);
+    }
+    return createLeagueStorage(currentLeagueId);
+  };
+
+  // Helper function for guest-safe storage writes (global data)
   // Returns fake success for guests, actually saves for real users
   const guestSafeSet = async (key, value) => {
     if (isGuestMode()) {
       return { key, value }; // Fake success - don't actually save
     }
     return storage.set(key, value);
+  };
+
+  // Helper function for guest-safe league-scoped storage writes
+  // Automatically prefixes keys with league ID for league-specific data
+  const guestSafeLeagueSet = async (key, value) => {
+    if (isGuestMode()) {
+      return { key, value }; // Fake success - don't actually save
+    }
+    const leagueStore = getLeagueStorage();
+    return leagueStore.set(key, value);
   };
 
   // Check remembered login after players load from MongoDB
@@ -245,54 +304,65 @@ export default function SurvivorFantasyApp() {
 
   const loadGameData = async () => {
     try {
+      // STEP 1: Load global data (shared across all leagues)
       const playersData = await storage.get('players');
       const contestantsData = await storage.get('contestants');
-      const picksData = await storage.get('picks');
-      const picksLockedData = await storage.get('picksLocked');
-      const gamePhaseData = await storage.get('gamePhase');
-      const questionnairesData = await storage.get('questionnaires');
-      const submissionsData = await storage.get('submissions');
-      const qotWVotesData = await storage.get('qotWVotes');
-      const latePenaltiesData = await storage.get('latePenalties');
-      const pickScoresData = await storage.get('pickScores');
-      const advantagesData = await storage.get('advantages');
-      const episodesData = await storage.get('episodes');
-      const notificationsData = await storage.get('notifications');
-      const playerAdvantagesData = await storage.get('playerAdvantages');
-      const playerScoresData = await storage.get('playerScores');
-      const currentSeasonData = await storage.get('currentSeason');
-      const seasonHistoryData = await storage.get('seasonHistory');
-      const seasonFinalizedData = await storage.get('seasonFinalized');
-      const challengesData = await storage.get('challenges');
-      const challengeAttemptsData = await storage.get('challengeAttempts');
       const leaguesData = await storage.get('leagues');
       const leagueMembershipsData = await storage.get('leagueMemberships');
 
-      setPlayers(playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS);
+      const loadedPlayers = playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS;
+      setPlayers(loadedPlayers);
+      setContestants(contestantsData ? JSON.parse(contestantsData.value) : DEFAULT_CAST);
 
-      // Load leagues - create default if none exist
-      const loadedLeagues = leaguesData ? JSON.parse(leaguesData.value) : [];
-      const loadedMemberships = leagueMembershipsData ? JSON.parse(leagueMembershipsData.value) : [];
+      // STEP 2: Load/create leagues and determine current league
+      let loadedLeagues = leaguesData ? JSON.parse(leaguesData.value) : [];
+      let loadedMemberships = leagueMembershipsData ? JSON.parse(leagueMembershipsData.value) : [];
+      let activeLeagueId = 1;
 
       if (loadedLeagues.length === 0) {
         // Create default league and add all existing players
         const defaultLeague = { id: 1, name: 'Main League', createdAt: new Date().toISOString(), createdBy: 1, isDefault: true };
-        const loadedPlayers = playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS;
-        const defaultMemberships = loadedPlayers.map(p => ({ playerId: p.id, leagueId: 1 }));
-        setLeagues([defaultLeague]);
-        setLeagueMemberships(defaultMemberships);
-        setCurrentLeagueId(1);
-        await storage.set('leagues', JSON.stringify([defaultLeague]));
-        await storage.set('leagueMemberships', JSON.stringify(defaultMemberships));
+        loadedMemberships = loadedPlayers.map(p => ({ playerId: p.id, leagueId: 1 }));
+        loadedLeagues = [defaultLeague];
+        await storage.set('leagues', JSON.stringify(loadedLeagues));
+        await storage.set('leagueMemberships', JSON.stringify(loadedMemberships));
       } else {
-        setLeagues(loadedLeagues);
-        setLeagueMemberships(loadedMemberships);
-        // Default to first league or stored preference
+        // Get stored preference or default to first league
         const storedLeagueId = localStorage.getItem('survivorFantasyLeagueId');
-        setCurrentLeagueId(storedLeagueId ? parseInt(storedLeagueId) : loadedLeagues[0]?.id || 1);
+        activeLeagueId = storedLeagueId ? parseInt(storedLeagueId) : loadedLeagues[0]?.id || 1;
       }
-      setContestants(contestantsData ? JSON.parse(contestantsData.value) : DEFAULT_CAST);
-      setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 48);
+
+      setLeagues(loadedLeagues);
+      setLeagueMemberships(loadedMemberships);
+      setCurrentLeagueId(activeLeagueId);
+
+      // STEP 3: Run data migration if needed (one-time upgrade to multi-league)
+      await migrateToMultiLeague();
+
+      // STEP 4: Create league-scoped storage and load league-specific data
+      const leagueStore = createLeagueStorage(activeLeagueId);
+
+      const picksData = await leagueStore.get('picks');
+      const picksLockedData = await leagueStore.get('picksLocked');
+      const gamePhaseData = await leagueStore.get('gamePhase');
+      const questionnairesData = await leagueStore.get('questionnaires');
+      const submissionsData = await leagueStore.get('submissions');
+      const qotWVotesData = await leagueStore.get('qotWVotes');
+      const latePenaltiesData = await leagueStore.get('latePenalties');
+      const pickScoresData = await leagueStore.get('pickScores');
+      const advantagesData = await leagueStore.get('advantages');
+      const episodesData = await leagueStore.get('episodes');
+      const notificationsData = await leagueStore.get('notifications');
+      const playerAdvantagesData = await leagueStore.get('playerAdvantages');
+      const playerScoresData = await leagueStore.get('playerScores');
+      const currentSeasonData = await leagueStore.get('currentSeason');
+      const seasonHistoryData = await leagueStore.get('seasonHistory');
+      const seasonFinalizedData = await leagueStore.get('seasonFinalized');
+      const challengesData = await leagueStore.get('challenges');
+      const challengeAttemptsData = await leagueStore.get('challengeAttempts');
+
+      // Set league-specific state
+      setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 50);
       setSeasonHistory(seasonHistoryData ? JSON.parse(seasonHistoryData.value) : []);
       setSeasonFinalized(seasonFinalizedData ? JSON.parse(seasonFinalizedData.value) : false);
       setChallenges(challengesData ? JSON.parse(challengesData.value) : []);
@@ -307,6 +377,9 @@ export default function SurvivorFantasyApp() {
       setPickScores(pickScoresData ? JSON.parse(pickScoresData.value) : []);
       setAdvantages(advantagesData ? JSON.parse(advantagesData.value) : []);
       setEpisodes(episodesData ? JSON.parse(episodesData.value) : []);
+      setPlayerAdvantages(playerAdvantagesData ? JSON.parse(playerAdvantagesData.value) : []);
+      setPlayerScores(playerScoresData ? JSON.parse(playerScoresData.value) : {});
+
       // Load notifications and clean up ones older than 7 days
       if (notificationsData) {
         const allNotifications = JSON.parse(notificationsData.value);
@@ -317,15 +390,12 @@ export default function SurvivorFantasyApp() {
         );
         // If we removed any old notifications, save the cleaned list
         if (recentNotifications.length !== allNotifications.length) {
-          await storage.set('notifications', JSON.stringify(recentNotifications));
+          await leagueStore.set('notifications', JSON.stringify(recentNotifications));
         }
         setNotifications(recentNotifications);
       } else {
         setNotifications([]);
       }
-
-      setPlayerAdvantages(playerAdvantagesData ? JSON.parse(playerAdvantagesData.value) : []);
-      setPlayerScores(playerScoresData ? JSON.parse(playerScoresData.value) : {});
 
       // Initialize default passwords for any player that doesn't have one
       for (const player of INITIAL_PLAYERS) {
@@ -339,6 +409,9 @@ export default function SurvivorFantasyApp() {
       // First time setup - initialize with defaults
       setPlayers(INITIAL_PLAYERS);
       setContestants(DEFAULT_CAST);
+      setLeagues([{ id: 1, name: 'Main League', createdAt: new Date().toISOString(), createdBy: 1, isDefault: true }]);
+      setLeagueMemberships(INITIAL_PLAYERS.map(p => ({ playerId: p.id, leagueId: 1 })));
+      setCurrentLeagueId(1);
       setPicks([]);
       setGamePhase('instinct-picks');
       setQuestionnaires([]);
@@ -351,26 +424,34 @@ export default function SurvivorFantasyApp() {
       setNotifications([]);
       setPlayerAdvantages([]);
       setPlayerScores({});
-      setCurrentSeason(48);
+      setCurrentSeason(50);
       setSeasonHistory([]);
 
-      // Save initial data
+      // Save initial global data
       await storage.set('players', JSON.stringify(INITIAL_PLAYERS));
       await storage.set('contestants', JSON.stringify(DEFAULT_CAST));
-      await storage.set('picks', JSON.stringify([]));
-      await storage.set('gamePhase', 'instinct-picks');
-      await storage.set('questionnaires', JSON.stringify([]));
-      await storage.set('submissions', JSON.stringify([]));
-      await storage.set('qotWVotes', JSON.stringify([]));
-      await storage.set('latePenalties', JSON.stringify({}));
-      await storage.set('pickScores', JSON.stringify([]));
-      await storage.set('advantages', JSON.stringify([]));
-      await storage.set('episodes', JSON.stringify([]));
-      await storage.set('notifications', JSON.stringify([]));
-      await storage.set('playerAdvantages', JSON.stringify([]));
-      await storage.set('playerScores', JSON.stringify({}));
-      await storage.set('currentSeason', '48');
-      await storage.set('seasonHistory', JSON.stringify([]));
+      await storage.set('leagues', JSON.stringify([{ id: 1, name: 'Main League', createdAt: new Date().toISOString(), createdBy: 1, isDefault: true }]));
+      await storage.set('leagueMemberships', JSON.stringify(INITIAL_PLAYERS.map(p => ({ playerId: p.id, leagueId: 1 }))));
+
+      // Save initial league-specific data (prefixed with league_1_)
+      const leagueStore = createLeagueStorage(1);
+      await leagueStore.set('picks', JSON.stringify([]));
+      await leagueStore.set('gamePhase', 'instinct-picks');
+      await leagueStore.set('questionnaires', JSON.stringify([]));
+      await leagueStore.set('submissions', JSON.stringify([]));
+      await leagueStore.set('qotWVotes', JSON.stringify([]));
+      await leagueStore.set('latePenalties', JSON.stringify({}));
+      await leagueStore.set('pickScores', JSON.stringify([]));
+      await leagueStore.set('advantages', JSON.stringify([]));
+      await leagueStore.set('episodes', JSON.stringify([]));
+      await leagueStore.set('notifications', JSON.stringify([]));
+      await leagueStore.set('playerAdvantages', JSON.stringify([]));
+      await leagueStore.set('playerScores', JSON.stringify({}));
+      await leagueStore.set('currentSeason', '50');
+      await leagueStore.set('seasonHistory', JSON.stringify([]));
+
+      // Mark migration as complete for fresh installs
+      await storage.set('_multiLeagueMigrated', 'true');
     }
   };
 
@@ -389,10 +470,32 @@ export default function SurvivorFantasyApp() {
       const result = await auth.login(player.id, loginForm.password);
 
       if (result.success) {
-        setCurrentUser(player);
-        setCurrentView('home'); // Always start on home page after login
+        // Check how many leagues this player is in
+        const playerLeagueIds = leagueMemberships
+          .filter(m => m.playerId === player.id)
+          .map(m => m.leagueId);
+        const playerLeagues = leagues.filter(l => playerLeagueIds.includes(l.id));
+
         if (loginForm.rememberMe) {
           localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
+        }
+
+        if (playerLeagues.length === 0) {
+          // Player not in any league - add them to default league
+          await addPlayerToLeague(player.id, 1);
+          setCurrentUser(player);
+          setCurrentLeagueId(1);
+          localStorage.setItem('survivorFantasyLeagueId', '1');
+          setCurrentView('home');
+        } else if (playerLeagues.length === 1) {
+          // Only one league - auto-select and proceed
+          setCurrentUser(player);
+          await switchLeague(playerLeagues[0].id);
+          setCurrentView('home');
+        } else {
+          // Multiple leagues - show league selector
+          setPendingLoginUser(player);
+          setShowLeagueSelector(true);
         }
       } else {
         alert('Invalid username or password');
@@ -401,6 +504,17 @@ export default function SurvivorFantasyApp() {
       // Don't reveal whether username exists - same error message
       alert('Invalid username or password');
     }
+  };
+
+  // Complete login after league selection
+  const completeLoginWithLeague = async (leagueId) => {
+    if (!pendingLoginUser) return;
+
+    setCurrentUser(pendingLoginUser);
+    await switchLeague(leagueId);
+    setShowLeagueSelector(false);
+    setPendingLoginUser(null);
+    setCurrentView('home');
   };
 
   const handleGuestLogin = () => {
@@ -657,10 +771,64 @@ export default function SurvivorFantasyApp() {
     return players.filter(p => memberPlayerIds.includes(p.id));
   };
 
+  // Switch to a different league and reload its data
+  const switchLeague = async (leagueId) => {
+    if (leagueId === currentLeagueId) return;
+
+    setCurrentLeagueId(leagueId);
+    localStorage.setItem('survivorFantasyLeagueId', leagueId.toString());
+
+    // Load league-specific data
+    const leagueStore = createLeagueStorage(leagueId);
+
+    const picksData = await leagueStore.get('picks');
+    const picksLockedData = await leagueStore.get('picksLocked');
+    const gamePhaseData = await leagueStore.get('gamePhase');
+    const questionnairesData = await leagueStore.get('questionnaires');
+    const submissionsData = await leagueStore.get('submissions');
+    const qotWVotesData = await leagueStore.get('qotWVotes');
+    const latePenaltiesData = await leagueStore.get('latePenalties');
+    const pickScoresData = await leagueStore.get('pickScores');
+    const advantagesData = await leagueStore.get('advantages');
+    const episodesData = await leagueStore.get('episodes');
+    const notificationsData = await leagueStore.get('notifications');
+    const playerAdvantagesData = await leagueStore.get('playerAdvantages');
+    const playerScoresData = await leagueStore.get('playerScores');
+    const currentSeasonData = await leagueStore.get('currentSeason');
+    const seasonHistoryData = await leagueStore.get('seasonHistory');
+    const seasonFinalizedData = await leagueStore.get('seasonFinalized');
+    const challengesData = await leagueStore.get('challenges');
+    const challengeAttemptsData = await leagueStore.get('challengeAttempts');
+
+    setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 50);
+    setSeasonHistory(seasonHistoryData ? JSON.parse(seasonHistoryData.value) : []);
+    setSeasonFinalized(seasonFinalizedData ? JSON.parse(seasonFinalizedData.value) : false);
+    setChallenges(challengesData ? JSON.parse(challengesData.value) : []);
+    setChallengeAttempts(challengeAttemptsData ? JSON.parse(challengeAttemptsData.value) : []);
+    setPicks(picksData ? JSON.parse(picksData.value) : []);
+    setPicksLocked(picksLockedData ? JSON.parse(picksLockedData.value) : { instinct: false, final: false });
+    setGamePhase(gamePhaseData ? gamePhaseData.value : 'instinct-picks');
+    setQuestionnaires(questionnairesData ? JSON.parse(questionnairesData.value) : []);
+    setSubmissions(submissionsData ? JSON.parse(submissionsData.value) : []);
+    setQotWVotes(qotWVotesData ? JSON.parse(qotWVotesData.value) : []);
+    setLatePenalties(latePenaltiesData ? JSON.parse(latePenaltiesData.value) : {});
+    setPickScores(pickScoresData ? JSON.parse(pickScoresData.value) : []);
+    setAdvantages(advantagesData ? JSON.parse(advantagesData.value) : []);
+    setEpisodes(episodesData ? JSON.parse(episodesData.value) : []);
+    setPlayerAdvantages(playerAdvantagesData ? JSON.parse(playerAdvantagesData.value) : []);
+    setPlayerScores(playerScoresData ? JSON.parse(playerScoresData.value) : {});
+    setNotifications(notificationsData ? JSON.parse(notificationsData.value) : []);
+
+    const leagueName = leagues.find(l => l.id === leagueId)?.name || 'Unknown League';
+    console.log(`Switched to league: ${leagueName}`);
+  };
+
   // Season Management Functions
   const archiveCurrentSeason = async () => {
+    const leagueStore = getLeagueStorage();
     const seasonData = {
       season: currentSeason,
+      leagueId: currentLeagueId,
       archivedAt: new Date().toISOString(),
       contestants: [...contestants],
       picks: [...picks],
@@ -677,8 +845,9 @@ export default function SurvivorFantasyApp() {
 
     const updatedHistory = [...seasonHistory, seasonData];
     setSeasonHistory(updatedHistory);
-    await storage.set('seasonHistory', JSON.stringify(updatedHistory));
-    await storage.set(`season_${currentSeason}_archive`, JSON.stringify(seasonData));
+    await leagueStore.set('seasonHistory', JSON.stringify(updatedHistory));
+    // Archive is league-specific
+    await storage.set(`league_${currentLeagueId}_season_${currentSeason}_archive`, JSON.stringify(seasonData));
 
     return seasonData;
   };
@@ -686,6 +855,8 @@ export default function SurvivorFantasyApp() {
   const startNewSeason = async (newSeasonNumber, newCast = null) => {
     // Archive current season first
     await archiveCurrentSeason();
+
+    const leagueStore = getLeagueStorage();
 
     // Reset all game data for new season
     const defaultCast = newCast || contestants.map(c => ({
@@ -711,22 +882,24 @@ export default function SurvivorFantasyApp() {
     setChallenges([]);
     setChallengeAttempts([]);
 
-    await storage.set('currentSeason', newSeasonNumber.toString());
-    await storage.set('playerScores', JSON.stringify({}));
-    await storage.set('latePenalties', JSON.stringify({}));
-    await storage.set('seasonFinalized', JSON.stringify(false));
+    // Save league-specific data with prefix
+    await leagueStore.set('currentSeason', newSeasonNumber.toString());
+    await leagueStore.set('playerScores', JSON.stringify({}));
+    await leagueStore.set('latePenalties', JSON.stringify({}));
+    await leagueStore.set('seasonFinalized', JSON.stringify(false));
+    await leagueStore.set('picks', JSON.stringify([]));
+    await leagueStore.set('picksLocked', JSON.stringify({ instinct: false, final: false }));
+    await leagueStore.set('questionnaires', JSON.stringify([]));
+    await leagueStore.set('submissions', JSON.stringify([]));
+    await leagueStore.set('qotWVotes', JSON.stringify([]));
+    await leagueStore.set('pickScores', JSON.stringify([]));
+    await leagueStore.set('episodes', JSON.stringify([]));
+    await leagueStore.set('gamePhase', 'instinct-picks');
+    await leagueStore.set('playerAdvantages', JSON.stringify([]));
+    await leagueStore.set('challenges', JSON.stringify([]));
+    await leagueStore.set('challengeAttempts', JSON.stringify([]));
+    // Contestants is global (shared across leagues)
     await storage.set('contestants', JSON.stringify(defaultCast));
-    await storage.set('picks', JSON.stringify([]));
-    await storage.set('picksLocked', JSON.stringify({ instinct: false, final: false }));
-    await storage.set('questionnaires', JSON.stringify([]));
-    await storage.set('submissions', JSON.stringify([]));
-    await storage.set('qotWVotes', JSON.stringify([]));
-    await storage.set('pickScores', JSON.stringify([]));
-    await storage.set('episodes', JSON.stringify([]));
-    await storage.set('gamePhase', 'instinct-picks');
-    await storage.set('playerAdvantages', JSON.stringify([]));
-    await storage.set('challenges', JSON.stringify([]));
-    await storage.set('challengeAttempts', JSON.stringify([]));
 
     await addNotification({
       type: 'new_season',
@@ -745,10 +918,10 @@ export default function SurvivorFantasyApp() {
       type: 'instinct',
       timestamp: Date.now()
     };
-    
+
     const updatedPicks = [...picks.filter(p => !(p.playerId === currentUser.id && p.type === 'instinct')), newPick];
     setPicks(updatedPicks);
-    await guestSafeSet('picks', JSON.stringify(updatedPicks));
+    await guestSafeLeagueSet('picks', JSON.stringify(updatedPicks));
     alert(isGuestMode() ? 'Instinct pick submitted! (Demo mode - not saved)' : 'Instinct pick submitted!');
   };
 
@@ -763,7 +936,7 @@ export default function SurvivorFantasyApp() {
 
     const updatedPicks = [...picks.filter(p => !(p.playerId === currentUser.id && p.type === 'final')), newPick];
     setPicks(updatedPicks);
-    await guestSafeSet('picks', JSON.stringify(updatedPicks));
+    await guestSafeLeagueSet('picks', JSON.stringify(updatedPicks));
     alert(isGuestMode() ? 'Final pick submitted! (Demo mode - not saved)' : 'Final pick submitted!');
   };
 
@@ -783,9 +956,10 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
+    const leagueStore = getLeagueStorage();
     const newLocked = { ...picksLocked, [pickType]: !picksLocked[pickType] };
     setPicksLocked(newLocked);
-    await storage.set('picksLocked', JSON.stringify(newLocked));
+    await leagueStore.set('picksLocked', JSON.stringify(newLocked));
 
     const action = newLocked[pickType] ? 'locked' : 'unlocked';
     const pickName = pickType === 'instinct' ? 'Instinct' : 'Final';
@@ -902,7 +1076,8 @@ export default function SurvivorFantasyApp() {
     currentScores[playerId].totalPoints = currentScores[playerId].breakdown.reduce((sum, e) => sum + e.points, 0);
 
     setPlayerScores(currentScores);
-    await storage.set('playerScores', JSON.stringify(currentScores));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('playerScores', JSON.stringify(currentScores));
   };
 
   const addNotification = async (notification) => {
@@ -915,7 +1090,8 @@ export default function SurvivorFantasyApp() {
     };
     const updated = [...notifications, newNotif];
     setNotifications(updated);
-    await storage.set('notifications', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('notifications', JSON.stringify(updated));
   };
 
   const markNotificationRead = async (notifId) => {
@@ -929,7 +1105,8 @@ export default function SurvivorFantasyApp() {
       return n;
     });
     setNotifications(updated);
-    await storage.set('notifications', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('notifications', JSON.stringify(updated));
   };
 
   const markNotificationSeen = async (notifId) => {
@@ -943,7 +1120,8 @@ export default function SurvivorFantasyApp() {
       return n;
     });
     setNotifications(updated);
-    await storage.set('notifications', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('notifications', JSON.stringify(updated));
   };
 
   const markAllNotificationsRead = async () => {
@@ -957,19 +1135,22 @@ export default function SurvivorFantasyApp() {
       return n;
     });
     setNotifications(updated);
-    await storage.set('notifications', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('notifications', JSON.stringify(updated));
   };
 
   const deleteNotification = async (notifId) => {
     const updated = notifications.filter(n => n.id !== notifId);
     setNotifications(updated);
-    await storage.set('notifications', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('notifications', JSON.stringify(updated));
   };
 
   const clearAllNotifications = async () => {
     if (!window.confirm('Delete all notifications? This cannot be undone.')) return;
     setNotifications([]);
-    await storage.set('notifications', JSON.stringify([]));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('notifications', JSON.stringify([]));
   };
 
   // Check if an advantage is available to purchase (no one owns it unused)
@@ -1006,7 +1187,7 @@ export default function SurvivorFantasyApp() {
 
     const updated = [...playerAdvantages, newPlayerAdvantage];
     setPlayerAdvantages(updated);
-    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
+    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
     // Skip point deduction and notifications for guest mode
     if (!isGuestMode()) {
@@ -1045,7 +1226,7 @@ export default function SurvivorFantasyApp() {
         : a
     );
     setPlayerAdvantages(updated);
-    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
+    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
     // Skip notifications for guest mode
     if (!isGuestMode()) {
@@ -1099,7 +1280,7 @@ export default function SurvivorFantasyApp() {
         return a;
       });
       setPlayerAdvantages(updated);
-      await guestSafeSet('playerAdvantages', JSON.stringify(updated));
+      await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
       // Skip notifications for guest mode
       if (!isGuestMode()) {
@@ -1130,7 +1311,7 @@ export default function SurvivorFantasyApp() {
         return a;
       });
       setPlayerAdvantages(updated);
-      await guestSafeSet('playerAdvantages', JSON.stringify(updated));
+      await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
       // Skip notifications for guest mode
       if (!isGuestMode()) {
@@ -1175,7 +1356,7 @@ export default function SurvivorFantasyApp() {
       return a;
     });
     setPlayerAdvantages(updated);
-    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
+    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
     // Check if target already voted and remove their vote
     const targetExistingVote = qotWVotes.find(v =>
@@ -1211,7 +1392,7 @@ export default function SurvivorFantasyApp() {
     }
 
     setQotWVotes(updatedVotes);
-    await guestSafeSet('qotWVotes', JSON.stringify(updatedVotes));
+    await guestSafeLeagueSet('qotWVotes', JSON.stringify(updatedVotes));
 
     const targetPlayer = players.find(p => p.id === targetPlayerId);
 
@@ -1264,7 +1445,7 @@ export default function SurvivorFantasyApp() {
       return a;
     });
     setPlayerAdvantages(updated);
-    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
+    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
     // Skip notifications for guest mode
     if (!isGuestMode()) {
@@ -1308,7 +1489,7 @@ export default function SurvivorFantasyApp() {
       return a;
     });
     setPlayerAdvantages(updated);
-    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
+    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
     const advantageName = myAdvantage.name;
 
@@ -1352,7 +1533,7 @@ export default function SurvivorFantasyApp() {
       return a;
     });
     setPlayerAdvantages(updated);
-    await guestSafeSet('playerAdvantages', JSON.stringify(updated));
+    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
     // Transfer 5 points
     if (!isGuestMode()) {
@@ -1473,7 +1654,8 @@ export default function SurvivorFantasyApp() {
         : c
     );
     setChallenges(updatedChallenges);
-    await storage.set('challenges', JSON.stringify(updatedChallenges));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('challenges', JSON.stringify(updatedChallenges));
   };
 
   // Get player's attempt for a challenge
@@ -1495,7 +1677,7 @@ export default function SurvivorFantasyApp() {
           : a
       );
       setChallengeAttempts(updated);
-      await guestSafeSet('challengeAttempts', JSON.stringify(updated));
+      await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
       return existing;
     }
 
@@ -1515,7 +1697,7 @@ export default function SurvivorFantasyApp() {
 
     const updated = [...challengeAttempts, newAttempt];
     setChallengeAttempts(updated);
-    await guestSafeSet('challengeAttempts', JSON.stringify(updated));
+    await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
     return newAttempt;
   };
 
@@ -1546,7 +1728,7 @@ export default function SurvivorFantasyApp() {
       a.id === attemptId ? updatedAttempt : a
     );
     setChallengeAttempts(updated);
-    await guestSafeSet('challengeAttempts', JSON.stringify(updated));
+    await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
 
     return updatedAttempt;
   };
@@ -1566,7 +1748,7 @@ export default function SurvivorFantasyApp() {
         : a
     );
     setChallengeAttempts(updated);
-    await guestSafeSet('challengeAttempts', JSON.stringify(updated));
+    await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
   };
 
   // Admin: manually create challenge (no auto-expiration - admin must end it)
@@ -1588,7 +1770,8 @@ export default function SurvivorFantasyApp() {
 
     const updated = [...updatedChallenges, newChallenge];
     setChallenges(updated);
-    await storage.set('challenges', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('challenges', JSON.stringify(updated));
 
     await addNotification({
       type: 'challenge_started',
@@ -1784,6 +1967,67 @@ export default function SurvivorFantasyApp() {
     );
   }
 
+  // League Selector Modal (shown when user is in multiple leagues)
+  if (showLeagueSelector && pendingLoginUser) {
+    const userLeagueIds = leagueMemberships
+      .filter(m => m.playerId === pendingLoginUser.id)
+      .map(m => m.leagueId);
+    const userLeagues = leagues.filter(l => userLeagueIds.includes(l.id));
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900 flex items-center justify-center p-3 sm:p-4">
+        <div className="bg-black/60 backdrop-blur-sm p-5 sm:p-8 rounded-lg shadow-2xl max-w-md w-full border-2 border-amber-600">
+          <div className="flex items-center justify-center mb-4 sm:mb-6">
+            <Flame className="w-10 h-10 sm:w-12 sm:h-12 text-orange-500 mr-3" />
+            <h1 className="text-2xl sm:text-3xl font-bold text-amber-400">Select League</h1>
+          </div>
+
+          <p className="text-amber-200 text-center mb-6">
+            Welcome back, <span className="text-white font-semibold">{pendingLoginUser.name}</span>!
+            <br />
+            <span className="text-sm text-amber-300">Choose a league to enter:</span>
+          </p>
+
+          <div className="space-y-3">
+            {userLeagues.map(league => {
+              const leaguePlayers = getLeaguePlayers(league.id);
+              return (
+                <button
+                  key={league.id}
+                  onClick={() => completeLoginWithLeague(league.id)}
+                  className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-4 px-4 rounded-lg font-semibold hover:from-amber-500 hover:to-orange-500 transition text-left"
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-lg">{league.name}</span>
+                      {league.isDefault && (
+                        <span className="ml-2 text-xs bg-amber-800/50 px-2 py-0.5 rounded">Default</span>
+                      )}
+                    </div>
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                  <p className="text-xs text-amber-200/80 mt-1">
+                    {leaguePlayers.length} player{leaguePlayers.length !== 1 ? 's' : ''}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => {
+              setShowLeagueSelector(false);
+              setPendingLoginUser(null);
+            }}
+            className="w-full mt-6 text-amber-300 text-sm hover:text-amber-200 transition"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Main App
   const myInstinctPick = picks.find(p => p.playerId === currentUser.id && p.type === 'instinct');
   const myFinalPick = picks.find(p => p.playerId === currentUser.id && p.type === 'final');
@@ -1818,7 +2062,44 @@ export default function SurvivorFantasyApp() {
               <Flame className="w-6 h-6 sm:w-8 sm:h-8 text-orange-500 flex-shrink-0" />
               <div>
                 <h1 className="text-lg sm:text-2xl font-bold text-amber-400">Survivor Fantasy</h1>
-                <p className="text-amber-200 text-xs sm:text-sm">Season {currentSeason}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-amber-200 text-xs sm:text-sm">Season {currentSeason}</p>
+                  {currentLeagueId && leagues.length > 0 && (
+                    <>
+                      <span className="text-amber-600 text-xs">•</span>
+                      {(() => {
+                        const userLeagueIds = leagueMemberships
+                          .filter(m => m.playerId === currentUser?.id)
+                          .map(m => m.leagueId);
+                        const userLeagues = leagues.filter(l => userLeagueIds.includes(l.id));
+                        const currentLeague = leagues.find(l => l.id === currentLeagueId);
+
+                        if (userLeagues.length > 1) {
+                          return (
+                            <select
+                              value={currentLeagueId}
+                              onChange={(e) => switchLeague(parseInt(e.target.value))}
+                              className="bg-transparent text-amber-200 text-xs sm:text-sm cursor-pointer hover:text-amber-100 focus:outline-none border-none p-0"
+                              style={{ appearance: 'none', paddingRight: '12px', backgroundImage: 'url("data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 fill=%27none%27 viewBox=%270 0 20 20%27%3e%3cpath stroke=%27%23fcd34d%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%271.5%27 d=%27M6 8l4 4 4-4%27/%3e%3c/svg%3e")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0 center', backgroundSize: '12px' }}
+                            >
+                              {userLeagues.map(league => (
+                                <option key={league.id} value={league.id} className="bg-black text-amber-200">
+                                  {league.name}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        } else {
+                          return (
+                            <span className="text-amber-200 text-xs sm:text-sm">
+                              {currentLeague?.name || 'Main League'}
+                            </span>
+                          );
+                        }
+                      })()}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1869,7 +2150,8 @@ export default function SurvivorFantasyApp() {
                                     n.targetPlayerId !== null && n.targetPlayerId !== currentUser.id
                                   );
                                   setNotifications(updated);
-                                  await storage.set('notifications', JSON.stringify(updated));
+                                  const leagueStore = getLeagueStorage();
+                                  await leagueStore.set('notifications', JSON.stringify(updated));
                                   setShowNotifications(false);
                                 }
                               }}
@@ -3459,7 +3741,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
     const updated = [...updatedQuestionnaires, questionnaire];
     setQuestionnaires(updated);
-    await storage.set('questionnaires', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('questionnaires', JSON.stringify(updated));
 
     await addNotification({
       type: 'new_questionnaire',
@@ -3512,7 +3795,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     );
 
     setQuestionnaires(updated);
-    await storage.set('questionnaires', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('questionnaires', JSON.stringify(updated));
 
     await addNotification({
       type: 'questionnaire_reopened',
@@ -3596,8 +3880,9 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
         return q;
       });
 
-      await storage.set('submissions', JSON.stringify(updatedSubmissions));
-      await storage.set('questionnaires', JSON.stringify(updatedQuestionnaires));
+      const leagueStore = getLeagueStorage();
+      await leagueStore.set('submissions', JSON.stringify(updatedSubmissions));
+      await leagueStore.set('questionnaires', JSON.stringify(updatedQuestionnaires));
       setSubmissions(updatedSubmissions);
       setQuestionnaires(updatedQuestionnaires);
 
@@ -3647,8 +3932,9 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
       return q;
     });
 
-    await storage.set('submissions', JSON.stringify(updatedSubmissions));
-    await storage.set('questionnaires', JSON.stringify(updatedQuestionnaires));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('submissions', JSON.stringify(updatedSubmissions));
+    await leagueStore.set('questionnaires', JSON.stringify(updatedQuestionnaires));
     setSubmissions(updatedSubmissions);
     setQuestionnaires(updatedQuestionnaires);
 
@@ -3720,11 +4006,12 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   const advancePhase = async () => {
     if (!requireRealUser('Advance Phase')) return;
+    const leagueStore = getLeagueStorage();
     const currentIndex = GAME_PHASES.indexOf(gamePhase);
     if (currentIndex < GAME_PHASES.length - 1) {
       const newPhase = GAME_PHASES[currentIndex + 1];
       setGamePhase(newPhase);
-      await storage.set('gamePhase', newPhase);
+      await leagueStore.set('gamePhase', newPhase);
 
       if (newPhase === 'final-picks') {
         await addNotification({
@@ -3742,6 +4029,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   const regressPhase = async () => {
     if (!requireRealUser('Regress Phase')) return;
+    const leagueStore = getLeagueStorage();
     const currentIndex = GAME_PHASES.indexOf(gamePhase);
     if (currentIndex > 0) {
       const newPhase = GAME_PHASES[currentIndex - 1];
@@ -3749,7 +4037,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
         return;
       }
       setGamePhase(newPhase);
-      await storage.set('gamePhase', newPhase);
+      await leagueStore.set('gamePhase', newPhase);
       alert(`Game phase reverted to: ${newPhase.replace('-', ' ')}`);
     } else {
       alert('Already at the first phase!');
@@ -3758,11 +4046,12 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   const setPhaseDirectly = async (newPhase) => {
     if (!requireRealUser('Change Phase')) return;
+    const leagueStore = getLeagueStorage();
     if (!window.confirm(`Change phase to "${newPhase.replace('-', ' ')}"?`)) {
       return;
     }
     setGamePhase(newPhase);
-    await storage.set('gamePhase', newPhase);
+    await leagueStore.set('gamePhase', newPhase);
 
     if (newPhase === 'final-picks') {
       await addNotification({
@@ -3817,7 +4106,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
     const updated = [...pickScores, ...newScores];
     setPickScores(updated);
-    await storage.set('pickScores', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('pickScores', JSON.stringify(updated));
 
     // Record the episode
     const newEpisode = {
@@ -3826,7 +4116,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
     };
     const updatedEpisodes = [...episodes, newEpisode];
     setEpisodes(updatedEpisodes);
-    await storage.set('episodes', JSON.stringify(updatedEpisodes));
+    await leagueStore.set('episodes', JSON.stringify(updatedEpisodes));
 
     await addNotification({
       type: 'episode_scored',
@@ -3847,7 +4137,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
       q.id === questionnaire.id ? { ...q, qotwVotingOpen: true } : q
     );
     setQuestionnaires(updated);
-    await storage.set('questionnaires', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('questionnaires', JSON.stringify(updated));
 
     await addNotification({
       type: 'qotw_voting_open',
@@ -3863,11 +4154,13 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
       q.id === questionnaire.id ? { ...q, qotwVotingClosed: true } : q
     );
     setQuestionnaires(updated);
-    await storage.set('questionnaires', JSON.stringify(updated));
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('questionnaires', JSON.stringify(updated));
     alert('QOTW voting closed! Players can no longer vote on this questionnaire.');
   };
 
   const awardQotwWinner = async (questionnaire) => {
+    const leagueStore = getLeagueStorage();
     const qotwVotesForThis = qotWVotes.filter(v => v.questionnaireId === questionnaire.id);
     const voteCounts = {};
     qotwVotesForThis.forEach(v => {
@@ -3881,7 +4174,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
           q.id === questionnaire.id ? { ...q, qotwWinner: [], qotwAwarded: true } : q
         );
         setQuestionnaires(updated);
-        await storage.set('questionnaires', JSON.stringify(updated));
+        await leagueStore.set('questionnaires', JSON.stringify(updated));
         alert('QotW skipped for this week (no winner awarded).');
       }
       return;
@@ -3895,7 +4188,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
       q.id === questionnaire.id ? { ...q, qotwWinner: winnerPlayerIds, qotwAwarded: true } : q
     );
     setQuestionnaires(updated);
-    await storage.set('questionnaires', JSON.stringify(updated));
+    await leagueStore.set('questionnaires', JSON.stringify(updated));
 
     const winnerNames = winnerPlayerIds.map(id => players.find(p => p.id === id)?.name).join(', ');
     await addNotification({
@@ -4630,7 +4923,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
                               qst.id === q.id ? { ...qst, qotwVotingClosed: false } : qst
                             );
                             setQuestionnaires(updated);
-                            await storage.set('questionnaires', JSON.stringify(updated));
+                            const leagueStore = getLeagueStorage();
+                            await leagueStore.set('questionnaires', JSON.stringify(updated));
                             alert('Voting re-opened!');
                           }}
                           className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition"
@@ -5061,12 +5355,13 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
     const handleFinalizeSeason = async () => {
       if (!requireRealUser('Finalize Season')) return;
+      const leagueStore = getLeagueStorage();
 
       if (seasonFinalized) {
         // Allow un-finalizing
         if (window.confirm('Un-finalize the season? The winners display will be hidden.')) {
           setSeasonFinalized(false);
-          await storage.set('seasonFinalized', JSON.stringify(false));
+          await leagueStore.set('seasonFinalized', JSON.stringify(false));
           alert('Season un-finalized.');
         }
         return;
@@ -5074,7 +5369,7 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
       if (window.confirm('🏆 Finalize Season ' + currentSeason + '? This will display the winners podium on the Home and Leaderboard tabs for all players!')) {
         setSeasonFinalized(true);
-        await storage.set('seasonFinalized', JSON.stringify(true));
+        await leagueStore.set('seasonFinalized', JSON.stringify(true));
 
         // Send notification to all players
         await addNotification({
@@ -7130,7 +7425,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
     const updatedSubmissions = [...submissions.filter(s => !(s.questionnaireId === activeQ.id && s.playerId === currentUser.id)), newSubmission];
     setSubmissions(updatedSubmissions);
-    await guestSafeSet('submissions', JSON.stringify(updatedSubmissions));
+    await guestSafeLeagueSet('submissions', JSON.stringify(updatedSubmissions));
 
     const demoSuffix = isGuestMode() ? ' (Demo mode - not saved)' : '';
     alert(isLate ? `Submitted! Late penalty applied: -5 points${demoSuffix}` : `Submitted successfully!${demoSuffix}`);
@@ -7157,7 +7452,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
       updatedVotes = [...qotWVotes.filter(v => !(v.questionnaireId === votingQuestionnaire.id && v.voterId === currentUser.id)), newVote];
     }
     setQotWVotes(updatedVotes);
-    await guestSafeSet('qotWVotes', JSON.stringify(updatedVotes));
+    await guestSafeLeagueSet('qotWVotes', JSON.stringify(updatedVotes));
     alert(isGuestMode() ? 'Vote submitted! (Demo mode - not saved)' : 'Vote submitted!');
     setVotingFor(null);
   };
