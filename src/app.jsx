@@ -316,7 +316,31 @@ export default function SurvivorFantasyApp() {
 
       const loadedPlayers = playersData ? JSON.parse(playersData.value) : INITIAL_PLAYERS;
       setPlayers(loadedPlayers);
-      setContestants(contestantsData ? JSON.parse(contestantsData.value) : DEFAULT_CAST);
+
+      // Load contestants and fix image paths to match local files
+      let loadedContestants = contestantsData ? JSON.parse(contestantsData.value) : DEFAULT_CAST;
+
+      // Sync image paths from DEFAULT_CAST based on contestant name
+      const needsImageFix = loadedContestants.some(c => {
+        const defaultContestant = DEFAULT_CAST.find(dc => dc.name === c.name);
+        return defaultContestant && c.image !== defaultContestant.image;
+      });
+
+      if (needsImageFix) {
+        loadedContestants = loadedContestants.map(c => {
+          const defaultContestant = DEFAULT_CAST.find(dc => dc.name === c.name);
+          if (defaultContestant) {
+            return { ...c, image: defaultContestant.image };
+          }
+          // For contestants not in DEFAULT_CAST, generate path from name
+          return { ...c, image: `/cast/${c.name}.jpg` };
+        });
+        // Save fixed contestants back to database
+        await storage.set('contestants', JSON.stringify(loadedContestants));
+        console.log('Fixed contestant image paths');
+      }
+
+      setContestants(loadedContestants);
 
       // STEP 2: Load/create leagues and determine current league
       let loadedLeagues = leaguesData ? JSON.parse(leaguesData.value) : [];
