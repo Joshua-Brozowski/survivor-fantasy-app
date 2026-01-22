@@ -320,22 +320,36 @@ export default function SurvivorFantasyApp() {
       // Load contestants and fix image paths to match local files
       let loadedContestants = contestantsData ? JSON.parse(contestantsData.value) : DEFAULT_CAST;
 
-      // Sync image paths from DEFAULT_CAST based on contestant name
-      const needsImageFix = loadedContestants.some(c => {
-        const defaultContestant = DEFAULT_CAST.find(dc => dc.name === c.name);
-        return defaultContestant && c.image !== defaultContestant.image;
+      // Always sync image paths from DEFAULT_CAST by ID (more reliable than name matching)
+      let imageFixed = false;
+      loadedContestants = loadedContestants.map(c => {
+        // Match by ID first (most reliable)
+        const defaultById = DEFAULT_CAST.find(dc => dc.id === c.id);
+        if (defaultById && c.image !== defaultById.image) {
+          imageFixed = true;
+          return { ...c, image: defaultById.image };
+        }
+        // Fallback: match by name (case-insensitive, partial match)
+        if (!defaultById) {
+          const defaultByName = DEFAULT_CAST.find(dc =>
+            dc.name.toLowerCase().includes(c.name.toLowerCase()) ||
+            c.name.toLowerCase().includes(dc.name.toLowerCase())
+          );
+          if (defaultByName && c.image !== defaultByName.image) {
+            imageFixed = true;
+            return { ...c, image: defaultByName.image };
+          }
+        }
+        // Last fallback: generate path from name
+        const expectedPath = `/cast/${c.name}.jpg`;
+        if (c.image !== expectedPath && !c.image.startsWith('/cast/')) {
+          imageFixed = true;
+          return { ...c, image: expectedPath };
+        }
+        return c;
       });
 
-      if (needsImageFix) {
-        loadedContestants = loadedContestants.map(c => {
-          const defaultContestant = DEFAULT_CAST.find(dc => dc.name === c.name);
-          if (defaultContestant) {
-            return { ...c, image: defaultContestant.image };
-          }
-          // For contestants not in DEFAULT_CAST, generate path from name
-          return { ...c, image: `/cast/${c.name}.jpg` };
-        });
-        // Save fixed contestants back to database
+      if (imageFixed) {
         await storage.set('contestants', JSON.stringify(loadedContestants));
         console.log('Fixed contestant image paths');
       }
