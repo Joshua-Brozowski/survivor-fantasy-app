@@ -12,7 +12,9 @@
       "WebFetch(domain:en.wikipedia.org)",
       "WebSearch",
       "WebFetch(domain:www.paramountplus.com)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(git config:*)",
+      "Bash(npm install:*)"
     ]
   }
 }
