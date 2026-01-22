@@ -40,6 +40,8 @@ survivor-fantasy-app/
 - Password recovery with security questions
 - Passwords stored in MongoDB per player (hashed)
 - "Remember me" option using localStorage
+- **Password visibility toggle**: Eye icon to show/hide password on login form
+- **Login loading state**: Button shows "Loading..." until player data is ready
 - **Demo/Guest Mode**: Allows exploring the app without an account
   - Click "Demo / Guest" button on login screen
   - Can view all features and interact with UI
@@ -145,6 +147,7 @@ survivor-fantasy-app/
 - Total points from picks + questionnaires + QotW wins + challenges
 - Expandable player details with point history
 - "Your Rank" stat shows ties (T-X format)
+- **Current user highlight**: Cyan glow effect distinguishes your row from others
 
 ### 8. Admin Controls (Jeff's Panel)
 
@@ -632,7 +635,11 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 4. Update tribe color mapping in app.jsx if tribe names change
 5. Note: The `DEFAULT_CAST` constant in app.jsx contains default/fallback data
 
-Cast photos stored in `public/cast/` folder. Bios in `CONTESTANT_BIOS` object in app.jsx.
+**Cast Photo Management:**
+- Photos stored in `public/cast/` folder (e.g., `Angelina Keeley.jpg`)
+- Auto-sync: On app load, contestant image paths are synced from `DEFAULT_CAST` if they differ from database
+- Image display uses `object-cover object-top` to ensure faces are visible (not cropped at center)
+- Bios stored in `CONTESTANT_BIOS` object in app.jsx (key is contestant ID)
 
 ## Development Guidelines
 
@@ -709,6 +716,11 @@ Cast photos stored in `public/cast/` folder. Bios in `CONTESTANT_BIOS` object in
 - [x] Re-open questionnaire (extend deadline)
 - [x] Clear all notifications button
 - [x] QOTW voting visibility fix (admin-controlled)
+- [x] Weekly advantage queue system (buy → queue → resolve at score release)
+- [x] Password visibility toggle on login
+- [x] Login loading state (prevents premature login attempts)
+- [x] Leaderboard current user highlight (cyan glow)
+- [x] Cast photo auto-sync from DEFAULT_CAST
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
