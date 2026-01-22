@@ -2278,7 +2278,7 @@ export default function SurvivorFantasyApp() {
                           <img
                             src={contestants.find(c => c.id === myInstinctPick.contestantId)?.image}
                             alt=""
-                            className="w-24 h-24 rounded-lg object-cover border-4 border-green-500"
+                            className="w-24 h-24 rounded-lg object-cover object-top border-4 border-green-500"
                           />
                           <div>
                             <p className="text-white font-bold text-2xl">
@@ -2308,7 +2308,7 @@ export default function SurvivorFantasyApp() {
                             <img
                               src={contestants.find(c => c.id === myInstinctPick.contestantId)?.image}
                               alt=""
-                              className="w-16 h-16 rounded-lg object-cover border-2 border-amber-500"
+                              className="w-16 h-16 rounded-lg object-cover object-top border-2 border-amber-500"
                             />
                             <div>
                               <p className="text-white font-bold text-lg">
@@ -2343,7 +2343,7 @@ export default function SurvivorFantasyApp() {
                             <img
                               src={contestant.image}
                               alt={contestant.name}
-                              className="w-full h-40 object-cover rounded-lg mb-3"
+                              className="w-full h-40 object-cover object-top rounded-lg mb-3"
                             />
                             <h3 className="text-white font-bold text-lg">{contestant.name}</h3>
                             <p className="text-amber-300 text-sm mb-2">{contestant.tribe} Tribe</p>
@@ -2363,7 +2363,7 @@ export default function SurvivorFantasyApp() {
                       <img 
                         src={contestants.find(c => c.id === myInstinctPick.contestantId)?.image} 
                         alt=""
-                        className="w-20 h-20 rounded-lg object-cover border-2 border-amber-500"
+                        className="w-20 h-20 rounded-lg object-cover object-top border-2 border-amber-500"
                       />
                       <div>
                         <p className="text-gray-400 text-sm">Your Instinct Pick</p>
@@ -2420,7 +2420,7 @@ export default function SurvivorFantasyApp() {
                           <img
                             src={contestants.find(c => c.id === myFinalPick.contestantId)?.image}
                             alt=""
-                            className="w-24 h-24 rounded-lg object-cover border-4 border-purple-500"
+                            className="w-24 h-24 rounded-lg object-cover object-top border-4 border-purple-500"
                           />
                           <div>
                             <p className="text-white font-bold text-2xl">
@@ -2450,7 +2450,7 @@ export default function SurvivorFantasyApp() {
                             <img
                               src={contestants.find(c => c.id === myFinalPick.contestantId)?.image}
                               alt=""
-                              className="w-16 h-16 rounded-lg object-cover border-2 border-purple-500"
+                              className="w-16 h-16 rounded-lg object-cover object-top border-2 border-purple-500"
                             />
                             <div>
                               <p className="text-white font-bold text-lg">
@@ -2485,7 +2485,7 @@ export default function SurvivorFantasyApp() {
                             <img
                               src={contestant.image}
                               alt={contestant.name}
-                              className="w-full h-40 object-cover rounded-lg mb-3"
+                              className="w-full h-40 object-cover object-top rounded-lg mb-3"
                             />
                             <h3 className="text-white font-bold text-lg">{contestant.name}</h3>
                             <p className="text-purple-300 text-sm mb-2">{contestant.tribe} Tribe</p>
@@ -3054,7 +3054,7 @@ export default function SurvivorFantasyApp() {
                           <img
                             src={contestant.image}
                             alt={contestant.name}
-                            className="w-full h-40 object-cover rounded-lg mb-3"
+                            className="w-full h-40 object-cover object-top rounded-lg mb-3"
                             onError={(e) => { e.target.src = 'https://via.placeholder.com/150?text=No+Image'; }}
                           />
                           <h5 className="text-white font-bold">{contestant.name}</h5>
@@ -4426,7 +4426,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 <img 
                   src={contestant.image} 
                   alt={contestant.name}
-                  className="w-full h-32 object-cover rounded-lg mb-3"
+                  className="w-full h-32 object-cover object-top rounded-lg mb-3"
                 />
                 <h3 className="text-white font-bold">{contestant.name}</h3>
                 <p className="text-amber-300 text-sm mb-2">{contestant.tribe}</p>
@@ -4918,7 +4918,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                       <img
                         src={newContestantForm.image}
                         alt="Preview"
-                        className="w-10 h-10 rounded-full object-cover"
+                        className="w-10 h-10 rounded-full object-cover object-top"
                         onError={(e) => { e.target.src = 'https://via.placeholder.com/40?text=?'; }}
                       />
                       <span className="text-green-400">Image loaded</span>
@@ -5011,7 +5011,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                           <img
                             src={document.getElementById(`image-${contestant.id}`)?.value || contestant.image || 'https://via.placeholder.com/50?text=?'}
                             alt=""
-                            className="w-12 h-12 rounded-full object-cover"
+                            className="w-12 h-12 rounded-full object-cover object-top"
                             onError={(e) => { e.target.src = 'https://via.placeholder.com/50?text=?'; }}
                           />
                           <input
@@ -5099,7 +5099,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                           <img
                             src={contestant.image || 'https://via.placeholder.com/50?text=?'}
                             alt=""
-                            className="w-12 h-12 rounded-full object-cover border-2 border-green-500"
+                            className="w-12 h-12 rounded-full object-cover object-top border-2 border-green-500"
                             onError={(e) => { e.target.src = 'https://via.placeholder.com/50?text=?'; }}
                           />
                           <div>
