@@ -229,6 +229,82 @@ export const backup = {
   }
 };
 
+// Advantage API wrapper for atomic operations (prevents race conditions)
+export const advantageApi = {
+  async purchase(playerId, advantage, leagueId) {
+    try {
+      const response = await fetch(`${API_BASE}/advantage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'purchase',
+          playerId,
+          advantageId: advantage.id,
+          advantageName: advantage.name,
+          advantageDescription: advantage.description,
+          advantageType: advantage.type,
+          advantageCost: advantage.cost,
+          leagueId
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return { success: false, error: data.error, message: data.message };
+      }
+      return { success: true, advantage: data.advantage, message: data.message };
+    } catch (error) {
+      console.error('Advantage purchase error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async queueForWeek(playerAdvantageId, weekNumber, targetPlayerId, leagueId) {
+    try {
+      const response = await fetch(`${API_BASE}/advantage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'queueForWeek',
+          advantageId: playerAdvantageId,
+          weekNumber,
+          targetPlayerId,
+          leagueId
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return { success: false, error: data.error };
+      }
+      return { success: true, message: data.message };
+    } catch (error) {
+      console.error('Advantage queue error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async cancelQueue(playerAdvantageId, leagueId) {
+    try {
+      const response = await fetch(`${API_BASE}/advantage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'cancelQueue',
+          advantageId: playerAdvantageId,
+          leagueId
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return { success: false, error: data.error };
+      }
+      return { success: true, message: data.message };
+    } catch (error) {
+      console.error('Advantage cancel error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  }
+};
+
 export const storage = {
   async get(key) {
     try {

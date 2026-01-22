@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, Key, Download, Database, RotateCcw } from 'lucide-react';
-import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS } from './db.js';
+import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi } from './db.js';
 
 // Survivor 50 Default Cast (24 returning players)
 const DEFAULT_CAST = [
@@ -100,12 +100,14 @@ const SURVIVOR_WORDS = [
 // Default Advantages Available for Purchase
 // SCARCITY RULE: Only ONE of each advantage can exist in the game at a time
 // Once purchased, no one else can buy it. Once PLAYED, it returns to the shop.
+// Simplified Weekly Advantage System
+// All advantages are queued for a specific week and resolve when scores are released
 const DEFAULT_ADVANTAGES = [
-  { id: 'extra-vote', name: 'Extra Vote', description: 'Cast an additional vote for another player\'s Question of the Week answer', cost: 15, type: 'qotw' },
-  { id: 'vote-steal', name: 'Vote Steal', description: 'Steal a vote from another player (prevents them from voting) and auto-apply it to yourself', cost: 20, type: 'qotw' },
-  { id: 'double-trouble', name: 'Double Trouble', description: 'Double ALL your points for the week (questionnaire, picks, QOTW) when scores are released', cost: 25, type: 'multiplier' },
-  { id: 'point-steal', name: 'Point Steal', description: 'Steal 5 points from another player (they lose 5, you gain 5)', cost: 30, type: 'steal' },
-  { id: 'knowledge-is-power', name: 'Knowledge is Power', description: 'Steal another player\'s advantage (if they have none, the advantage is wasted)', cost: 35, type: 'steal' }
+  { id: 'extra-vote', name: 'Extra Vote', description: 'Your QOTW answer gets +1 bonus vote for the selected week', cost: 15, type: 'qotw', needsTarget: false },
+  { id: 'vote-steal', name: 'Vote Steal', description: 'Steal 1 vote from a target player\'s QOTW answer for the selected week', cost: 20, type: 'qotw', needsTarget: true },
+  { id: 'double-trouble', name: 'Double Trouble', description: 'Double ALL your points earned for the selected week', cost: 25, type: 'multiplier', needsTarget: false },
+  { id: 'point-steal', name: 'Point Steal', description: 'Steal 5 points from a target player when the week\'s scores are released', cost: 30, type: 'steal', needsTarget: true },
+  { id: 'advantage-block', name: 'Advantage Block', description: 'Cancel any advantage played against you for the selected week', cost: 35, type: 'defensive', needsTarget: false }
 ];
 
 /**
@@ -1168,401 +1170,162 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
-    // Check global scarcity - only one of each can exist at a time
+    // Quick client-side check (server will do atomic check)
     if (!isAdvantageAvailable(advantage.id)) {
       alert('This advantage has already been purchased by another player!');
       return;
     }
 
-    const newPlayerAdvantage = {
-      id: Date.now(),
-      playerId: currentUser.id,
-      advantageId: advantage.id,
-      name: advantage.name,
-      description: advantage.description,
-      type: advantage.type,
-      purchasedAt: new Date().toISOString(),
-      used: false,
-      activated: false, // For tracking if effect should apply
-      targetPlayerId: null, // For vote steal, knowledge is power
-      linkedQuestionnaireId: null // For tracking which questionnaire the effect applies to
-    };
-
-    const updated = [...playerAdvantages, newPlayerAdvantage];
-    setPlayerAdvantages(updated);
-    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
-
-    // Skip point deduction and notifications for guest mode
-    if (!isGuestMode()) {
-      // Deduct points
-      await updatePlayerScore(currentUser.id, -advantage.cost, `Purchased: ${advantage.name}`, 'advantage');
-
-      // Send notification showing who purchased
-      await addNotification({
-        type: 'advantage_purchased',
-        message: `${currentUser.name} purchased ${advantage.name}! It's no longer available in the shop.`,
-        targetPlayerId: null // Broadcast to all
-      });
+    if (isGuestMode()) {
+      // Demo mode - just update local state
+      const newPlayerAdvantage = {
+        id: Date.now(),
+        playerId: currentUser.id,
+        advantageId: advantage.id,
+        name: advantage.name,
+        description: advantage.description,
+        type: advantage.type,
+        cost: advantage.cost,
+        purchasedAt: new Date().toISOString(),
+        used: false,
+        queuedForWeek: null,
+        targetPlayerId: null
+      };
+      setPlayerAdvantages([...playerAdvantages, newPlayerAdvantage]);
+      alert(`Successfully purchased ${advantage.name}! (Demo mode - not saved)`);
+      return;
     }
 
-    alert(isGuestMode() ? `Successfully purchased ${advantage.name}! (Demo mode - not saved)` : `Successfully purchased ${advantage.name}!`);
+    // Use atomic API to prevent race conditions
+    const result = await advantageApi.purchase(currentUser.id, advantage, currentLeagueId);
+
+    if (!result.success) {
+      if (result.error === 'ALREADY_PURCHASED') {
+        alert('This advantage was just purchased by another player!');
+      } else {
+        alert(result.message || 'Failed to purchase advantage');
+      }
+      return;
+    }
+
+    // Update local state with the server-created advantage
+    setPlayerAdvantages([...playerAdvantages, result.advantage]);
+
+    // Deduct points
+    await updatePlayerScore(currentUser.id, -advantage.cost, `Purchased: ${advantage.name}`, 'advantage');
+
+    // Send notification
+    await addNotification({
+      type: 'advantage_purchased',
+      message: `${currentUser.name} purchased ${advantage.name}! It's no longer available in the shop.`,
+      targetPlayerId: null
+    });
+
+    alert(result.message);
   };
 
-  const useAdvantage = async (playerAdvantageId, targetData = null) => {
+  // Queue an advantage for a specific week
+  const queueAdvantageForWeek = async (playerAdvantageId, weekNumber, targetPlayerId = null) => {
     const advantage = playerAdvantages.find(a => a.id === playerAdvantageId);
-    if (!advantage || advantage.used) {
+    if (!advantage) {
+      alert('Advantage not found');
+      return;
+    }
+
+    if (advantage.used) {
       alert('This advantage has already been used!');
       return;
     }
 
-    // Mark as used and store any target data
+    if (advantage.queuedForWeek) {
+      alert('This advantage is already queued for a week. Cancel it first to change.');
+      return;
+    }
+
+    // Check if advantage needs a target
+    const advDef = DEFAULT_ADVANTAGES.find(a => a.id === advantage.advantageId);
+    if (advDef?.needsTarget && !targetPlayerId) {
+      alert('This advantage requires you to select a target player.');
+      return;
+    }
+
+    if (isGuestMode()) {
+      // Demo mode - just update local state
+      const updated = playerAdvantages.map(a =>
+        a.id === playerAdvantageId
+          ? { ...a, queuedForWeek: weekNumber, targetPlayerId, queuedAt: new Date().toISOString() }
+          : a
+      );
+      setPlayerAdvantages(updated);
+      alert(`Advantage queued for Week ${weekNumber}! (Demo mode - not saved)`);
+      return;
+    }
+
+    const result = await advantageApi.queueForWeek(playerAdvantageId, weekNumber, targetPlayerId, currentLeagueId);
+
+    if (!result.success) {
+      alert(result.error || 'Failed to queue advantage');
+      return;
+    }
+
+    // Update local state
     const updated = playerAdvantages.map(a =>
       a.id === playerAdvantageId
-        ? {
-            ...a,
-            used: true,
-            usedAt: new Date().toISOString(),
-            activated: true,
-            targetPlayerId: targetData?.targetPlayerId || null,
-            linkedQuestionnaireId: targetData?.questionnaireId || null
-          }
+        ? { ...a, queuedForWeek: weekNumber, targetPlayerId, queuedAt: new Date().toISOString() }
         : a
     );
     setPlayerAdvantages(updated);
-    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
-    // Skip notifications for guest mode
-    if (!isGuestMode()) {
-      // Send anonymous notification that advantage was played and returned to game
-      await addNotification({
-        type: 'advantage_played',
-        message: `An advantage has been played and returned to the game!`,
-        targetPlayerId: null // Broadcast to all
-      });
-
-      // Add specific notification if there's a target player (for Vote Steal, Knowledge is Power)
-      if (targetData?.targetPlayerId && targetData?.notifyTarget) {
-        const targetPlayer = players.find(p => p.id === targetData.targetPlayerId);
-        await addNotification({
-          type: 'advantage_used_on_you',
-          message: targetData.targetMessage || `An advantage was used targeting you!`,
-          targetPlayerId: targetData.targetPlayerId
-        });
-      }
-    }
-
-    return true;
-  };
-
-  // Execute Knowledge is Power - steal advantage from target
-  const executeKnowledgeIsPower = async (playerAdvantageId, targetPlayerId) => {
-    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
-    if (!myAdvantage || myAdvantage.used) {
-      alert('This advantage has already been used!');
-      return;
-    }
-
-    // Find target's unused advantage
-    const targetAdvantage = playerAdvantages.find(
-      a => a.playerId === targetPlayerId && !a.used
-    );
-
-    const targetPlayer = players.find(p => p.id === targetPlayerId);
-
-    if (targetAdvantage) {
-      // Steal the advantage - transfer ownership
-      const updated = playerAdvantages.map(a => {
-        if (a.id === myAdvantage.id) {
-          // Mark Knowledge is Power as used
-          return { ...a, used: true, usedAt: new Date().toISOString(), activated: true, targetPlayerId };
-        }
-        if (a.id === targetAdvantage.id) {
-          // Transfer to current user
-          return { ...a, playerId: currentUser.id, stolenFrom: targetPlayerId, stolenAt: new Date().toISOString() };
-        }
-        return a;
-      });
-      setPlayerAdvantages(updated);
-      await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
-
-      // Skip notifications for guest mode
-      if (!isGuestMode()) {
-        // Notify the target that their advantage was stolen
-        await addNotification({
-          type: 'advantage_stolen',
-          message: `Your ${targetAdvantage.name} was stolen by ${currentUser.name} using Knowledge is Power!`,
-          targetPlayerId: targetPlayerId
-        });
-
-        // Public broadcast showing who played it
-        await addNotification({
-          type: 'advantage_played',
-          message: `${currentUser.name} played Knowledge is Power and stole an advantage from ${targetPlayer?.name}! Knowledge is Power is now back in the shop.`,
-          targetPlayerId: null
-        });
-      }
-
-      alert(isGuestMode()
-        ? `Success! You stole ${targetAdvantage.name} from ${targetPlayer?.name || 'another player'}! (Demo mode - not saved)`
-        : `Success! You stole ${targetAdvantage.name} from ${targetPlayer?.name || 'another player'}!`);
-    } else {
-      // Target has no advantage - wasted
-      const updated = playerAdvantages.map(a => {
-        if (a.id === myAdvantage.id) {
-          return { ...a, used: true, usedAt: new Date().toISOString(), activated: true, targetPlayerId, wasted: true };
-        }
-        return a;
-      });
-      setPlayerAdvantages(updated);
-      await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
-
-      // Skip notifications for guest mode
-      if (!isGuestMode()) {
-        // Public broadcast showing who played it (but it was wasted)
-        await addNotification({
-          type: 'advantage_played',
-          message: `${currentUser.name} played Knowledge is Power on ${targetPlayer?.name}, but they had no advantage! Knowledge is Power is now back in the shop.`,
-          targetPlayerId: null
-        });
-      }
-
-      alert(isGuestMode()
-        ? `${targetPlayer?.name || 'That player'} had no advantage to steal. Knowledge is Power was wasted. (Demo mode - not saved)`
-        : `${targetPlayer?.name || 'That player'} had no advantage to steal. Knowledge is Power was wasted and returned to the game.`);
-    }
-  };
-
-  // Execute Vote Steal - block target from voting and auto-vote for self
-  const executeVoteSteal = async (playerAdvantageId, targetPlayerId, questionnaireId) => {
-    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
-    if (!myAdvantage || myAdvantage.used) {
-      alert('This advantage has already been used!');
-      return;
-    }
-
-    const questionnaire = questionnaires.find(q => q.id === questionnaireId);
-    const episodeNum = questionnaire?.episodeNumber || '?';
-
-    // Mark advantage as used with target info
-    const updated = playerAdvantages.map(a => {
-      if (a.id === myAdvantage.id) {
-        return {
-          ...a,
-          used: true,
-          usedAt: new Date().toISOString(),
-          activated: true,
-          targetPlayerId,
-          linkedQuestionnaireId: questionnaireId,
-          linkedEpisode: episodeNum
-        };
-      }
-      return a;
+    // Send notification
+    await addNotification({
+      type: 'advantage_queued',
+      message: `An advantage has been queued for Week ${weekNumber}!`,
+      targetPlayerId: null
     });
-    setPlayerAdvantages(updated);
-    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
-    // Check if target already voted and remove their vote
-    const targetExistingVote = qotWVotes.find(v =>
-      v.questionnaireId === questionnaireId &&
-      v.voterId === targetPlayerId
-    );
+    alert(result.message);
+  };
 
-    let updatedVotes = [...qotWVotes];
-    let voteWasRemoved = false;
+  // Cancel a queued advantage
+  const cancelQueuedAdvantage = async (playerAdvantageId) => {
+    const advantage = playerAdvantages.find(a => a.id === playerAdvantageId);
+    if (!advantage || !advantage.queuedForWeek) {
+      alert('This advantage is not queued');
+      return;
+    }
 
-    if (targetExistingVote) {
-      // Remove the target's existing vote
-      updatedVotes = updatedVotes.filter(v =>
-        !(v.questionnaireId === questionnaireId && v.voterId === targetPlayerId)
+    if (advantage.used) {
+      alert('Cannot cancel - advantage has already been used');
+      return;
+    }
+
+    if (isGuestMode()) {
+      const updated = playerAdvantages.map(a =>
+        a.id === playerAdvantageId
+          ? { ...a, queuedForWeek: null, targetPlayerId: null, queuedAt: null }
+          : a
       );
-      voteWasRemoved = true;
-    }
-
-    // Find current user's submission for this questionnaire to get their QOTW answer ID
-    const mySubmission = submissions.find(s => s.questionnaireId === questionnaireId && s.playerId === currentUser.id);
-
-    if (mySubmission && questionnaire?.qotw?.id) {
-      // Auto-add a "stolen vote" for the current user
-      const stolenVote = {
-        questionnaireId: questionnaireId,
-        voterId: `stolen-from-${targetPlayerId}`,
-        answerId: `${currentUser.id}-${questionnaire.qotw.id}`,
-        isStolen: true,
-        stolenFrom: targetPlayerId,
-        stolenBy: currentUser.id
-      };
-      updatedVotes.push(stolenVote);
-    }
-
-    setQotWVotes(updatedVotes);
-    await guestSafeLeagueSet('qotWVotes', JSON.stringify(updatedVotes));
-
-    const targetPlayer = players.find(p => p.id === targetPlayerId);
-
-    // Skip notifications for guest mode
-    if (!isGuestMode()) {
-      // Notify target that their vote was stolen
-      await addNotification({
-        type: 'vote_stolen',
-        message: `Your QOTW vote was stolen by ${currentUser.name}! You cannot vote on Episode ${episodeNum}'s Question of the Week.${voteWasRemoved ? ' Your existing vote has been removed.' : ''}`,
-        targetPlayerId: targetPlayerId
-      });
-
-      // Public broadcast showing who played it
-      await addNotification({
-        type: 'advantage_played',
-        message: `${currentUser.name} played Vote Steal for Episode ${episodeNum}! The advantage is now back in the shop.`,
-        targetPlayerId: null
-      });
-    }
-
-    const removedMsg = voteWasRemoved ? ' Their existing vote has been removed.' : '';
-    alert(isGuestMode()
-      ? `Vote Steal activated for Episode ${episodeNum}! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you!${removedMsg} (Demo mode - not saved)`
-      : `Vote Steal activated for Episode ${episodeNum}! ${targetPlayer?.name || 'That player'} can no longer vote, and a vote has been added for you!${removedMsg}`);
-  };
-
-  // Activate Extra Vote - allows additional QOTW vote
-  const activateExtraVote = async (playerAdvantageId, questionnaireId) => {
-    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
-    if (!myAdvantage || myAdvantage.used) {
-      alert('This advantage has already been used!');
+      setPlayerAdvantages(updated);
+      alert('Advantage queue cancelled! (Demo mode)');
       return;
     }
 
-    const questionnaire = questionnaires.find(q => q.id === questionnaireId);
-    const episodeNum = questionnaire?.episodeNumber || '?';
+    const result = await advantageApi.cancelQueue(playerAdvantageId, currentLeagueId);
 
-    // Mark advantage as used
-    const updated = playerAdvantages.map(a => {
-      if (a.id === myAdvantage.id) {
-        return {
-          ...a,
-          used: true,
-          usedAt: new Date().toISOString(),
-          activated: true,
-          linkedQuestionnaireId: questionnaireId,
-          linkedEpisode: episodeNum
-        };
-      }
-      return a;
-    });
-    setPlayerAdvantages(updated);
-    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
-
-    // Skip notifications for guest mode
-    if (!isGuestMode()) {
-      // Public broadcast showing who played it
-      await addNotification({
-        type: 'advantage_played',
-        message: `${currentUser.name} played Extra Vote for Episode ${episodeNum}! The advantage is now back in the shop.`,
-        targetPlayerId: null
-      });
-    }
-
-    alert(isGuestMode()
-      ? `Extra Vote activated for Episode ${episodeNum}! You can now cast an additional vote in QOTW voting. (Demo mode - not saved)`
-      : `Extra Vote activated for Episode ${episodeNum}! You can now cast an additional vote in QOTW voting.`);
-    return true;
-  };
-
-  // Activate Double Trouble (effect applies when scores are released)
-  const activateWeeklyAdvantage = async (playerAdvantageId, questionnaireId) => {
-    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
-    if (!myAdvantage || myAdvantage.used) {
-      alert('This advantage has already been used!');
+    if (!result.success) {
+      alert(result.error || 'Failed to cancel queue');
       return;
     }
 
-    const questionnaire = questionnaires.find(q => q.id === questionnaireId);
-    const episodeNum = questionnaire?.episodeNumber || '?';
-
-    // Mark advantage as used and link to questionnaire
-    const updated = playerAdvantages.map(a => {
-      if (a.id === myAdvantage.id) {
-        return {
-          ...a,
-          used: true,
-          usedAt: new Date().toISOString(),
-          activated: true,
-          linkedQuestionnaireId: questionnaireId,
-          linkedEpisode: episodeNum
-        };
-      }
-      return a;
-    });
+    // Update local state
+    const updated = playerAdvantages.map(a =>
+      a.id === playerAdvantageId
+        ? { ...a, queuedForWeek: null, targetPlayerId: null, queuedAt: null }
+        : a
+    );
     setPlayerAdvantages(updated);
-    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
 
-    const advantageName = myAdvantage.name;
-
-    // Skip notifications for guest mode
-    if (!isGuestMode()) {
-      // Public broadcast showing who played it
-      await addNotification({
-        type: 'advantage_played',
-        message: `${currentUser.name} played ${advantageName} for Episode ${episodeNum}! The advantage is now back in the shop.`,
-        targetPlayerId: null
-      });
-    }
-
-    alert(isGuestMode()
-      ? `${advantageName} activated for Episode ${episodeNum}! The effect will apply when scores are released. (Demo mode - not saved)`
-      : `${advantageName} activated for Episode ${episodeNum}! The effect will apply when scores are released.`);
-    return true;
-  };
-
-  // Execute Point Steal - steal 5 points from target player
-  const executePointSteal = async (playerAdvantageId, targetPlayerId) => {
-    const myAdvantage = playerAdvantages.find(a => a.id === playerAdvantageId);
-    if (!myAdvantage || myAdvantage.used) {
-      alert('This advantage has already been used!');
-      return;
-    }
-
-    const targetPlayer = players.find(p => p.id === targetPlayerId);
-
-    // Mark advantage as used
-    const updated = playerAdvantages.map(a => {
-      if (a.id === myAdvantage.id) {
-        return {
-          ...a,
-          used: true,
-          usedAt: new Date().toISOString(),
-          activated: true,
-          targetPlayerId
-        };
-      }
-      return a;
-    });
-    setPlayerAdvantages(updated);
-    await guestSafeLeagueSet('playerAdvantages', JSON.stringify(updated));
-
-    // Transfer 5 points
-    if (!isGuestMode()) {
-      // Deduct from target
-      await updatePlayerScore(targetPlayerId, -5, `Points stolen by ${currentUser.name}`, 'advantage');
-      // Add to current user
-      await updatePlayerScore(currentUser.id, 5, `Point Steal from ${targetPlayer?.name}`, 'advantage');
-
-      // Notify target
-      await addNotification({
-        type: 'points_stolen',
-        message: `${currentUser.name} used Point Steal on you! You lost 5 points.`,
-        targetPlayerId: targetPlayerId
-      });
-
-      // Public broadcast
-      await addNotification({
-        type: 'advantage_played',
-        message: `${currentUser.name} played Point Steal and stole 5 points from ${targetPlayer?.name}! The advantage is now back in the shop.`,
-        targetPlayerId: null
-      });
-    }
-
-    alert(isGuestMode()
-      ? `Point Steal activated! You stole 5 points from ${targetPlayer?.name}! (Demo mode - not saved)`
-      : `Point Steal activated! You stole 5 points from ${targetPlayer?.name}!`);
+    alert('Advantage queue cancelled!');
   };
 
   // ============ WORDLE CHALLENGE FUNCTIONS ============
@@ -3248,17 +3011,52 @@ export default function SurvivorFantasyApp() {
 
         {currentView === 'advantages' && (
           <div className="space-y-6">
-            {/* Advantage Play Modal */}
+            {/* Simplified Weekly Advantage Play Modal */}
             {advantageModal.show && advantageModal.advantage && (
               <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
                 <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-lg border-2 border-amber-600 max-w-md w-full">
                   <h3 className="text-xl font-bold text-amber-400 mb-4">Play {advantageModal.advantage.name}</h3>
+                  <p className="text-amber-200 mb-4">{advantageModal.advantage.description}</p>
 
-                  {/* Knowledge is Power - Select target player */}
-                  {advantageModal.advantage.advantageId === 'knowledge-is-power' && (
-                    <div>
-                      <p className="text-amber-200 mb-4">Select a player to steal their advantage from. If they have no advantage, this will be wasted!</p>
-                      <div className="space-y-2 mb-4">
+                  {/* Week Selection */}
+                  <div className="mb-4">
+                    <label className="block text-amber-300 mb-2">Select Week to Apply:</label>
+                    <select
+                      value={advantageModal.selectedWeek || ''}
+                      onChange={(e) => setAdvantageModal({ ...advantageModal, selectedWeek: parseInt(e.target.value) })}
+                      className="w-full p-3 rounded-lg bg-gray-800 border-2 border-amber-600 text-white"
+                    >
+                      <option value="">-- Choose a Week --</option>
+                      {questionnaires.length > 0 ? (
+                        questionnaires
+                          .filter(q => !q.scoresReleased)
+                          .map(q => (
+                            <option key={q.id} value={q.episodeNumber}>
+                              Week {q.episodeNumber} {q.id === activeQuestionnaire?.id ? '(Current)' : ''}
+                            </option>
+                          ))
+                      ) : (
+                        <option value="1">Week 1</option>
+                      )}
+                      {/* Also offer future weeks */}
+                      {[...Array(3)].map((_, i) => {
+                        const futureWeek = (questionnaires.length > 0
+                          ? Math.max(...questionnaires.map(q => q.episodeNumber))
+                          : 0) + i + 1;
+                        return (
+                          <option key={`future-${futureWeek}`} value={futureWeek}>
+                            Week {futureWeek} (Future)
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {/* Target Player Selection (if needed) */}
+                  {DEFAULT_ADVANTAGES.find(a => a.id === advantageModal.advantage.advantageId)?.needsTarget && (
+                    <div className="mb-4">
+                      <label className="block text-amber-300 mb-2">Select Target Player:</label>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
                         {leaguePlayers.filter(p => p.id !== currentUser.id).map(player => (
                           <button
                             key={player.id}
@@ -3273,210 +3071,37 @@ export default function SurvivorFantasyApp() {
                           </button>
                         ))}
                       </div>
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); setAdvantageTarget(null); }}
-                          className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (advantageTarget) {
-                              executeKnowledgeIsPower(advantageModal.advantage.id, advantageTarget);
-                              setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
-                              setAdvantageTarget(null);
-                            }
-                          }}
-                          disabled={!advantageTarget}
-                          className="flex-1 py-2 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded font-semibold hover:from-amber-500 hover:to-orange-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Steal Advantage
-                        </button>
-                      </div>
                     </div>
                   )}
 
-                  {/* Vote Steal - Select target player */}
-                  {advantageModal.advantage.advantageId === 'vote-steal' && (
-                    <div>
-                      {activeQuestionnaire && (
-                        <p className="text-cyan-400 text-sm mb-2">Playing for: Episode {activeQuestionnaire.episodeNumber}</p>
-                      )}
-                      <p className="text-amber-200 mb-4">Select a player to steal their QOTW vote. They will be blocked from voting, and a vote will automatically be added for you!</p>
-                      {!activeQuestionnaire?.qotwVotingOpen ? (
-                        <div>
-                          <p className="text-red-400 mb-4">QOTW voting is not currently open. Wait until voting opens to use this advantage.</p>
-                          <button
-                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); setAdvantageTarget(null); }}
-                            className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                          >
-                            Close
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="space-y-2 mb-4">
-                            {leaguePlayers.filter(p => p.id !== currentUser.id).map(player => (
-                              <button
-                                key={player.id}
-                                onClick={() => setAdvantageTarget(player.id)}
-                                className={`w-full p-3 rounded-lg border-2 transition ${
-                                  advantageTarget === player.id
-                                    ? 'border-amber-500 bg-amber-900/40 text-white'
-                                    : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:border-amber-600'
-                                }`}
-                              >
-                                {player.name}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex gap-3">
-                            <button
-                              onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); setAdvantageTarget(null); }}
-                              className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={() => {
-                                if (advantageTarget && activeQuestionnaire) {
-                                  executeVoteSteal(advantageModal.advantage.id, advantageTarget, activeQuestionnaire.id);
-                                  setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
-                                  setAdvantageTarget(null);
-                                }
-                              }}
-                              disabled={!advantageTarget}
-                              className="flex-1 py-2 bg-gradient-to-r from-red-600 to-pink-600 text-white rounded font-semibold hover:from-red-500 hover:to-pink-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              Steal Vote
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Extra Vote - Activate for QOTW voting */}
-                  {advantageModal.advantage.advantageId === 'extra-vote' && (
-                    <div>
-                      {activeQuestionnaire && (
-                        <p className="text-cyan-400 text-sm mb-2">Playing for: Episode {activeQuestionnaire.episodeNumber}</p>
-                      )}
-                      <p className="text-amber-200 mb-4">Activate Extra Vote to cast an additional vote in Question of the Week voting.</p>
-                      {!activeQuestionnaire?.qotwVotingOpen ? (
-                        <div>
-                          <p className="text-red-400 mb-4">QOTW voting is not currently open. Wait until voting opens to use this advantage.</p>
-                          <button
-                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
-                            className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                          >
-                            Close
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
-                            className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={async () => {
-                              await activateExtraVote(advantageModal.advantage.id, activeQuestionnaire.id);
-                              setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
-                            }}
-                            className="flex-1 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition"
-                          >
-                            Activate Extra Vote
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Double Trouble - Activate for current week */}
-                  {advantageModal.advantage.advantageId === 'double-trouble' && (
-                    <div>
-                      {activeQuestionnaire && (
-                        <p className="text-cyan-400 text-sm mb-2">Playing for: Episode {activeQuestionnaire.episodeNumber}</p>
-                      )}
-                      <p className="text-amber-200 mb-4">Activate Double Trouble to double ALL your points for this episode when scores are released (questionnaire, picks, and QOTW).</p>
-                      {!activeQuestionnaire ? (
-                        <div>
-                          <p className="text-red-400 mb-4">No active questionnaire. Wait for a new questionnaire to use this advantage.</p>
-                          <button
-                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
-                            className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                          >
-                            Close
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); }}
-                            className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={async () => {
-                              await activateWeeklyAdvantage(advantageModal.advantage.id, activeQuestionnaire.id);
-                              setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
-                            }}
-                            className="flex-1 py-2 bg-gradient-to-r from-yellow-600 to-amber-600 text-white rounded font-semibold hover:from-yellow-500 hover:to-amber-500 transition"
-                          >
-                            Activate Double Trouble
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Point Steal - Select target player */}
-                  {advantageModal.advantage.advantageId === 'point-steal' && (
-                    <div>
-                      <p className="text-amber-200 mb-4">Select a player to steal 5 points from. They will lose 5 points, and you will gain 5 points!</p>
-                      <div className="space-y-2 mb-4">
-                        {leaguePlayers.filter(p => p.id !== currentUser.id).map(player => (
-                          <button
-                            key={player.id}
-                            onClick={() => setAdvantageTarget(player.id)}
-                            className={`w-full p-3 rounded-lg border-2 transition ${
-                              advantageTarget === player.id
-                                ? 'border-amber-500 bg-amber-900/40 text-white'
-                                : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:border-amber-600'
-                            }`}
-                          >
-                            {player.name}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => { setAdvantageModal({ show: false, advantage: null, step: 'confirm' }); setAdvantageTarget(null); }}
-                          className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (advantageTarget) {
-                              executePointSteal(advantageModal.advantage.id, advantageTarget);
-                              setAdvantageModal({ show: false, advantage: null, step: 'confirm' });
-                              setAdvantageTarget(null);
-                            }
-                          }}
-                          disabled={!advantageTarget}
-                          className="flex-1 py-2 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded font-semibold hover:from-red-500 hover:to-orange-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          Steal 5 Points
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => { setAdvantageModal({ show: false, advantage: null, selectedWeek: null }); setAdvantageTarget(null); }}
+                      className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        const advDef = DEFAULT_ADVANTAGES.find(a => a.id === advantageModal.advantage.advantageId);
+                        if (!advantageModal.selectedWeek) {
+                          alert('Please select a week');
+                          return;
+                        }
+                        if (advDef?.needsTarget && !advantageTarget) {
+                          alert('Please select a target player');
+                          return;
+                        }
+                        queueAdvantageForWeek(advantageModal.advantage.id, advantageModal.selectedWeek, advantageTarget);
+                        setAdvantageModal({ show: false, advantage: null, selectedWeek: null });
+                        setAdvantageTarget(null);
+                      }}
+                      disabled={!advantageModal.selectedWeek || (DEFAULT_ADVANTAGES.find(a => a.id === advantageModal.advantage.advantageId)?.needsTarget && !advantageTarget)}
+                      className="flex-1 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Queue for Week {advantageModal.selectedWeek || '?'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -3488,55 +3113,104 @@ export default function SurvivorFantasyApp() {
                 Your Advantages
               </h2>
 
-              {myAdvantages.length === 0 && myUsedAdvantages.length === 0 ? (
-                <p className="text-amber-200 text-center py-8">
-                  You haven't purchased any advantages yet. Browse the shop below!
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {myAdvantages.length > 0 && (
-                    <div>
-                      <h3 className="text-lg text-green-400 font-semibold mb-3">Active Advantages (Ready to Play)</h3>
-                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {myAdvantages.map(adv => (
-                          <div key={adv.id} className="bg-gradient-to-br from-green-900/40 to-emerald-900/40 p-4 rounded-lg border-2 border-green-600">
-                            <h4 className="text-white font-bold text-lg">{adv.name}</h4>
-                            <p className="text-green-300 text-sm mb-3">{adv.description}</p>
-                            <p className="text-green-400 text-xs mb-3">
-                              Purchased: {new Date(adv.purchasedAt).toLocaleDateString()}
-                            </p>
-                            <button
-                              onClick={() => setAdvantageModal({ show: true, advantage: adv, step: 'confirm' })}
-                              className="w-full py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition flex items-center justify-center gap-2"
-                            >
-                              <Zap className="w-4 h-4" />
-                              Play Advantage
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+              {(() => {
+                const myActiveAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && !a.queuedForWeek);
+                const myQueuedAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && a.queuedForWeek);
+                const myUsedAdvs = playerAdvantages.filter(a => a.playerId === currentUser.id && a.used);
 
-                  {myUsedAdvantages.length > 0 && (
-                    <div>
-                      <h3 className="text-lg text-gray-400 font-semibold mb-3">Used Advantages</h3>
-                      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {myUsedAdvantages.map(adv => (
-                          <div key={adv.id} className="bg-gray-900/40 p-4 rounded-lg border border-gray-600 opacity-60">
-                            <h4 className="text-gray-300 font-bold">{adv.name}</h4>
-                            <p className="text-gray-500 text-sm">{adv.description}</p>
-                            <p className="text-gray-500 text-xs mt-2">
-                              Used: {new Date(adv.usedAt).toLocaleDateString()}
-                              {adv.wasted && <span className="text-red-400 ml-2">(Wasted)</span>}
-                            </p>
-                          </div>
-                        ))}
+                if (myActiveAdvantages.length === 0 && myQueuedAdvantages.length === 0 && myUsedAdvs.length === 0) {
+                  return (
+                    <p className="text-amber-200 text-center py-8">
+                      You haven't purchased any advantages yet. Browse the shop below!
+                    </p>
+                  );
+                }
+
+                return (
+                  <div className="space-y-6">
+                    {/* Active (Ready to Play) */}
+                    {myActiveAdvantages.length > 0 && (
+                      <div>
+                        <h3 className="text-lg text-green-400 font-semibold mb-3">Ready to Play</h3>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {myActiveAdvantages.map(adv => (
+                            <div key={adv.id} className="bg-gradient-to-br from-green-900/40 to-emerald-900/40 p-4 rounded-lg border-2 border-green-600">
+                              <h4 className="text-white font-bold text-lg">{adv.name}</h4>
+                              <p className="text-green-300 text-sm mb-3">{adv.description}</p>
+                              <p className="text-green-400 text-xs mb-3">
+                                Purchased: {new Date(adv.purchasedAt).toLocaleDateString()}
+                              </p>
+                              <button
+                                onClick={() => setAdvantageModal({ show: true, advantage: adv, selectedWeek: null })}
+                                className="w-full py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition flex items-center justify-center gap-2"
+                              >
+                                <Zap className="w-4 h-4" />
+                                Play for Week...
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+
+                    {/* Queued for a Week */}
+                    {myQueuedAdvantages.length > 0 && (
+                      <div>
+                        <h3 className="text-lg text-cyan-400 font-semibold mb-3">Queued Advantages</h3>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {myQueuedAdvantages.map(adv => {
+                            const targetPlayer = adv.targetPlayerId ? players.find(p => p.id === adv.targetPlayerId) : null;
+                            return (
+                              <div key={adv.id} className="bg-gradient-to-br from-cyan-900/40 to-blue-900/40 p-4 rounded-lg border-2 border-cyan-600">
+                                <h4 className="text-white font-bold text-lg">{adv.name}</h4>
+                                <p className="text-cyan-300 text-sm mb-2">{adv.description}</p>
+                                <p className="text-cyan-400 font-semibold mb-1">
+                                  📅 Queued for Week {adv.queuedForWeek}
+                                </p>
+                                {targetPlayer && (
+                                  <p className="text-cyan-300 text-sm mb-2">
+                                    🎯 Target: {targetPlayer.name}
+                                  </p>
+                                )}
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm('Cancel this queued advantage? It will return to your inventory.')) {
+                                      cancelQueuedAdvantage(adv.id);
+                                    }
+                                  }}
+                                  className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition flex items-center justify-center gap-2"
+                                >
+                                  <X className="w-4 h-4" />
+                                  Cancel Queue
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Used Advantages */}
+                    {myUsedAdvs.length > 0 && (
+                      <div>
+                        <h3 className="text-lg text-gray-400 font-semibold mb-3">Used Advantages</h3>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {myUsedAdvs.map(adv => (
+                            <div key={adv.id} className="bg-gray-900/40 p-4 rounded-lg border border-gray-600 opacity-60">
+                              <h4 className="text-gray-300 font-bold">{adv.name}</h4>
+                              <p className="text-gray-500 text-sm">{adv.description}</p>
+                              <p className="text-gray-500 text-xs mt-2">
+                                Used for Week {adv.queuedForWeek || '?'}
+                                {adv.resolvedAt && ` • Resolved: ${new Date(adv.resolvedAt).toLocaleDateString()}`}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Advantage Shop */}
@@ -3912,13 +3586,31 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     const winners = Object.keys(voteCounts).filter(k => voteCounts[k] === maxVotes);
     const winnerPlayerIds = winners.map(answerId => parseInt(answerId.split('-')[0]));
 
-    // Check for Double Trouble advantage
-    const doubleTroubleAdvantages = playerAdvantages.filter(
-      a => a.advantageId === 'double-trouble' &&
-           a.used &&
-           a.activated &&
-           a.linkedQuestionnaireId === scoringQ.id
+    // Get week number from questionnaire episode
+    const weekNumber = scoringQ.episodeNumber || 1;
+
+    // Find all advantages queued for this week
+    const queuedAdvantages = playerAdvantages.filter(
+      a => a.queuedForWeek === weekNumber && !a.used && !a.cancelled
     );
+
+    // First, identify all Advantage Blocks to determine which advantages to cancel
+    const advantageBlocks = queuedAdvantages.filter(a => a.advantageId === 'advantage-block');
+    const blockedPlayerIds = new Set(advantageBlocks.map(a => a.playerId));
+
+    // Cancel any advantages targeting blocked players
+    const activeAdvantages = queuedAdvantages.filter(a => {
+      if (a.advantageId === 'advantage-block') return true; // Blocks always work
+      if (a.targetPlayerId && blockedPlayerIds.has(a.targetPlayerId)) {
+        return false; // This advantage is blocked
+      }
+      return true;
+    });
+
+    // Mark cancelled advantages
+    const cancelledAdvantageIds = queuedAdvantages
+      .filter(a => !activeAdvantages.includes(a))
+      .map(a => a.id);
 
     const updatedSubmissions = submissions.map(s => {
       if (s.questionnaireId === scoringQ.id) {
@@ -3940,29 +3632,148 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     setSubmissions(updatedSubmissions);
     setQuestionnaires(updatedQuestionnaires);
 
-    // Apply Double Trouble effect - double the player's weekly points
-    for (const dtAdv of doubleTroubleAdvantages) {
-      const baseScore = newScores[dtAdv.playerId] || 0;
-      const qotwBonus = winnerPlayerIds.includes(dtAdv.playerId) ? 5 : 0;
-      const totalWeeklyPoints = baseScore + qotwBonus;
+    // Resolve all queued advantages for this week
+    let updatedPlayerAdvantages = [...playerAdvantages];
 
-      // Add the doubled amount as a bonus (so they get 2x total)
-      if (totalWeeklyPoints !== 0) {
-        await updatePlayerScore(
-          dtAdv.playerId,
-          totalWeeklyPoints, // Add same amount again to double it
-          `Double Trouble Bonus (${scoringQ.title})`,
-          'advantage'
-        );
+    for (const adv of activeAdvantages) {
+      const playerName = players.find(p => p.id === adv.playerId)?.name;
+      const targetName = adv.targetPlayerId ? players.find(p => p.id === adv.targetPlayerId)?.name : null;
 
-        const playerName = players.find(p => p.id === dtAdv.playerId)?.name;
+      switch (adv.advantageId) {
+        case 'extra-vote': {
+          // Extra Vote: Already applied during QOTW voting
+          // Just mark as resolved and notify
+          await addNotification({
+            type: 'advantage_resolved',
+            message: `${playerName}'s Extra Vote was applied for ${scoringQ.title}!`,
+            targetPlayerId: null
+          });
+          break;
+        }
+
+        case 'vote-steal': {
+          // Vote Steal: Already applied during QOTW voting
+          // Notify the effect
+          await addNotification({
+            type: 'advantage_resolved',
+            message: `${playerName}'s Vote Steal took a vote from ${targetName} for ${scoringQ.title}!`,
+            targetPlayerId: null
+          });
+          await addNotification({
+            type: 'vote_stolen',
+            message: `${playerName} stole your QOTW vote for ${scoringQ.title}!`,
+            targetPlayerId: adv.targetPlayerId
+          });
+          break;
+        }
+
+        case 'double-trouble': {
+          // Double Trouble: Double ALL weekly points
+          const baseScore = newScores[adv.playerId] || 0;
+          const qotwBonus = winnerPlayerIds.includes(adv.playerId) ? 5 : 0;
+          const totalWeeklyPoints = baseScore + qotwBonus;
+
+          if (totalWeeklyPoints !== 0) {
+            await updatePlayerScore(
+              adv.playerId,
+              totalWeeklyPoints, // Add same amount again to double it
+              `Double Trouble Bonus (${scoringQ.title})`,
+              'advantage'
+            );
+
+            await addNotification({
+              type: 'double_trouble_applied',
+              message: `${playerName} used Double Trouble and doubled their weekly points! (+${totalWeeklyPoints} bonus)`,
+              targetPlayerId: null
+            });
+          }
+          break;
+        }
+
+        case 'point-steal': {
+          // Point Steal: Transfer 5 points from target to player
+          await updatePlayerScore(
+            adv.targetPlayerId,
+            -5,
+            `Point Steal victim (${scoringQ.title})`,
+            'advantage'
+          );
+          await updatePlayerScore(
+            adv.playerId,
+            5,
+            `Point Steal (${scoringQ.title})`,
+            'advantage'
+          );
+
+          await addNotification({
+            type: 'point_steal_applied',
+            message: `${playerName} stole 5 points from ${targetName}!`,
+            targetPlayerId: null
+          });
+          await addNotification({
+            type: 'points_stolen',
+            message: `${playerName} stole 5 points from you using Point Steal!`,
+            targetPlayerId: adv.targetPlayerId
+          });
+          break;
+        }
+
+        case 'advantage-block': {
+          // Advantage Block: Defensive - just notify that it was active
+          await addNotification({
+            type: 'advantage_resolved',
+            message: `${playerName}'s Advantage Block was active for ${scoringQ.title}!`,
+            targetPlayerId: null
+          });
+          break;
+        }
+      }
+
+      // Mark advantage as used
+      const advIndex = updatedPlayerAdvantages.findIndex(a => a.id === adv.id);
+      if (advIndex !== -1) {
+        updatedPlayerAdvantages[advIndex] = {
+          ...updatedPlayerAdvantages[advIndex],
+          used: true,
+          resolvedAt: new Date().toISOString()
+        };
+      }
+    }
+
+    // Mark cancelled advantages (blocked by Advantage Block)
+    for (const cancelledId of cancelledAdvantageIds) {
+      const advIndex = updatedPlayerAdvantages.findIndex(a => a.id === cancelledId);
+      if (advIndex !== -1) {
+        const cancelledAdv = updatedPlayerAdvantages[advIndex];
+        const playerName = players.find(p => p.id === cancelledAdv.playerId)?.name;
+        const targetName = cancelledAdv.targetPlayerId ? players.find(p => p.id === cancelledAdv.targetPlayerId)?.name : null;
+
+        updatedPlayerAdvantages[advIndex] = {
+          ...updatedPlayerAdvantages[advIndex],
+          used: true,
+          cancelled: true,
+          resolvedAt: new Date().toISOString()
+        };
+
+        // Notify the blocked player
         await addNotification({
-          type: 'double_trouble_applied',
-          message: `${playerName} used Double Trouble and doubled their weekly points! (+${totalWeeklyPoints} bonus)`,
+          type: 'advantage_blocked',
+          message: `Your ${cancelledAdv.name} against ${targetName} was blocked by their Advantage Block!`,
+          targetPlayerId: cancelledAdv.playerId
+        });
+
+        // Notify everyone
+        await addNotification({
+          type: 'advantage_resolved',
+          message: `${playerName}'s ${cancelledAdv.name} was blocked by ${targetName}'s Advantage Block!`,
           targetPlayerId: null
         });
       }
     }
+
+    // Save updated advantages
+    await leagueStore.set('playerAdvantages', JSON.stringify(updatedPlayerAdvantages));
+    setPlayerAdvantages(updatedPlayerAdvantages)
 
     await addNotification({
       type: 'scores_released',
@@ -7371,19 +7182,20 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
     [0] || null : null;
 
   // Check if current user's vote was stolen for the VOTING questionnaire (not active)
+  // In weekly system: check if someone has vote-steal queued for this episode targeting current user
   const voteWasStolen = votingQuestionnaire && playerAdvantages?.some(
     a => a.advantageId === 'vote-steal' &&
-         a.used &&
-         a.linkedQuestionnaireId === votingQuestionnaire.id &&
+         a.queuedForWeek === votingQuestionnaire.episodeNumber &&
+         !a.cancelled &&
          a.targetPlayerId === currentUser.id
   );
 
   // Check if current user has an active Extra Vote for the VOTING questionnaire
+  // In weekly system: check if user has extra-vote queued for this episode
   const hasExtraVote = votingQuestionnaire && playerAdvantages?.some(
     a => a.advantageId === 'extra-vote' &&
-         a.used &&
-         a.activated &&
-         a.linkedQuestionnaireId === votingQuestionnaire.id &&
+         a.queuedForWeek === votingQuestionnaire.episodeNumber &&
+         !a.cancelled &&
          a.playerId === currentUser.id
   );
 

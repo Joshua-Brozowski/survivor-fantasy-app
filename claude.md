@@ -16,12 +16,13 @@ survivor-fantasy-app/
 ├── src/
 │   ├── app.jsx           # Main application component (all views & logic)
 │   ├── main.jsx          # React entry point
-│   └── db.js             # Storage API wrapper (storage, auth, backup)
+│   └── db.js             # Storage API wrapper (storage, auth, backup, advantageApi)
 ├── api/
 │   ├── storage/
 │   │   └── [key].js      # MongoDB serverless function (dynamic route)
 │   ├── auth.js           # Authentication API (password hashing with bcrypt)
-│   └── backup.js         # Backup/snapshot management API
+│   ├── backup.js         # Backup/snapshot management API
+│   └── advantage.js      # Advantage API (atomic purchases, queue system)
 ├── index.html            # HTML template
 ├── package.json          # Dependencies
 ├── vite.config.js        # Vite configuration
@@ -316,17 +317,22 @@ Compact status card at top of Admin Panel showing progress for current episode.
 
 ### 12. Advantages System
 
-**Scarcity Rule**: Only ONE of each advantage can exist in the game at a time. Once purchased, no one else can buy it. Once PLAYED, it returns to the shop for others to purchase.
+**Scarcity Rule**: Only ONE of each advantage can exist in the game at a time. Once purchased, no one else can buy it. Once USED (resolved at score release), it returns to the shop for others to purchase.
+
+**Weekly Queue System**: All advantages work the same way:
+1. **Purchase**: Buy from the shop (costs points, atomic server-side operation prevents race conditions)
+2. **Queue for Week**: Select which episode/week to use the advantage
+3. **Resolution**: Effects automatically resolve when admin releases scores for that week
 
 **Available Advantages**:
 
-| Advantage | Cost | Effect |
-|-----------|------|--------|
-| Extra Vote | 15 pts | Cast an additional vote in QOTW voting |
-| Vote Steal | 20 pts | Steal a player's vote (blocks them from voting, auto-votes for you) |
-| Double Trouble | 25 pts | Double ALL your weekly points when scores are released |
-| Point Steal | 30 pts | Steal 5 points from another player (they lose 5, you gain 5) - immediate effect |
-| Knowledge is Power | 35 pts | Steal another player's advantage (wasted if they have none) |
+| Advantage | Cost | Effect | Needs Target |
+|-----------|------|--------|--------------|
+| Extra Vote | 15 pts | Cast an additional vote in QOTW voting for the selected week | No |
+| Vote Steal | 20 pts | Steal 1 vote from a target player's QOTW answer for the selected week | Yes |
+| Double Trouble | 25 pts | Double ALL your points earned for the selected week | No |
+| Point Steal | 30 pts | Steal 5 points from a target player when the week's scores are released | Yes |
+| Advantage Block | 35 pts | Cancel any advantage played against you for the selected week (defensive) | No |
 
 **Shop UI States**:
 - **Available** (purple): Can purchase if you have enough points
@@ -334,18 +340,31 @@ Compact status card at top of Admin Panel showing progress for current episode.
 - **Someone Has Purchased This** (red): Another player owns it
 - **Insufficient Points** (gray): Not enough points to buy
 
-**Playing Advantages**:
-- Owned advantages appear above shop with "Play Advantage" button
-- Some advantages require target selection (Vote Steal, Point Steal, Knowledge is Power)
-- QOTW advantages (Extra Vote, Vote Steal) require voting to be open
-- Weekly advantages (Double Trouble) link to active questionnaire
-- Point Steal takes immediate effect (5 point transfer)
-- Double Trouble effects apply automatically when admin releases scores
+**Playing Advantages (Weekly Queue)**:
+- Owned advantages appear in "Your Advantages" section
+- Click "Queue for Week" to select which episode to use it
+- Target-requiring advantages (Vote Steal, Point Steal) prompt for target selection
+- Queued advantages show "Queued for Week X" with option to cancel
+- All effects resolve automatically when admin releases scores for that week
+- Advantage Block cancels any targeting advantages against you that week
+
+**Resolution Order** (when admin releases scores):
+1. Advantage Blocks identified first (to determine cancelled advantages)
+2. Targeting advantages against blocked players are cancelled
+3. Extra Vote / Vote Steal effects applied to QOTW vote counts
+4. Double Trouble doubles the player's weekly points
+5. Point Steal transfers 5 points from target to player
+6. All queued advantages marked as used and return to shop
 
 **Notifications**:
 - Anonymous broadcast when any advantage is purchased
-- Anonymous broadcast when any advantage is played (returns to shop)
-- Targeted notification to victim (Vote Steal, Knowledge is Power)
+- Anonymous broadcast when any advantage is resolved (returns to shop)
+- Targeted notification to victim (Vote Steal, Point Steal)
+- Targeted notification when your advantage is blocked
+
+**API Endpoint** (`/api/advantage`):
+- Atomic server-side operations prevent race conditions
+- Actions: `purchase`, `queueForWeek`, `cancelQueue`
 
 ## Database Schema
 
@@ -429,18 +448,19 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 {
   id: number,
   playerId: number,
-  advantageId: string,           // e.g., 'extra-vote', 'vote-steal'
+  advantageId: string,           // e.g., 'extra-vote', 'vote-steal', 'advantage-block'
   name: string,
   description: string,
   type: string,
+  cost: number,
   purchasedAt: ISO_string,
-  used: boolean,
-  activated: boolean,
-  usedAt: ISO_string | null,
-  targetPlayerId: number | null,       // For Vote Steal, Knowledge is Power
-  linkedQuestionnaireId: number | null, // Links effect to specific questionnaire
-  wasted: boolean,                     // True if Knowledge is Power found no advantage
-  stolenFrom: number | null            // If this advantage was stolen via Knowledge is Power
+  used: boolean,                       // True when resolved at score release
+  // Weekly queue system fields
+  queuedForWeek: number | null,        // Episode number this is queued for
+  targetPlayerId: number | null,       // For Vote Steal, Point Steal
+  queuedAt: ISO_string | null,         // When queued for a week
+  resolvedAt: ISO_string | null,       // When the advantage effect was applied
+  cancelled: boolean                   // True if blocked by Advantage Block
 }
 ```
 
@@ -490,6 +510,18 @@ Snapshot management for data integrity:
 - **POST** with `action: 'restoreSnapshot'` - Restore from snapshot (creates safety backup first)
 - **GET** with `action: 'exportData'` - Export all game data as JSON
 - **POST** with `action: 'deleteSnapshot'` - Delete a specific snapshot
+
+### `/api/advantage`
+Atomic advantage operations (prevents race conditions):
+
+- **POST** with `action: 'purchase'` - Atomically purchase an advantage (checks availability first)
+  - Required: `playerId`, `advantageId`, `advantageName`, `advantageDescription`, `advantageType`, `advantageCost`, `leagueId`
+  - Returns: `{ success, advantage, message }` or `{ error: 'ALREADY_PURCHASED' }`
+- **POST** with `action: 'queueForWeek'` - Queue an advantage for a specific episode
+  - Required: `advantageId` (player's advantage ID), `weekNumber`, `leagueId`
+  - Optional: `targetPlayerId` (for Vote Steal, Point Steal)
+- **POST** with `action: 'cancelQueue'` - Cancel a queued advantage before resolution
+  - Required: `advantageId` (player's advantage ID), `leagueId`
 
 ## Environment Variables
 
