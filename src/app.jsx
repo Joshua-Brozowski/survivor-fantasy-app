@@ -771,6 +771,9 @@ export default function SurvivorFantasyApp() {
     return players.filter(p => memberPlayerIds.includes(p.id));
   };
 
+  // Computed: Players in the current league (use this for all league-scoped displays)
+  const leaguePlayers = currentLeagueId ? getLeaguePlayers(currentLeagueId) : players;
+
   // Switch to a different league and reload its data
   const switchLeague = async (leagueId) => {
     if (leagueId === currentLeagueId) return;
@@ -2703,7 +2706,7 @@ export default function SurvivorFantasyApp() {
             {/* Season Winners Display - Shows when season is finalized */}
             {seasonFinalized && (
               <SeasonWinnersDisplay
-                players={players}
+                players={leaguePlayers}
                 pickScores={pickScores}
                 submissions={submissions}
                 questionnaires={questionnaires}
@@ -2722,8 +2725,8 @@ export default function SurvivorFantasyApp() {
 
               <div className="space-y-3">
               {(() => {
-                // Calculate rankings with ties
-                const sortedPlayers = [...players]
+                // Calculate rankings with ties (only players in current league)
+                const sortedPlayers = [...leaguePlayers]
                   .map(p => ({ ...p, points: calculateTotalPoints(p.id) }))
                   .sort((a, b) => b.points - a.points);
 
@@ -2875,10 +2878,10 @@ export default function SurvivorFantasyApp() {
                   <p className="text-yellow-300 font-semibold">Leader</p>
                 </div>
                 <p className="text-white text-xl font-bold">
-                  {[...players].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))[0]?.name}
+                  {[...leaguePlayers].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))[0]?.name}
                 </p>
                 <p className="text-yellow-400 text-sm">
-                  {calculateTotalPoints([...players].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))[0]?.id)} pts
+                  {calculateTotalPoints([...leaguePlayers].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))[0]?.id)} pts
                 </p>
               </div>
               
@@ -2890,15 +2893,15 @@ export default function SurvivorFantasyApp() {
                 <p className="text-white text-xl font-bold">
                   {(() => {
                     const myPoints = calculateTotalPoints(currentUser.id);
-                    // Rank = 1 + number of players with MORE points than me
-                    const playersAbove = players.filter(p => calculateTotalPoints(p.id) > myPoints).length;
+                    // Rank = 1 + number of league players with MORE points than me
+                    const playersAbove = leaguePlayers.filter(p => calculateTotalPoints(p.id) > myPoints).length;
                     const rank = playersAbove + 1;
-                    const isTied = players.filter(p => calculateTotalPoints(p.id) === myPoints).length > 1;
+                    const isTied = leaguePlayers.filter(p => calculateTotalPoints(p.id) === myPoints).length > 1;
                     return isTied ? `T-${rank}` : `#${rank}`;
                   })()}
                 </p>
                 <p className="text-purple-400 text-sm">
-                  of {players.length} players
+                  of {leaguePlayers.length} players
                 </p>
               </div>
               
@@ -2930,7 +2933,7 @@ export default function SurvivorFantasyApp() {
             setLatePenalties={setLatePenalties}
             qotWVotes={qotWVotes}
             setQotWVotes={setQotWVotes}
-            players={players}
+            players={leaguePlayers}
             guestSafeSet={guestSafeSet}
             isGuestMode={isGuestMode}
             playerAdvantages={playerAdvantages}
@@ -2941,6 +2944,7 @@ export default function SurvivorFantasyApp() {
           <AdminPanel
             currentUser={currentUser}
             players={players}
+            leaguePlayers={leaguePlayers}
             setPlayers={setPlayers}
             contestants={contestants}
             setContestants={setContestants}
@@ -3015,7 +3019,7 @@ export default function SurvivorFantasyApp() {
             {/* Season Winners Display - Shows when season is finalized */}
             {seasonFinalized && (
               <SeasonWinnersDisplay
-                players={players}
+                players={leaguePlayers}
                 pickScores={pickScores}
                 submissions={submissions}
                 questionnaires={questionnaires}
@@ -3042,14 +3046,14 @@ export default function SurvivorFantasyApp() {
                 <div>
                   <p className="text-amber-300">Current Rank</p>
                   <p className="text-3xl font-bold text-white">
-                    #{[...players].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id)).findIndex(p => p.id === currentUser.id) + 1}
-                    <span className="text-lg text-amber-400 ml-2">of {players.length}</span>
+                    #{[...leaguePlayers].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id)).findIndex(p => p.id === currentUser.id) + 1}
+                    <span className="text-lg text-amber-400 ml-2">of {leaguePlayers.length}</span>
                   </p>
                 </div>
               </div>
               <div className="grid md:grid-cols-3 gap-4 text-center">
                 <div className="bg-amber-900/30 p-4 rounded-lg border border-amber-600">
-                  <p className="text-3xl font-bold text-amber-400">{players.length}</p>
+                  <p className="text-3xl font-bold text-amber-400">{leaguePlayers.length}</p>
                   <p className="text-amber-200 text-sm">Players Competing</p>
                 </div>
                 <div className="bg-amber-900/30 p-4 rounded-lg border border-amber-600">
@@ -3257,7 +3261,7 @@ export default function SurvivorFantasyApp() {
                     <div>
                       <p className="text-amber-200 mb-4">Select a player to steal their advantage from. If they have no advantage, this will be wasted!</p>
                       <div className="space-y-2 mb-4">
-                        {players.filter(p => p.id !== currentUser.id).map(player => (
+                        {leaguePlayers.filter(p => p.id !== currentUser.id).map(player => (
                           <button
                             key={player.id}
                             onClick={() => setAdvantageTarget(player.id)}
@@ -3315,7 +3319,7 @@ export default function SurvivorFantasyApp() {
                       ) : (
                         <>
                           <div className="space-y-2 mb-4">
-                            {players.filter(p => p.id !== currentUser.id).map(player => (
+                            {leaguePlayers.filter(p => p.id !== currentUser.id).map(player => (
                               <button
                                 key={player.id}
                                 onClick={() => setAdvantageTarget(player.id)}
@@ -3438,7 +3442,7 @@ export default function SurvivorFantasyApp() {
                     <div>
                       <p className="text-amber-200 mb-4">Select a player to steal 5 points from. They will lose 5 points, and you will gain 5 points!</p>
                       <div className="space-y-2 mb-4">
-                        {players.filter(p => p.id !== currentUser.id).map(player => (
+                        {leaguePlayers.filter(p => p.id !== currentUser.id).map(player => (
                           <button
                             key={player.id}
                             onClick={() => setAdvantageTarget(player.id)}
@@ -3627,7 +3631,7 @@ export default function SurvivorFantasyApp() {
               currentUser={currentUser}
               challenges={challenges}
               challengeAttempts={challengeAttempts}
-              players={players}
+              players={leaguePlayers}
               startChallengeAttempt={startChallengeAttempt}
               submitChallengeGuess={submitChallengeGuess}
               saveChallengeTimeProgress={saveChallengeTimeProgress}
@@ -3654,7 +3658,7 @@ export default function SurvivorFantasyApp() {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots }) {
+function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots }) {
   const [adminView, setAdminView] = useState('main');
 
   // Helper to check guest mode and show alert
@@ -4586,8 +4590,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
 
   // Episode Scoring View
   if (adminView === 'episode-scoring') {
-    // Get all players with picks
-    const playersWithPicks = players.filter(player => {
+    // Get all league players with picks
+    const playersWithPicks = leaguePlayers.filter(player => {
       const hasInstinct = picks.some(p => p.playerId === player.id && p.type === 'instinct');
       const hasFinal = picks.some(p => p.playerId === player.id && p.type === 'final');
       return hasInstinct || hasFinal;
@@ -5271,8 +5275,8 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
   // Season Management View
   // Finalize Season View
   if (adminView === 'finalize-season') {
-    // Calculate player rankings
-    const playerRankings = players.map(player => {
+    // Calculate player rankings (only league members)
+    const playerRankings = leaguePlayers.map(player => {
       // Calculate total points from all sources
       let totalPoints = 0;
 
@@ -5308,13 +5312,13 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
         (p.wordleWins > (best?.wordleWins || 0)) ? p : best, null),
 
       // Most QotW Wins
-      qotwKing: players.map(p => ({
+      qotwKing: leaguePlayers.map(p => ({
         ...p,
         qotwWins: questionnaires.filter(q => q.qotwWinnerId === p.id).length
       })).sort((a, b) => b.qotwWins - a.qotwWins)[0],
 
       // Most Correct Answers
-      quizWhiz: players.map(p => {
+      quizWhiz: leaguePlayers.map(p => {
         const playerSubs = submissions.filter(s => s.playerId === p.id);
         let correct = 0;
         playerSubs.forEach(sub => {
@@ -5329,19 +5333,19 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
       }).sort((a, b) => b.correctAnswers - a.correctAnswers)[0],
 
       // Most Late Submissions
-      procrastinator: players.map(p => ({
+      procrastinator: leaguePlayers.map(p => ({
         ...p,
         lateCount: submissions.filter(s => s.playerId === p.id && s.isLate).length
       })).sort((a, b) => b.lateCount - a.lateCount)[0],
 
       // Best Pick (most points from picks)
-      pickMaster: players.map(p => ({
+      pickMaster: leaguePlayers.map(p => ({
         ...p,
         pickPoints: pickScores.filter(ps => ps.playerId === p.id).reduce((sum, ps) => sum + ps.points, 0)
       })).sort((a, b) => b.pickPoints - a.pickPoints)[0],
 
       // Most Advantages Purchased
-      shopaholic: players.map(p => ({
+      shopaholic: leaguePlayers.map(p => ({
         ...p,
         advantagesBought: playerAdvantages.filter(a => a.playerId === p.id).length
       })).sort((a, b) => b.advantagesBought - a.advantagesBought)[0],
@@ -6113,10 +6117,10 @@ function AdminPanel({ currentUser, players, setPlayers, contestants, setContesta
               </div>
             </label>
 
-            {/* Individual Player Selection */}
+            {/* Individual Player Selection (only league members) */}
             {!notificationForm.sendToAll && (
               <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
-                {players.map(player => (
+                {leaguePlayers.map(player => (
                   <label
                     key={player.id}
                     className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition text-sm ${
