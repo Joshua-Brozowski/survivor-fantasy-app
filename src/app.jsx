@@ -154,7 +154,8 @@ export default function SurvivorFantasyApp() {
   const [recoveryForm, setRecoveryForm] = useState({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
   const [recoveryStep, setRecoveryStep] = useState('name'); // 'name', 'answer', 'reset'
   const [recoveryPlayer, setRecoveryPlayer] = useState(null);
-  
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+
   // Game state
   const [players, setPlayers] = useState([]);
   const [contestants, setContestants] = useState([]);
@@ -406,6 +407,8 @@ export default function SurvivorFantasyApp() {
           await storage.set(`password_${player.id}`, DEFAULT_PASSWORD);
         }
       }
+
+      setIsDataLoaded(true);
     } catch (error) {
       console.error('Error loading data:', error);
       // First time setup - initialize with defaults
@@ -454,10 +457,17 @@ export default function SurvivorFantasyApp() {
 
       // Mark migration as complete for fresh installs
       await storage.set('_multiLeagueMigrated', 'true');
+
+      setIsDataLoaded(true);
     }
   };
 
   const handleLogin = async () => {
+    if (!isDataLoaded) {
+      alert('Please wait for data to load');
+      return;
+    }
+
     if (!loginForm.name || !loginForm.password) {
       alert('Please enter both name and password');
       return;
@@ -491,9 +501,18 @@ export default function SurvivorFantasyApp() {
           setCurrentView('home');
         } else if (playerLeagues.length === 1) {
           // Only one league - auto-select and proceed
-          setCurrentUser(player);
-          await switchLeague(playerLeagues[0].id);
-          setCurrentView('home');
+          const leagueId = playerLeagues[0].id;
+          // If already on this league, just set user and ensure view updates
+          if (leagueId === currentLeagueId) {
+            setCurrentUser(player);
+            // Force view change by setting to null then home to ensure re-render
+            setCurrentView(null);
+            setTimeout(() => setCurrentView('home'), 0);
+          } else {
+            setCurrentUser(player);
+            await switchLeague(leagueId);
+            setCurrentView('home');
+          }
         } else {
           // Multiple leagues - show league selector
           setPendingLoginUser(player);
@@ -1600,9 +1619,14 @@ export default function SurvivorFantasyApp() {
               <button
                 onClick={handleLogin}
                 type="button"
-                className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-3 rounded font-semibold hover:from-amber-500 hover:to-orange-500 transition"
+                disabled={!isDataLoaded}
+                className={`w-full py-3 rounded font-semibold transition ${
+                  isDataLoaded
+                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-500 hover:to-orange-500'
+                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                }`}
               >
-                Enter the Game
+                {isDataLoaded ? 'Enter the Game' : 'Loading...'}
               </button>
               <button
                 onClick={() => setLoginView('forgot')}
