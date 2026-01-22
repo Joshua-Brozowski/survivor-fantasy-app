@@ -2563,16 +2563,16 @@ export default function SurvivorFantasyApp() {
                     <div key={player.id}>
                       <div
                         onClick={() => setExpandedPlayer(isExpanded ? null : player.id)}
-                        className={`bg-gradient-to-r from-amber-900/40 to-orange-900/40 p-4 rounded-lg border-2 transition cursor-pointer hover:bg-amber-900/50 ${
+                        className={`p-4 rounded-lg border-2 transition cursor-pointer ${
                           isCurrentUser
-                            ? 'border-yellow-400 shadow-lg shadow-yellow-400/30'
-                            : 'border-amber-600'
+                            ? 'bg-gradient-to-r from-yellow-900/50 to-amber-800/50 border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.4)] hover:shadow-[0_0_20px_rgba(250,204,21,0.5)]'
+                            : 'bg-gradient-to-r from-amber-900/40 to-orange-900/40 border-amber-600 hover:bg-amber-900/50'
                         } ${isExpanded ? 'rounded-b-none' : ''}`}
                       >
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-3 sm:gap-4">
                             {/* Rank Badge */}
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold ${isTied ? 'text-sm' : 'text-lg'} ${
+                            <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center font-bold ${isTied ? 'text-xs sm:text-sm' : 'text-base sm:text-lg'} ${
                               rank === 1 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/50' :
                               rank === 2 ? 'bg-gray-400 text-black shadow-lg shadow-gray-400/50' :
                               rank === 3 ? 'bg-amber-700 text-white shadow-lg shadow-amber-700/50' :
@@ -2582,8 +2582,12 @@ export default function SurvivorFantasyApp() {
                             </div>
 
                             {/* Player Initial Circle */}
-                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-600 to-orange-600 flex items-center justify-center border-2 border-amber-400">
-                              <span className="text-white font-bold text-xl" style={{ fontFamily: 'Impact, fantasy' }}>
+                            <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br flex items-center justify-center border-2 ${
+                              isCurrentUser
+                                ? 'from-yellow-500 to-amber-500 border-yellow-300'
+                                : 'from-amber-600 to-orange-600 border-amber-400'
+                            }`}>
+                              <span className="text-white font-bold text-lg sm:text-xl" style={{ fontFamily: 'Impact, fantasy' }}>
                                 {player.name.charAt(0).toUpperCase()}
                               </span>
                             </div>
@@ -2591,12 +2595,9 @@ export default function SurvivorFantasyApp() {
                             {/* Player Info */}
                             <div>
                               <div className="flex items-center gap-2">
-                                <p className="text-white font-bold text-lg">{player.name}</p>
+                                <p className={`font-bold text-base sm:text-lg ${isCurrentUser ? 'text-yellow-200' : 'text-white'}`}>{player.name}</p>
                                 {player.isAdmin && (
                                   <Crown className="w-4 h-4 text-yellow-400" title="Game Master" />
-                                )}
-                                {isCurrentUser && (
-                                  <span className="text-xs bg-amber-600 text-white px-2 py-1 rounded">YOU</span>
                                 )}
                               </div>
                               <div className="flex items-center gap-3 text-sm">
@@ -2612,13 +2613,13 @@ export default function SurvivorFantasyApp() {
                           </div>
 
                           {/* Points Display & Expand Button */}
-                          <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2 sm:gap-4">
                             <div className="text-right">
-                              <div className="text-3xl font-bold text-amber-400">
+                              <div className={`text-2xl sm:text-3xl font-bold ${isCurrentUser ? 'text-yellow-300' : 'text-amber-400'}`}>
                                 {points}
                               </div>
-                              <div className="text-xs text-amber-300">
-                                total points
+                              <div className="text-xs text-amber-300 hidden sm:block">
+                                points
                               </div>
                             </div>
                             {isExpanded ? (
