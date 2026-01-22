@@ -2062,7 +2062,14 @@ export default function SurvivorFantasyApp() {
           <div className="flex items-center justify-between">
             {/* Logo and Title */}
             <div className="flex items-center gap-2 sm:gap-3">
-              <Flame className="w-6 h-6 sm:w-8 sm:h-8 text-orange-500 flex-shrink-0" />
+              {/* Flame icon - Click to go Home */}
+              <button
+                onClick={() => { setCurrentView('home'); setShowNotifications(false); }}
+                className="hover:scale-110 transition-transform"
+                title="Go to Home"
+              >
+                <Flame className="w-6 h-6 sm:w-8 sm:h-8 text-orange-500 flex-shrink-0" />
+              </button>
               <div>
                 <h1 className="text-lg sm:text-2xl font-bold text-amber-400">Survivor Fantasy</h1>
                 <div className="flex items-center gap-2">
@@ -2373,17 +2380,7 @@ export default function SurvivorFantasyApp() {
       <nav className="bg-black/40 backdrop-blur-sm border-b border-amber-600/50">
         <div className="container mx-auto px-1 sm:px-4">
           <div className="flex justify-center gap-0 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-            {/* Home */}
-            <button
-              onClick={() => { setCurrentView('home'); setShowNotifications(false); }}
-              className={`px-2 sm:px-3 py-2.5 sm:py-3 transition whitespace-nowrap flex items-center gap-1 sm:gap-1.5 ${
-                currentView === 'home' ? 'text-amber-400 border-b-2 border-amber-400' : 'text-amber-200 hover:text-amber-300'
-              }`}
-            >
-              <Home className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="picks-text text-xs sm:text-sm font-bold">HOME</span>
-            </button>
-            {/* Other tabs with labels */}
+            {/* Navigation tabs (Home is accessed via flame icon in header) */}
             {[
               { id: 'picks', label: 'PICKS', icon: Target, activeClass: 'text-orange-400 border-b-2 border-orange-400', inactiveClass: 'text-orange-300 hover:text-orange-200' },
               { id: 'questionnaire', label: 'QUESTIONNAIRE', icon: FileText, activeClass: 'text-amber-400 border-b-2 border-amber-400', inactiveClass: 'text-amber-200 hover:text-amber-300' },
