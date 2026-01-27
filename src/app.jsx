@@ -583,17 +583,6 @@ export default function SurvivorFantasyApp() {
     }
   };
 
-  const handleGuestLogin = () => {
-    const guestUser = {
-      id: 'guest',
-      name: 'Guest',
-      isAdmin: true, // Allow viewing admin panel (read-only)
-      isGuest: true  // Flag to prevent writes
-    };
-    setCurrentUser(guestUser);
-    setCurrentView('home'); // Always start on home page
-  };
-
   const handleFindPlayer = async () => {
     if (!recoveryForm.name) {
       alert('Please enter your name');
@@ -1688,21 +1677,6 @@ export default function SurvivorFantasyApp() {
                 className="w-full text-amber-300 text-sm hover:text-amber-200 transition"
               >
                 Forgot Password?
-              </button>
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-amber-600/50"></div>
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-black/50 text-amber-400/60">or</span>
-                </div>
-              </div>
-              <button
-                onClick={handleGuestLogin}
-                type="button"
-                className="w-full bg-gradient-to-r from-gray-600 to-gray-700 text-white py-3 rounded font-semibold hover:from-gray-500 hover:to-gray-600 transition border border-gray-500"
-              >
-                Demo / Guest
               </button>
               <p className="text-amber-400/60 text-xs text-center mt-4">
                 First time? Default password: password123
