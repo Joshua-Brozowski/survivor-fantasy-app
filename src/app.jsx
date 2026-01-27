@@ -192,6 +192,10 @@ export default function SurvivorFantasyApp() {
   const [snapshots, setSnapshots] = useState([]);
   const [loadingBackup, setLoadingBackup] = useState(false);
 
+  // Password management state
+  const [passwordStatus, setPasswordStatus] = useState({});
+  const [loadingPasswordStatus, setLoadingPasswordStatus] = useState(false);
+
   // Multi-league state
   const [leagues, setLeagues] = useState([]);
   const [leagueMemberships, setLeagueMemberships] = useState([]);
@@ -5586,22 +5590,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   }
 
   if (adminView === 'password-management') {
-    const [passwordStatus, setPasswordStatus] = useState({});
-    const [loadingStatus, setLoadingStatus] = useState(false);
-
     const loadPasswordStatus = async () => {
-      setLoadingStatus(true);
+      setLoadingPasswordStatus(true);
       const result = await auth.checkDefaultPasswords();
       if (result.success) {
         setPasswordStatus(result.results);
       }
-      setLoadingStatus(false);
+      setLoadingPasswordStatus(false);
     };
 
     // Load status on mount
-    useEffect(() => {
+    if (Object.keys(passwordStatus).length === 0 && !loadingPasswordStatus) {
       loadPasswordStatus();
-    }, []);
+    }
 
     const resetPassword = async (playerId) => {
       if (!requireRealUser('Reset Password')) return;
@@ -5623,7 +5624,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     };
 
     const getPasswordStatusDisplay = (playerId) => {
-      if (loadingStatus) {
+      if (loadingPasswordStatus) {
         return <span className="text-gray-400 text-sm">Checking...</span>;
       }
 
