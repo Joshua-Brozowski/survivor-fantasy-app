@@ -104,10 +104,9 @@ const SURVIVOR_WORDS = [
 // All advantages are queued for a specific week and resolve when scores are released
 const DEFAULT_ADVANTAGES = [
   { id: 'extra-vote', name: 'Extra Vote', description: 'Your QOTW answer gets +1 bonus vote for the selected week', cost: 15, type: 'qotw', needsTarget: false },
-  { id: 'vote-steal', name: 'Vote Steal', description: 'Steal 1 vote from a target player\'s QOTW answer for the selected week', cost: 20, type: 'qotw', needsTarget: true },
-  { id: 'double-trouble', name: 'Double Trouble', description: 'Double ALL your points earned for the selected week', cost: 25, type: 'multiplier', needsTarget: false },
-  { id: 'point-steal', name: 'Point Steal', description: 'Steal 5 points from a target player when the week\'s scores are released', cost: 30, type: 'steal', needsTarget: true },
-  { id: 'advantage-block', name: 'Advantage Block', description: 'Cancel any advantage played against you for the selected week', cost: 35, type: 'defensive', needsTarget: false }
+  { id: 'vote-steal', name: 'Vote Steal', description: 'Block a target player from voting in QOTW and cast their vote yourself for the selected week', cost: 20, type: 'qotw', needsTarget: true },
+  { id: 'double-trouble', name: 'Double Trouble', description: 'Double your questionnaire score and QOTW bonus for the selected week', cost: 25, type: 'multiplier', needsTarget: false },
+  { id: 'point-steal', name: 'Thief in the Shadows', description: 'Steal 5 points from a target player when the week\'s scores are released', cost: 30, type: 'steal', needsTarget: true }
 ];
 
 /**
@@ -3674,24 +3673,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       a => a.queuedForWeek === weekNumber && !a.used && !a.cancelled
     );
 
-    // First, identify all Advantage Blocks to determine which advantages to cancel
-    const advantageBlocks = queuedAdvantages.filter(a => a.advantageId === 'advantage-block');
-    const blockedPlayerIds = new Set(advantageBlocks.map(a => a.playerId));
-
-    // Cancel any advantages targeting blocked players
-    const activeAdvantages = queuedAdvantages.filter(a => {
-      if (a.advantageId === 'advantage-block') return true; // Blocks always work
-      if (a.targetPlayerId && blockedPlayerIds.has(a.targetPlayerId)) {
-        return false; // This advantage is blocked
-      }
-      return true;
-    });
-
-    // Mark cancelled advantages
-    const cancelledAdvantageIds = queuedAdvantages
-      .filter(a => !activeAdvantages.includes(a))
-      .map(a => a.id);
-
     const updatedSubmissions = submissions.map(s => {
       if (s.questionnaireId === scoringQ.id) {
         return { ...s, score: newScores[s.playerId] || 0 };
@@ -3715,7 +3696,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     // Resolve all queued advantages for this week
     let updatedPlayerAdvantages = [...playerAdvantages];
 
-    for (const adv of activeAdvantages) {
+    for (const adv of queuedAdvantages) {
       const playerName = players.find(p => p.id === adv.playerId)?.name;
       const targetName = adv.targetPlayerId ? players.find(p => p.id === adv.targetPlayerId)?.name : null;
 
@@ -3798,15 +3779,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           break;
         }
 
-        case 'advantage-block': {
-          // Advantage Block: Defensive - just notify that it was active
-          await addNotification({
-            type: 'advantage_resolved',
-            message: `${playerName}'s Advantage Block was active for ${scoringQ.title}!`,
-            targetPlayerId: null
-          });
-          break;
-        }
       }
 
       // Mark advantage as used
@@ -3817,37 +3789,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           used: true,
           resolvedAt: new Date().toISOString()
         };
-      }
-    }
-
-    // Mark cancelled advantages (blocked by Advantage Block)
-    for (const cancelledId of cancelledAdvantageIds) {
-      const advIndex = updatedPlayerAdvantages.findIndex(a => a.id === cancelledId);
-      if (advIndex !== -1) {
-        const cancelledAdv = updatedPlayerAdvantages[advIndex];
-        const playerName = players.find(p => p.id === cancelledAdv.playerId)?.name;
-        const targetName = cancelledAdv.targetPlayerId ? players.find(p => p.id === cancelledAdv.targetPlayerId)?.name : null;
-
-        updatedPlayerAdvantages[advIndex] = {
-          ...updatedPlayerAdvantages[advIndex],
-          used: true,
-          cancelled: true,
-          resolvedAt: new Date().toISOString()
-        };
-
-        // Notify the blocked player
-        await addNotification({
-          type: 'advantage_blocked',
-          message: `Your ${cancelledAdv.name} against ${targetName} was blocked by their Advantage Block!`,
-          targetPlayerId: cancelledAdv.playerId
-        });
-
-        // Notify everyone
-        await addNotification({
-          type: 'advantage_resolved',
-          message: `${playerName}'s ${cancelledAdv.name} was blocked by ${targetName}'s Advantage Block!`,
-          targetPlayerId: null
-        });
       }
     }
 

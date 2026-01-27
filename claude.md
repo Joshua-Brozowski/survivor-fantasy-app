@@ -279,7 +279,7 @@ survivor-fantasy-app/
 - Advantage purchased/played (anonymous broadcasts)
 - Vote/advantage stolen (targeted alerts)
 - Double Trouble applied (during score release)
-- Point Steal (immediate point transfer notification)
+- Thief in the Shadows (point transfer notification)
 - Wordle challenge started/ended
 
 ### 10. Wordle Challenge
@@ -336,11 +336,10 @@ Compact status card at top of Admin Panel showing progress for current episode.
 
 | Advantage | Cost | Effect | Needs Target |
 |-----------|------|--------|--------------|
-| Extra Vote | 15 pts | Cast an additional vote in QOTW voting for the selected week | No |
-| Vote Steal | 20 pts | Steal 1 vote from a target player's QOTW answer for the selected week | Yes |
-| Double Trouble | 25 pts | Double ALL your points earned for the selected week | No |
-| Point Steal | 30 pts | Steal 5 points from a target player when the week's scores are released | Yes |
-| Advantage Block | 35 pts | Cancel any advantage played against you for the selected week (defensive) | No |
+| Extra Vote | 15 pts | Your QOTW answer gets +1 bonus vote for the selected week | No |
+| Vote Steal | 20 pts | Block a target player from voting in QOTW and cast their vote yourself | Yes |
+| Double Trouble | 25 pts | Double your questionnaire score and QOTW bonus for the selected week | No |
+| Thief in the Shadows | 30 pts | Steal 5 points from a target player when the week's scores are released | Yes |
 
 **Shop UI States**:
 - **Available** (purple): Can purchase if you have enough points
@@ -351,24 +350,20 @@ Compact status card at top of Admin Panel showing progress for current episode.
 **Playing Advantages (Weekly Queue)**:
 - Owned advantages appear in "Your Advantages" section
 - Click "Queue for Week" to select which episode to use it
-- Target-requiring advantages (Vote Steal, Point Steal) prompt for target selection
+- Target-requiring advantages (Vote Steal, Thief in the Shadows) prompt for target selection
 - Queued advantages show "Queued for Week X" with option to cancel
 - All effects resolve automatically when admin releases scores for that week
-- Advantage Block cancels any targeting advantages against you that week
 
 **Resolution Order** (when admin releases scores):
-1. Advantage Blocks identified first (to determine cancelled advantages)
-2. Targeting advantages against blocked players are cancelled
-3. Extra Vote / Vote Steal effects applied to QOTW vote counts
-4. Double Trouble doubles the player's weekly points
-5. Point Steal transfers 5 points from target to player
-6. All queued advantages marked as used and return to shop
+1. Extra Vote / Vote Steal effects applied to QOTW vote counts
+2. Double Trouble doubles the player's weekly points
+3. Thief in the Shadows transfers 5 points from target to player
+4. All queued advantages marked as used and return to shop
 
 **Notifications**:
 - Anonymous broadcast when any advantage is purchased
 - Anonymous broadcast when any advantage is resolved (returns to shop)
-- Targeted notification to victim (Vote Steal, Point Steal)
-- Targeted notification when your advantage is blocked
+- Targeted notification to victim (Vote Steal, Thief in the Shadows)
 
 **API Endpoint** (`/api/advantage`):
 - Atomic server-side operations prevent race conditions
@@ -456,7 +451,7 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 {
   id: number,
   playerId: number,
-  advantageId: string,           // e.g., 'extra-vote', 'vote-steal', 'advantage-block'
+  advantageId: string,           // e.g., 'extra-vote', 'vote-steal', 'point-steal'
   name: string,
   description: string,
   type: string,
@@ -465,10 +460,9 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
   used: boolean,                       // True when resolved at score release
   // Weekly queue system fields
   queuedForWeek: number | null,        // Episode number this is queued for
-  targetPlayerId: number | null,       // For Vote Steal, Point Steal
+  targetPlayerId: number | null,       // For Vote Steal, Thief in the Shadows
   queuedAt: ISO_string | null,         // When queued for a week
-  resolvedAt: ISO_string | null,       // When the advantage effect was applied
-  cancelled: boolean                   // True if blocked by Advantage Block
+  resolvedAt: ISO_string | null        // When the advantage effect was applied
 }
 ```
 
@@ -528,7 +522,7 @@ Atomic advantage operations (prevents race conditions):
   - Returns: `{ success, advantage, message }` or `{ error: 'ALREADY_PURCHASED' }`
 - **POST** with `action: 'queueForWeek'` - Queue an advantage for a specific episode
   - Required: `advantageId` (player's advantage ID), `weekNumber`, `leagueId`
-  - Optional: `targetPlayerId` (for Vote Steal, Point Steal)
+  - Optional: `targetPlayerId` (for Vote Steal, Thief in the Shadows)
 - **POST** with `action: 'cancelQueue'` - Cancel a queued advantage before resolution
   - Required: `advantageId` (player's advantage ID), `leagueId`
 
