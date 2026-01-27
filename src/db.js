@@ -156,6 +156,21 @@ export const auth = {
       console.error('Auth verify error:', error);
       return { valid: false, error: 'Network error' };
     }
+  },
+
+  async checkDefaultPasswords() {
+    try {
+      const response = await fetch(`${API_BASE}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'checkDefaultPasswords' })
+      });
+      const data = await response.json();
+      return { success: data.success, results: data.results || {}, error: data.error };
+    } catch (error) {
+      console.error('Auth checkDefaultPasswords error:', error);
+      return { success: false, results: {}, error: 'Network error' };
+    }
   }
 };
 

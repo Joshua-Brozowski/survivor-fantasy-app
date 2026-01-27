@@ -229,6 +229,11 @@ survivor-fantasy-app/
 
 **Password Management**:
 - View all players with reset option
+- **Password status indicator**: Shows whether each player has changed from default or not
+  - 🟢 "Changed" - Player set a custom password
+  - 🔴 "Default password" - Still using password123
+  - 🟡 "No password set" - Player hasn't logged in yet
+- Summary stats: Count of changed/default/not set passwords
 - Reset any player's password to default ("password123")
 - Uses server-side bcrypt hashing
 
@@ -504,6 +509,7 @@ Server-side password management with bcrypt hashing:
 - **POST** with `action: 'setPassword'` - Set new hashed password
 - **POST** with `action: 'resetToDefault'` - Reset to default password (hashed)
 - **POST** with `action: 'verifyCurrentPassword'` - Verify before password change
+- **POST** with `action: 'checkDefaultPasswords'` - Check which players still have default password (for admin)
 
 ### `/api/backup`
 Snapshot management for data integrity:
@@ -721,6 +727,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] Login loading state (prevents premature login attempts)
 - [x] Leaderboard current user highlight (cyan glow)
 - [x] Cast photo auto-sync from DEFAULT_CAST
+- [x] Admin password status indicator (see who changed from default)
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)

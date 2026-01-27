@@ -5671,6 +5671,23 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   }
 
   if (adminView === 'password-management') {
+    const [passwordStatus, setPasswordStatus] = useState({});
+    const [loadingStatus, setLoadingStatus] = useState(false);
+
+    const loadPasswordStatus = async () => {
+      setLoadingStatus(true);
+      const result = await auth.checkDefaultPasswords();
+      if (result.success) {
+        setPasswordStatus(result.results);
+      }
+      setLoadingStatus(false);
+    };
+
+    // Load status on mount
+    useEffect(() => {
+      loadPasswordStatus();
+    }, []);
+
     const resetPassword = async (playerId) => {
       if (!requireRealUser('Reset Password')) return;
 
@@ -5683,10 +5700,50 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       const result = await auth.resetToDefault(playerId);
       if (result.success) {
         alert(`${player.name}'s password has been reset to "password123"`);
+        // Refresh status after reset
+        await loadPasswordStatus();
       } else {
         alert('Failed to reset password. Please try again.');
       }
     };
+
+    const getPasswordStatusDisplay = (playerId) => {
+      if (loadingStatus) {
+        return <span className="text-gray-400 text-sm">Checking...</span>;
+      }
+
+      const isDefault = passwordStatus[playerId];
+
+      // If no record exists, they haven't logged in yet (still default)
+      if (isDefault === undefined) {
+        return (
+          <span className="text-yellow-400 text-sm flex items-center gap-1">
+            <AlertCircle className="w-4 h-4" />
+            No password set
+          </span>
+        );
+      }
+
+      if (isDefault) {
+        return (
+          <span className="text-red-400 text-sm flex items-center gap-1">
+            <X className="w-4 h-4" />
+            Default password
+          </span>
+        );
+      }
+
+      return (
+        <span className="text-green-400 text-sm flex items-center gap-1">
+          <Check className="w-4 h-4" />
+          Changed
+        </span>
+      );
+    };
+
+    const defaultCount = Object.values(passwordStatus).filter(v => v === true).length;
+    const changedCount = Object.values(passwordStatus).filter(v => v === false).length;
+    const noPasswordCount = players.length - Object.keys(passwordStatus).length;
 
     return (
       <div className="space-y-6">
@@ -5695,6 +5752,22 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             <Key className="w-6 h-6" />
             Password Management
           </h2>
+
+          {/* Summary stats */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="bg-green-900/30 border border-green-700 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-green-400">{changedCount}</p>
+              <p className="text-xs text-green-300">Changed</p>
+            </div>
+            <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-red-400">{defaultCount}</p>
+              <p className="text-xs text-red-300">Default</p>
+            </div>
+            <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-yellow-400">{noPasswordCount}</p>
+              <p className="text-xs text-yellow-300">Not Set</p>
+            </div>
+          </div>
 
           <p className="text-gray-400 mb-4 text-sm">
             Reset a player's password to the default: <code className="bg-gray-800 px-2 py-1 rounded">password123</code>
@@ -5712,11 +5785,14 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                   </div>
                   <div>
                     <p className="text-white font-semibold">{player.name}</p>
-                    {player.isAdmin && (
-                      <span className="text-yellow-400 text-xs flex items-center gap-1">
-                        <Crown className="w-3 h-3" /> Admin
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {player.isAdmin && (
+                        <span className="text-yellow-400 text-xs flex items-center gap-1">
+                          <Crown className="w-3 h-3" /> Admin
+                        </span>
+                      )}
+                      {getPasswordStatusDisplay(player.id)}
+                    </div>
                   </div>
                 </div>
                 <button
@@ -5724,7 +5800,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                   className="px-4 py-2 bg-red-600 text-white rounded font-semibold hover:bg-red-500 transition flex items-center gap-2"
                 >
                   <RefreshCw className="w-4 h-4" />
-                  Reset to Default
+                  Reset
                 </button>
               </div>
             ))}

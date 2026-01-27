@@ -45,6 +45,32 @@ export default async function handler(req, res) {
     const collection = db.collection('game_data');
     const { action, playerId, password, newPassword } = req.body;
 
+    // Special case: checkDefaultPasswords doesn't need playerId
+    if (action === 'checkDefaultPasswords') {
+      // Check which players still have the default password
+      const passwordDocs = await collection.find({ key: /^password_/ }).toArray();
+      const results = {};
+
+      for (const doc of passwordDocs) {
+        // Extract playerId from key (password_1 -> 1)
+        const id = parseInt(doc.key.replace('password_', ''));
+        const storedPassword = doc.value;
+        const isHashed = storedPassword && (storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$'));
+
+        if (isHashed) {
+          // Compare with default password
+          const isDefault = await bcrypt.compare(DEFAULT_PASSWORD, storedPassword);
+          results[id] = isDefault;
+        } else {
+          // Legacy plaintext - check directly
+          results[id] = storedPassword === DEFAULT_PASSWORD;
+        }
+      }
+
+      res.status(200).json({ success: true, results });
+      return;
+    }
+
     if (!action || !playerId) {
       res.status(400).json({ error: 'Missing action or playerId' });
       return;
