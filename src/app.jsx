@@ -2851,15 +2851,96 @@ export default function SurvivorFantasyApp() {
               />
             )}
 
-            {/* Combined Welcome Section */}
-            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
-              <h2 className="text-2xl font-bold text-amber-400 mb-2 flex items-center gap-2">
-                <Flame className="w-6 h-6" />
-                Welcome to Survivor Fantasy Season {currentSeason}!
+            {/* Welcome Banner */}
+            <div className="bg-gradient-to-r from-amber-900/80 to-orange-900/80 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-500">
+              <h2 className="text-2xl md:text-3xl font-bold text-amber-300 flex items-center gap-3">
+                <Flame className="w-7 h-7 text-orange-400" />
+                Welcome to Survivor Fantasy Season {currentSeason}, {currentUser.name}!
               </h2>
-              <p className="text-amber-200 mb-4">
-                Hey {currentUser.name}! Compete with your friends by making picks, answering weekly questionnaires, and earning points throughout the season!
-              </p>
+            </div>
+
+            {/* How to Play Section */}
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+              <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center gap-2">
+                <Star className="w-5 h-5" />
+                How to Play
+              </h3>
+              <div className="space-y-4 text-amber-200">
+                <p>
+                  Navigate through the app using the tabs above to manage your fantasy game experience:
+                </p>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Target className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Picks</h4>
+                    </div>
+                    <p className="text-sm">Select your Instinct Pick before the season starts and your Final Pick after the merge. Earn points based on how your picks perform!</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <FileText className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Questionnaire</h4>
+                    </div>
+                    <p className="text-sm">Answer weekly prediction questions about the upcoming episode. Get points for correct answers and compete in Question of the Week!</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Trophy className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Leaderboard</h4>
+                    </div>
+                    <p className="text-sm">See how you stack up against the competition! View everyone's total points, rankings, and detailed score breakdowns.</p>
+                  </div>
+                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Gift className="w-5 h-5 text-amber-400" />
+                      <h4 className="font-bold text-amber-300">Advantages</h4>
+                    </div>
+                    <p className="text-sm">View and activate special advantages you've earned. These powerful bonuses can steal points, double your score, or protect you from penalties!</p>
+                  </div>
+                </div>
+
+                {/* Pick Scoring Section */}
+                <div className="mt-6 bg-amber-900/30 p-4 rounded-lg border border-amber-500/50">
+                  <h4 className="font-bold text-amber-300 mb-3 flex items-center gap-2">
+                    <Target className="w-4 h-4" />
+                    How Your Picks Earn Points
+                  </h4>
+                  <div className="grid md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-amber-200 font-semibold mb-2">Episode Performance:</p>
+                      <ul className="text-amber-100/80 space-y-1 ml-4">
+                        <li>• Immunity Win: <span className="text-green-400">+2</span></li>
+                        <li>• Reward Win: <span className="text-green-400">+1</span></li>
+                        <li>• Found Idol/Advantage: <span className="text-green-400">+1</span></li>
+                        <li>• Played Idol/Advantage: <span className="text-green-400">+1</span></li>
+                        <li>• Votes Against (survived): <span className="text-green-400">+1 each</span></li>
+                        <li>• Incorrect Vote: <span className="text-red-400">-1</span></li>
+                        <li>• Voted Out with Idol: <span className="text-red-400">-2</span></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-amber-200 font-semibold mb-2">Milestones & Finale:</p>
+                      <ul className="text-amber-100/80 space-y-1 ml-4">
+                        <li>• Episode Survived: <span className="text-green-400">+1</span> <span className="text-gray-400">(Instinct only)</span></li>
+                        <li>• Made Merge: <span className="text-green-400">+5</span> <span className="text-gray-400">(Instinct only)</span></li>
+                        <li className="mt-2 pt-2 border-t border-amber-600/30">• Final 5: <span className="text-green-400">+10</span></li>
+                        <li>• Final 3: <span className="text-green-400">+15</span></li>
+                        <li>• Sole Survivor: <span className="text-green-400">+20</span></li>
+                        <li className="text-gray-400 text-xs mt-1">(Finale bonuses are mutually exclusive)</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Your Stats Section */}
+            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+              <h3 className="text-lg font-bold text-amber-400 mb-4 flex items-center gap-2">
+                <Trophy className="w-5 h-5" />
+                Your Stats
+              </h3>
               <div className="flex flex-wrap items-center gap-6 mb-6">
                 <div className="bg-gradient-to-br from-amber-600 to-orange-600 p-6 rounded-xl">
                   <p className="text-white text-sm opacity-80">Your Total Points</p>
@@ -2966,82 +3047,6 @@ export default function SurvivorFantasyApp() {
                     <div className="p-3 bg-purple-900/20 rounded-lg text-center">
                       <p className="text-2xl font-bold text-purple-400">{myQotwWins}</p>
                       <p className="text-purple-300 text-xs">QOTW Wins</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* How to Play Section */}
-            <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
-              <h3 className="text-xl font-bold text-amber-400 mb-4 flex items-center gap-2">
-                <Star className="w-5 h-5" />
-                How to Play
-              </h3>
-              <div className="space-y-4 text-amber-200">
-                <p>
-                  Navigate through the app using the tabs above to manage your fantasy game experience:
-                </p>
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Target className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Picks</h4>
-                    </div>
-                    <p className="text-sm">Select your Instinct Pick before the season starts and your Final Pick after the merge. Earn points based on how your picks perform!</p>
-                  </div>
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <FileText className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Questionnaire</h4>
-                    </div>
-                    <p className="text-sm">Answer weekly prediction questions about the upcoming episode. Get points for correct answers and compete in Question of the Week!</p>
-                  </div>
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Trophy className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Leaderboard</h4>
-                    </div>
-                    <p className="text-sm">See how you stack up against the competition! View everyone's total points, rankings, and detailed score breakdowns.</p>
-                  </div>
-                  <div className="bg-amber-900/20 p-4 rounded-lg border border-amber-600/50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Gift className="w-5 h-5 text-amber-400" />
-                      <h4 className="font-bold text-amber-300">Advantages</h4>
-                    </div>
-                    <p className="text-sm">View and activate special advantages you've earned. These powerful bonuses can steal points, double your score, or protect you from penalties!</p>
-                  </div>
-                </div>
-
-                {/* Pick Scoring Section */}
-                <div className="mt-6 bg-amber-900/30 p-4 rounded-lg border border-amber-500/50">
-                  <h4 className="font-bold text-amber-300 mb-3 flex items-center gap-2">
-                    <Target className="w-4 h-4" />
-                    How Your Picks Earn Points
-                  </h4>
-                  <div className="grid md:grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-amber-200 font-semibold mb-2">Episode Performance:</p>
-                      <ul className="text-amber-100/80 space-y-1 ml-4">
-                        <li>• Immunity Win: <span className="text-green-400">+2</span></li>
-                        <li>• Reward Win: <span className="text-green-400">+1</span></li>
-                        <li>• Found Idol/Advantage: <span className="text-green-400">+1</span></li>
-                        <li>• Played Idol/Advantage: <span className="text-green-400">+1</span></li>
-                        <li>• Votes Against (survived): <span className="text-green-400">+1 each</span></li>
-                        <li>• Incorrect Vote: <span className="text-red-400">-1</span></li>
-                        <li>• Voted Out with Idol: <span className="text-red-400">-2</span></li>
-                      </ul>
-                    </div>
-                    <div>
-                      <p className="text-amber-200 font-semibold mb-2">Milestones & Finale:</p>
-                      <ul className="text-amber-100/80 space-y-1 ml-4">
-                        <li>• Episode Survived: <span className="text-green-400">+1</span> <span className="text-gray-400">(Instinct only)</span></li>
-                        <li>• Made Merge: <span className="text-green-400">+5</span> <span className="text-gray-400">(Instinct only)</span></li>
-                        <li className="mt-2 pt-2 border-t border-amber-600/30">• Final 5: <span className="text-green-400">+10</span></li>
-                        <li>• Final 3: <span className="text-green-400">+15</span></li>
-                        <li>• Sole Survivor: <span className="text-green-400">+20</span></li>
-                        <li className="text-gray-400 text-xs mt-1">(Finale bonuses are mutually exclusive)</li>
-                      </ul>
                     </div>
                   </div>
                 </div>
