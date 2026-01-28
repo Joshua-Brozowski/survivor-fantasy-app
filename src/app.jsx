@@ -3012,6 +3012,39 @@ export default function SurvivorFantasyApp() {
                     <p className="text-sm">View and activate special advantages you've earned. These powerful bonuses can steal points, double your score, or protect you from penalties!</p>
                   </div>
                 </div>
+
+                {/* Pick Scoring Section */}
+                <div className="mt-6 bg-amber-900/30 p-4 rounded-lg border border-amber-500/50">
+                  <h4 className="font-bold text-amber-300 mb-3 flex items-center gap-2">
+                    <Target className="w-4 h-4" />
+                    How Your Picks Earn Points
+                  </h4>
+                  <div className="grid md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-amber-200 font-semibold mb-2">Episode Performance:</p>
+                      <ul className="text-amber-100/80 space-y-1 ml-4">
+                        <li>• Immunity Win: <span className="text-green-400">+2</span></li>
+                        <li>• Reward Win: <span className="text-green-400">+1</span></li>
+                        <li>• Found Idol/Advantage: <span className="text-green-400">+1</span></li>
+                        <li>• Played Idol/Advantage: <span className="text-green-400">+1</span></li>
+                        <li>• Votes Against (survived): <span className="text-green-400">+1 each</span></li>
+                        <li>• Incorrect Vote: <span className="text-red-400">-1</span></li>
+                        <li>• Voted Out with Idol: <span className="text-red-400">-2</span></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-amber-200 font-semibold mb-2">Milestones & Finale:</p>
+                      <ul className="text-amber-100/80 space-y-1 ml-4">
+                        <li>• Episode Survived: <span className="text-green-400">+1</span> <span className="text-gray-400">(Instinct only)</span></li>
+                        <li>• Made Merge: <span className="text-green-400">+5</span> <span className="text-gray-400">(Instinct only)</span></li>
+                        <li className="mt-2 pt-2 border-t border-amber-600/30">• Final 5: <span className="text-green-400">+10</span></li>
+                        <li>• Final 3: <span className="text-green-400">+15</span></li>
+                        <li>• Sole Survivor: <span className="text-green-400">+20</span></li>
+                        <li className="text-gray-400 text-xs mt-1">(Finale bonuses are mutually exclusive)</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
