@@ -1661,7 +1661,7 @@ export default function SurvivorFantasyApp() {
                   onChange={(e) => setLoginForm({...loginForm, rememberMe: e.target.checked})}
                   className="w-4 h-4 rounded border-amber-600 text-amber-600 focus:ring-amber-500"
                 />
-                Remember me
+                Stay logged in
               </label>
               <button
                 onClick={handleLogin}
@@ -7744,6 +7744,10 @@ function WordleGame({
       if (existingAttempt) {
         setAttempt(existingAttempt);
         setDisplayTime(existingAttempt.timeSpent);
+        // Start the timer if attempt is still in progress
+        if (existingAttempt.status === 'in_progress') {
+          setLastSaveTime(Date.now());
+        }
       }
     }
   }, [activeChallenge?.id, currentUser?.id, challengeAttempts]);
