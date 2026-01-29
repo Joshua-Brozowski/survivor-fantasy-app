@@ -19,12 +19,30 @@ async function connectToDatabase() {
   return { client, db };
 }
 
-export default async function handler(req, res) {
-  // Enable CORS
+// CORS helper - restrict to allowed origins
+function setCorsHeaders(req, res) {
+  const origin = req.headers.origin || '';
+  const allowedOrigins = [
+    'https://survivor-fantasy-app.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ];
+
+  // Allow exact matches or any vercel.app preview deployment
+  if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'https://survivor-fantasy-app.vercel.app');
+  }
+
   res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+export default async function handler(req, res) {
+  // Enable CORS
+  setCorsHeaders(req, res);
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
