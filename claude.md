@@ -491,6 +491,10 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 
 ## API Routes
 
+**Security & Reliability Features** (all endpoints):
+- **CORS Restriction**: Only allows requests from `survivor-fantasy-app.vercel.app`, `*.vercel.app` (previews), and `localhost`
+- **Connection Health Check**: Pings MongoDB before reusing cached connections, auto-reconnects if unhealthy
+
 ### `/api/storage/[key]`
 Vercel serverless function with dynamic routing for all database operations:
 
@@ -501,6 +505,8 @@ Vercel serverless function with dynamic routing for all database operations:
 Returns JSON: `{ key, value }` or `{ error: 'Not found' }`
 
 **Note**: The `[key]` in the filename (`api/storage/[key].js`) enables Vercel's file-system based dynamic routing. The key is accessed via `req.query.key`.
+
+**Edge Caching**: Static data (`players`, `contestants`, `leagues`, `leagueMemberships`) is cached for 60 seconds with stale-while-revalidate. Dynamic data is not cached.
 
 ### `/api/auth`
 Server-side password management with bcrypt hashing:
@@ -698,6 +704,10 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 **Notification dropdown hidden**:
 - Header has z-50 to ensure dropdown appears on top
 
+**Database Performance**:
+- Ensure `game_data` collection has an index on `{ key: 1 }` in MongoDB Atlas
+- To create: Atlas → Collections → game_data → Indexes → Create Index → `{ "key": 1 }`
+
 ## Future Enhancements
 
 ### Completed Features
@@ -730,6 +740,12 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] Home page rework (Welcome banner, How to Play at top, separate Stats section)
 - [x] Cast accordion on Picks page with info banner
 - [x] Login name help tooltip (explains name variations)
+- [x] CORS restriction (API only accepts requests from allowed origins)
+- [x] Database connection health check (auto-reconnect on stale connections)
+- [x] Score release loading state (prevents double-click issues)
+- [x] Season reset clears notifications
+- [x] Episode scoring confirmation dialog
+- [x] Edge caching for static data (players, contestants, leagues)
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
