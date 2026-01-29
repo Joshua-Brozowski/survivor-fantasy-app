@@ -39,15 +39,10 @@ survivor-fantasy-app/
   - Minimum 8 character password requirement
 - Password recovery with security questions
 - Passwords stored in MongoDB per player (hashed)
-- "Remember me" option using localStorage
+- "Stay logged in" option using localStorage
 - **Password visibility toggle**: Eye icon to show/hide password on login form
 - **Login loading state**: Button shows "Loading..." until player data is ready
-- **Demo/Guest Mode**: Allows exploring the app without an account
-  - Click "Demo / Guest" button on login screen
-  - Can view all features and interact with UI
-  - Nothing saves to MongoDB (local state only)
-  - Admin panel visible but read-only
-  - All actions show "(Demo mode - not saved)" alerts
+- **Name help tooltip**: Question mark icon next to Player Name explains names may vary (e.g., "Charles" → "Charlie")
 
 ### 2. Player Roles
 - **Players**: 9 friends competing in the league
@@ -64,15 +59,26 @@ survivor-fantasy-app/
 **Phase Control**: Admin can move forward OR backward through phases (with confirmation for going back).
 
 ### 4. Home Page
-- Welcome message with season stats (players, contestants, remaining)
-- **"How to Play" section** - Explains each tab with icons
-- **Cast Accordion** - Collapsible section titled "Check Out This Season's Cast"
-  - Default collapsed
-  - Shows all 18 contestants with photos and bio paragraphs
-  - Tribe color-coded borders (orange/blue/green)
-  - Eliminated contestants marked
+Layout from top to bottom:
+1. **Welcome Banner** - Gradient banner with "Welcome to Survivor Fantasy Season X, {Name}!"
+2. **How to Play Section** - Explains each tab (Picks, Questionnaire, Leaderboard, Advantages) with icons
+   - Includes "How Your Picks Earn Points" subsection with scoring breakdown
+3. **Your Stats Section** - Total points, current rank, and 3 stat boxes (Players Competing, Survivors, Still in Game)
+4. **Picks Status** - Two cards showing Instinct Pick and Final Pick status, plus questionnaire status
+5. **Cast Accordion** - Collapsible section titled "Check Out This Season's Cast"
+   - Default collapsed
+   - Shows all contestants with photos and bio paragraphs
+   - Tribe color-coded borders (purple/orange/teal)
+   - Eliminated contestants marked
 
 ### 5. Picks System
+
+**Picks Page Layout**:
+1. **Info Banner** (blue) - Explains to read about cast in accordion, then scroll down to make picks
+2. **Cast Accordion** - Same as Home page, lets players learn about contestants before picking
+3. **Instinct Pick Section** - Pre-season pick selection
+4. **Final Pick Section** - Post-merge pick selection
+
 **Instinct Pick** (Pre-season):
 - Select one contestant before Episode 1
 - Earns bonus points: +1 per episode survived, +5 for making merge
@@ -704,7 +710,6 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] Wordle Challenge mini-game
 - [x] Full Advantages System with scarcity rules
 - [x] Banner notifications on Home page (per-user tracking)
-- [x] Demo/Guest mode for app exploration
 - [x] Password hashing with bcrypt (server-side security)
 - [x] Auto-backup system with snapshots
 - [x] Un-eliminate contestants
@@ -722,6 +727,9 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] Leaderboard current user highlight (cyan glow)
 - [x] Cast photo auto-sync from DEFAULT_CAST
 - [x] Admin password status indicator (see who changed from default)
+- [x] Home page rework (Welcome banner, How to Play at top, separate Stats section)
+- [x] Cast accordion on Picks page with info banner
+- [x] Login name help tooltip (explains name variations)
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
@@ -760,7 +768,7 @@ Built with assistance from Claude (Anthropic) - December 2024.
 
 **Common Prop Issues**:
 - AdminPanel needs many props from App (check function signature when adding features)
-- QuestionnaireView needs `guestSafeSet` and `isGuestMode` props
 - Functions defined in App (like `togglePicksLock`) can't use AdminPanel's `requireRealUser`
+- State variables used in AdminPanel must be passed as props (e.g., `passwordStatus`, `loadingPasswordStatus`)
 
 **Testing**: Since local dev doesn't support API routes, all testing happens on production. Make small, incremental changes.
