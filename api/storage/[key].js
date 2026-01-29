@@ -70,6 +70,14 @@ export default async function handler(req, res) {
       // Get single key
       const doc = await collection.findOne({ key });
       if (doc) {
+        // Add edge caching for rarely-changing data (60s cache, 120s stale-while-revalidate)
+        const staticKeys = ['players', 'contestants', 'leagues', 'leagueMemberships'];
+        if (staticKeys.includes(key)) {
+          res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=120');
+        } else {
+          // Dynamic data - no caching
+          res.setHeader('Cache-Control', 'no-store');
+        }
         res.status(200).json({ key: doc.key, value: doc.value });
       } else {
         res.status(404).json({ error: 'Not found' });
