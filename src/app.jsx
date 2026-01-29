@@ -4003,6 +4003,17 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   };
 
   const submitEpisodeScoring = async () => {
+    // Count how many picks have scores
+    const scoredPicks = Object.values(episodeScoring.pickScoresData).filter(
+      data => data.survived || data.foundIdol || data.journey || data.immunity ||
+              data.reward || data.votesReceived || data.playedIdol || data.incorrectVote ||
+              data.final5 || data.final3 || data.soleSurvivor
+    ).length;
+
+    if (!window.confirm(`Submit Episode ${episodeScoring.episodeNumber} scores?\n\n${scoredPicks} pick(s) will receive points.\n\nThis action will notify all players.`)) {
+      return;
+    }
+
     // Create backup before episode scoring
     await backup.createSnapshot('before-episode-scoring');
 
