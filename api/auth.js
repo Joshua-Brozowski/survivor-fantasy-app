@@ -9,8 +9,18 @@ const SALT_ROUNDS = 10;
 const DEFAULT_PASSWORD = 'password123';
 
 async function connectToDatabase() {
+  // Check if cached connection is still alive
   if (cachedClient && cachedDb) {
-    return { client: cachedClient, db: cachedDb };
+    try {
+      // Ping to verify connection is healthy
+      await cachedDb.command({ ping: 1 });
+      return { client: cachedClient, db: cachedDb };
+    } catch (error) {
+      // Connection died, clear cache and reconnect
+      console.log('Cached connection unhealthy, reconnecting...');
+      cachedClient = null;
+      cachedDb = null;
+    }
   }
 
   const client = new MongoClient(uri);
