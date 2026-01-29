@@ -3508,6 +3508,7 @@ export default function SurvivorFantasyApp() {
 // Admin Panel Component
 function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus }) {
   const [adminView, setAdminView] = useState('main');
+  const [releasingScores, setReleasingScores] = useState(false);
 
   // Helper to check guest mode and show alert
   const requireRealUser = (actionName) => {
@@ -3689,7 +3690,9 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
   const releaseScores = async () => {
     if (!requireRealUser('Release Scores')) return;
+    if (releasingScores) return; // Prevent double-click
 
+    setReleasingScores(true);
     const isRescore = scoringQ.isRescore;
 
     // Auto-snapshot before releasing/re-scoring
@@ -3745,6 +3748,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       });
 
       alert('Scores have been re-calculated and updated!');
+      setReleasingScores(false);
       setAdminView('main');
       setScoringQ(null);
       setCorrectAnswers({});
@@ -3900,6 +3904,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     });
 
     alert('Scores released to all players!');
+    setReleasingScores(false);
     setAdminView('main');
   };
 
@@ -4441,9 +4446,10 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           <div className="flex gap-4">
             <button
               onClick={releaseScores}
-              className={`flex-1 py-3 ${isRescore ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500' : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500'} text-white rounded-lg font-semibold transition text-lg`}
+              disabled={releasingScores}
+              className={`flex-1 py-3 ${releasingScores ? 'bg-gray-500 cursor-not-allowed' : isRescore ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500' : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500'} text-white rounded-lg font-semibold transition text-lg`}
             >
-              {isRescore ? 'Update Scores' : 'Release Scores to Players'}
+              {releasingScores ? 'Releasing...' : isRescore ? 'Update Scores' : 'Release Scores to Players'}
             </button>
             <button
               onClick={() => {
