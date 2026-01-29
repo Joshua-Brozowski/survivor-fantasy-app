@@ -183,7 +183,8 @@ export default function SurvivorFantasyApp() {
   const [seasonHistory, setSeasonHistory] = useState([]);
   const [seasonFinalized, setSeasonFinalized] = useState(false);
   const [castAccordionOpen, setCastAccordionOpen] = useState(false);
-  
+  const [picksCastAccordionOpen, setPicksCastAccordionOpen] = useState(false);
+
   // Wordle Challenge state
   const [challenges, setChallenges] = useState([]);
   const [challengeAttempts, setChallengeAttempts] = useState([]);
@@ -2239,6 +2240,67 @@ export default function SurvivorFantasyApp() {
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
         {currentView === 'picks' && (
           <div className="space-y-6">
+            {/* Info Banner */}
+            <div className="bg-gradient-to-r from-blue-900/60 to-indigo-900/60 backdrop-blur-sm p-4 rounded-lg border border-blue-500/50">
+              <p className="text-blue-200 text-sm flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                <span><strong>Learn about the cast</strong> in the accordion below, then <strong>scroll down to make your picks</strong> from the contestant grid.</span>
+              </p>
+            </div>
+
+            {/* Cast Accordion */}
+            <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
+              <button
+                onClick={() => setPicksCastAccordionOpen(!picksCastAccordionOpen)}
+                className="w-full p-6 flex items-center justify-between hover:bg-amber-900/20 transition"
+              >
+                <h3 className="text-xl font-bold text-amber-400 flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Check Out This Season's Cast
+                </h3>
+                {picksCastAccordionOpen ? (
+                  <ChevronUp className="w-6 h-6 text-amber-400" />
+                ) : (
+                  <ChevronDown className="w-6 h-6 text-amber-400" />
+                )}
+              </button>
+
+              {picksCastAccordionOpen && (
+                <div className="px-6 pb-6">
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {contestants.map(contestant => {
+                      const tribeColor = contestant.tribe === 'Purple' ? 'purple' : contestant.tribe === 'Orange' ? 'orange' : contestant.tribe === 'Teal' ? 'teal' : 'gray';
+                      return (
+                        <div
+                          key={contestant.id}
+                          className={`p-4 rounded-lg border ${
+                            contestant.eliminated
+                              ? 'bg-red-900/20 border-red-600 opacity-60'
+                              : `bg-${tribeColor}-900/30 border-${tribeColor}-500`
+                          }`}
+                        >
+                          <img
+                            src={contestant.image}
+                            alt={contestant.name}
+                            className="w-full h-40 object-cover object-top rounded-lg mb-3"
+                            onError={(e) => { e.target.src = 'https://via.placeholder.com/150?text=No+Image'; }}
+                          />
+                          <h5 className="text-white font-bold">{contestant.name}</h5>
+                          <p className={`text-${tribeColor}-300 text-sm mb-2`}>{contestant.tribe}</p>
+                          <p className="text-gray-300 text-sm leading-relaxed">
+                            {CONTESTANT_BIOS[contestant.id] || 'Bio coming soon...'}
+                          </p>
+                          {contestant.eliminated && (
+                            <p className="text-red-400 text-sm font-semibold mt-2">Eliminated</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Instinct Picks Section */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
               <div className="flex items-center justify-between mb-4">
