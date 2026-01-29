@@ -945,6 +945,7 @@ export default function SurvivorFantasyApp() {
     setLatePenalties({});
     setChallenges([]);
     setChallengeAttempts([]);
+    setNotifications([]);
 
     // Save league-specific data with prefix
     await leagueStore.set('currentSeason', newSeasonNumber.toString());
@@ -962,6 +963,7 @@ export default function SurvivorFantasyApp() {
     await leagueStore.set('playerAdvantages', JSON.stringify([]));
     await leagueStore.set('challenges', JSON.stringify([]));
     await leagueStore.set('challengeAttempts', JSON.stringify([]));
+    await leagueStore.set('notifications', JSON.stringify([]));
     // Contestants is global (shared across leagues)
     await storage.set('contestants', JSON.stringify(defaultCast));
 
