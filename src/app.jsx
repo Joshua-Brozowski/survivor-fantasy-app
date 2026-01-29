@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw } from 'lucide-react';
+import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle } from 'lucide-react';
 import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi } from './db.js';
 
 // Survivor 50 Default Cast (24 returning players)
@@ -155,6 +155,7 @@ export default function SurvivorFantasyApp() {
   const [recoveryPlayer, setRecoveryPlayer] = useState(null);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showNameHelp, setShowNameHelp] = useState(false);
 
   // Game state
   const [players, setPlayers] = useState([]);
@@ -1625,7 +1626,21 @@ export default function SurvivorFantasyApp() {
           {loginView === 'login' ? (
             <div className="space-y-4">
               <div>
-                <label className="block text-amber-200 mb-2">Player Name</label>
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="text-amber-200">Player Name</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowNameHelp(!showNameHelp)}
+                    className="text-amber-400 hover:text-amber-300 transition"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                  </button>
+                </div>
+                {showNameHelp && (
+                  <div className="mb-2 p-3 bg-blue-900/50 border border-blue-500/50 rounded-lg text-sm text-blue-200">
+                    Your name might be slightly different than you expect. Try variations like nicknames (e.g., "Charles" → "Charlie") or check with the game admin if you're unsure.
+                  </div>
+                )}
                 <input
                   type="text"
                   value={loginForm.name}
