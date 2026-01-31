@@ -1,6 +1,46 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi } from './db.js';
+
+// Confetti celebration utility - respects reduced motion preference
+const fireConfetti = () => {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  confetti({
+    particleCount: 100,
+    spread: 70,
+    origin: { y: 0.6 },
+    colors: ['#d97706', '#f59e0b', '#fbbf24', '#fcd34d'] // Amber/gold theme
+  });
+};
+
+// Bigger celebration for major wins
+const fireFireworks = () => {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const duration = 2000;
+  const end = Date.now() + duration;
+  const colors = ['#d97706', '#f59e0b', '#fbbf24', '#ef4444', '#22c55e'];
+
+  (function frame() {
+    confetti({
+      particleCount: 3,
+      angle: 60,
+      spread: 55,
+      origin: { x: 0 },
+      colors
+    });
+    confetti({
+      particleCount: 3,
+      angle: 120,
+      spread: 55,
+      origin: { x: 1 },
+      colors
+    });
+    if (Date.now() < end) requestAnimationFrame(frame);
+  }());
+};
 
 // Survivor 50 Default Cast (24 returning players)
 const DEFAULT_CAST = [
@@ -5292,6 +5332,9 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           targetPlayerId: null
         });
 
+        // Celebrate with fireworks!
+        fireFireworks();
+
         alert('Season finalized! Winners are now displayed on Home and Leaderboard tabs.');
       }
     };
@@ -7016,6 +7059,15 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
 // Season Winners Display Component - Shows podium and awards when season is finalized
 function SeasonWinnersDisplay({ players, pickScores, submissions, questionnaires, challenges, playerAdvantages, currentSeason, compact = false }) {
+  // Celebrate when player first views the winners podium
+  useEffect(() => {
+    const celebratedKey = `survivorCelebrated_season${currentSeason}`;
+    if (!localStorage.getItem(celebratedKey)) {
+      fireFireworks();
+      localStorage.setItem(celebratedKey, 'true');
+    }
+  }, [currentSeason]);
+
   // Calculate player rankings
   const playerRankings = players.map(player => {
     let totalPoints = 0;
@@ -7842,6 +7894,15 @@ function WordleGame({
       }
     }
   }, [activeChallenge?.id, currentUser?.id, challengeAttempts]);
+
+  // Celebrate Wordle win with confetti
+  const [hasCelebrated, setHasCelebrated] = useState(false);
+  useEffect(() => {
+    if (attempt?.solved && !hasCelebrated) {
+      fireConfetti();
+      setHasCelebrated(true);
+    }
+  }, [attempt?.solved, hasCelebrated]);
 
   // Start playing
   const handleStartPlaying = async () => {
