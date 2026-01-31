@@ -278,15 +278,16 @@ Layout from top to bottom:
 
 **Notification Types**:
 - New questionnaire available
-- Scores released
+- Scores released (and re-scored)
 - Final picks opening
 - Phase changes
 - Admin custom messages (Tree Mail)
-- Advantage purchased/played (anonymous broadcasts)
-- Vote/advantage stolen (targeted alerts)
+- Advantage purchased (anonymous broadcast)
+- Vote stolen (targeted alert to victim)
 - Double Trouble applied (during score release)
-- Thief in the Shadows (point transfer notification)
-- Wordle challenge started/ended
+- Thief in the Shadows / Points stolen (broadcast + targeted alert to victim)
+- Wordle challenge started/ended/winner
+- Season finalized
 
 ### 10. Wordle Challenge
 Weekly mini-game where players guess a 5-letter Survivor-themed word.
@@ -294,9 +295,10 @@ Weekly mini-game where players guess a 5-letter Survivor-themed word.
 **Gameplay**:
 - 6 attempts to guess the word
 - Color feedback: Green (correct), Yellow (wrong position), Gray (not in word)
-- Timer tracks how long player takes (continues when switching tabs)
-- Winner determined by: fewest guesses, then fastest time
-- Progress auto-saved every 30 seconds and when leaving tab
+- Timestamp-based timing: records `startedAt` and `completedAt`
+- Shows "Started: [date/time]" during gameplay
+- Winner determined by: fewest guesses, then fastest time (completedAt - startedAt)
+- Confetti celebration when player solves the puzzle
 
 **Admin Control** (Fully Manual):
 - **Create Challenge**: Start a new challenge with random word
@@ -374,6 +376,36 @@ Compact status card at top of Admin Panel showing progress for current episode.
 **API Endpoint** (`/api/advantage`):
 - Atomic server-side operations prevent race conditions
 - Actions: `purchase`, `queueForWeek`, `cancelQueue`
+
+### 13. PWA (Progressive Web App)
+The app is installable on mobile devices for an app-like experience.
+
+**Installation**:
+- **iPhone**: Safari → Share button → "Add to Home Screen"
+- **Android**: Chrome → Menu → "Install app" or automatic prompt
+
+**Features**:
+- Custom flame icon on home screen
+- Opens fullscreen (no browser UI)
+- Themed status bar (amber)
+- Shows as "Survivor FL" in app switcher
+
+**Files**:
+- `public/manifest.json` - App metadata and icon references
+- `public/icons/` - PNG icons (192x192, 512x512, 180x180 for Apple)
+- `index.html` - PWA meta tags and iOS support
+
+### 14. Confetti Celebrations
+Visual celebrations for key moments using canvas-confetti library.
+
+**Triggers**:
+- Wordle puzzle solved (single burst)
+- Season finalized by admin (fireworks)
+- First time viewing season winners podium (fireworks, per-user via localStorage)
+
+**Accessibility**:
+- Respects `prefers-reduced-motion` media query
+- Users with motion sensitivity won't see animations
 
 ## Database Schema
 
@@ -746,6 +778,9 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] Season reset clears notifications
 - [x] Episode scoring confirmation dialog
 - [x] Edge caching for static data (players, contestants, leagues)
+- [x] PWA support (installable app with home screen icon)
+- [x] Confetti celebrations (Wordle wins, season finalized)
+- [x] Wordle timestamp-based timing (more reliable than running timer)
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
