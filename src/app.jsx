@@ -1427,6 +1427,12 @@ export default function SurvivorFantasyApp() {
   };
 
   // Finalize challenge and determine winner (called by admin)
+  // Helper to calculate elapsed time from timestamps
+  const calculateElapsedTime = (attempt) => {
+    if (!attempt.startedAt || !attempt.completedAt) return 0;
+    return new Date(attempt.completedAt).getTime() - new Date(attempt.startedAt).getTime();
+  };
+
   const finalizeChallenge = async (challengeId) => {
     const challenge = challenges.find(c => c.id === challengeId);
     if (!challenge || challenge.status !== 'active') return;
@@ -1438,7 +1444,10 @@ export default function SurvivorFantasyApp() {
         if (a.guesses.length !== b.guesses.length) {
           return a.guesses.length - b.guesses.length;
         }
-        return a.timeSpent - b.timeSpent;
+        // Calculate time from startedAt to completedAt
+        const timeA = calculateElapsedTime(a);
+        const timeB = calculateElapsedTime(b);
+        return timeA - timeB;
       });
 
     let winnerId = null;
@@ -1447,9 +1456,12 @@ export default function SurvivorFantasyApp() {
     if (solvedAttempts.length > 0) {
       const winner = solvedAttempts[0];
       winnerId = winner.playerId;
+      const elapsedTime = calculateElapsedTime(winner);
       winnerData = {
         guesses: winner.guesses.length,
-        timeSpent: winner.timeSpent
+        timeSpent: elapsedTime,
+        startedAt: winner.startedAt,
+        completedAt: winner.completedAt
       };
 
       // Award 3 points to winner
@@ -1524,7 +1536,7 @@ export default function SurvivorFantasyApp() {
   };
 
   // Submit a guess
-  const submitChallengeGuess = async (attemptId, guess, elapsedSinceLastSave) => {
+  const submitChallengeGuess = async (attemptId, guess) => {
     const attempt = challengeAttempts.find(a => a.id === attemptId);
     if (!attempt || attempt.status !== 'in_progress') return null;
 
@@ -1535,15 +1547,14 @@ export default function SurvivorFantasyApp() {
     const newGuesses = [...attempt.guesses, normalizedGuess];
     const isSolved = normalizedGuess === challenge.word;
     const isFailed = newGuesses.length >= 6 && !isSolved;
+    const isComplete = isSolved || isFailed;
 
     const updatedAttempt = {
       ...attempt,
       guesses: newGuesses,
-      timeSpent: attempt.timeSpent + elapsedSinceLastSave,
-      lastActiveAt: new Date().toISOString(),
       solved: isSolved,
       status: isSolved ? 'completed' : (isFailed ? 'failed' : 'in_progress'),
-      completedAt: (isSolved || isFailed) ? new Date().toISOString() : null
+      completedAt: isComplete ? new Date().toISOString() : null
     };
 
     const updated = challengeAttempts.map(a =>
@@ -1553,24 +1564,6 @@ export default function SurvivorFantasyApp() {
     await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
 
     return updatedAttempt;
-  };
-
-  // Save time progress (called periodically and on visibility change)
-  const saveChallengeTimeProgress = async (attemptId, elapsedSinceLastSave) => {
-    const attempt = challengeAttempts.find(a => a.id === attemptId);
-    if (!attempt || attempt.status !== 'in_progress') return;
-
-    const updated = challengeAttempts.map(a =>
-      a.id === attemptId
-        ? {
-            ...a,
-            timeSpent: a.timeSpent + elapsedSinceLastSave,
-            lastActiveAt: new Date().toISOString()
-          }
-        : a
-    );
-    setChallengeAttempts(updated);
-    await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
   };
 
   // Admin: manually create challenge (no auto-expiration - admin must end it)
@@ -3479,8 +3472,8 @@ export default function SurvivorFantasyApp() {
               players={leaguePlayers}
               startChallengeAttempt={startChallengeAttempt}
               submitChallengeGuess={submitChallengeGuess}
-              saveChallengeTimeProgress={saveChallengeTimeProgress}
               getPlayerAttempt={getPlayerAttempt}
+              calculateElapsedTime={calculateElapsedTime}
             />
           </div>
         )}
@@ -7856,13 +7849,11 @@ function WordleGame({
   players,
   startChallengeAttempt,
   submitChallengeGuess,
-  saveChallengeTimeProgress,
-  getPlayerAttempt
+  getPlayerAttempt,
+  calculateElapsedTime
 }) {
   const [currentGuess, setCurrentGuess] = useState('');
   const [attempt, setAttempt] = useState(null);
-  const [lastSaveTime, setLastSaveTime] = useState(null);
-  const [displayTime, setDisplayTime] = useState(0);
 
   const activeChallenge = challenges.find(c => c.status === 'active');
 
@@ -7872,79 +7863,24 @@ function WordleGame({
       const existingAttempt = getPlayerAttempt(activeChallenge.id, currentUser.id);
       if (existingAttempt) {
         setAttempt(existingAttempt);
-        setDisplayTime(existingAttempt.timeSpent);
-        // Start the timer if attempt is still in progress
-        if (existingAttempt.status === 'in_progress') {
-          setLastSaveTime(Date.now());
-        }
       }
     }
   }, [activeChallenge?.id, currentUser?.id, challengeAttempts]);
-
-  // Timer display update
-  useEffect(() => {
-    if (attempt?.status !== 'in_progress' || !lastSaveTime) return;
-
-    const interval = setInterval(() => {
-      setDisplayTime(attempt.timeSpent + (Date.now() - lastSaveTime));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [attempt, lastSaveTime]);
-
-  // Visibility change handler - save progress when user leaves, resume when returning
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (attempt?.status === 'in_progress' && lastSaveTime) {
-        if (document.hidden) {
-          // User is leaving - save progress
-          const elapsed = Date.now() - lastSaveTime;
-          await saveChallengeTimeProgress(attempt.id, elapsed);
-        }
-        // Reset lastSaveTime when tab becomes visible again OR when leaving
-        // This ensures timer continues from correct point when returning
-        setLastSaveTime(Date.now());
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [attempt, lastSaveTime]);
-
-  // Periodic save (every 30 seconds while active)
-  useEffect(() => {
-    if (attempt?.status !== 'in_progress' || !lastSaveTime) return;
-
-    const interval = setInterval(async () => {
-      const elapsed = Date.now() - lastSaveTime;
-      await saveChallengeTimeProgress(attempt.id, elapsed);
-      setLastSaveTime(Date.now());
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [attempt, lastSaveTime]);
 
   // Start playing
   const handleStartPlaying = async () => {
     if (!activeChallenge) return;
     const newAttempt = await startChallengeAttempt(activeChallenge.id);
     setAttempt(newAttempt);
-    setLastSaveTime(Date.now());
-    setDisplayTime(0);
   };
 
   // Submit guess
   const handleSubmitGuess = async () => {
     if (!attempt || currentGuess.length !== 5) return;
 
-    const elapsed = lastSaveTime ? Date.now() - lastSaveTime : 0;
-    const updatedAttempt = await submitChallengeGuess(attempt.id, currentGuess, elapsed);
+    const updatedAttempt = await submitChallengeGuess(attempt.id, currentGuess);
     setAttempt(updatedAttempt);
     setCurrentGuess('');
-    setLastSaveTime(Date.now());
-    if (updatedAttempt) {
-      setDisplayTime(updatedAttempt.timeSpent);
-    }
   };
 
   // Handle keyboard input
@@ -8011,7 +7947,9 @@ function WordleGame({
   };
 
   // Format time display
+  // Format elapsed time in ms to readable string
   const formatTime = (ms) => {
+    if (!ms || ms <= 0) return '0s';
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
@@ -8022,6 +7960,19 @@ function WordleGame({
       return `${minutes}m ${seconds % 60}s`;
     }
     return `${seconds}s`;
+  };
+
+  // Format start time to show when player started
+  const formatStartTime = (isoString) => {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
   };
 
   // Render game board
@@ -8186,12 +8137,13 @@ function WordleGame({
 
   // Game completed (won or lost)
   if (attempt.status !== 'in_progress') {
+    const myElapsedTime = calculateElapsedTime(attempt);
     const attemptsList = challengeAttempts
       .filter(a => a.challengeId === activeChallenge.id && a.status !== 'in_progress')
       .sort((a, b) => {
         if (a.solved !== b.solved) return b.solved - a.solved;
         if (a.guesses.length !== b.guesses.length) return a.guesses.length - b.guesses.length;
-        return a.timeSpent - b.timeSpent;
+        return calculateElapsedTime(a) - calculateElapsedTime(b);
       });
 
     return (
@@ -8212,7 +8164,7 @@ function WordleGame({
                 Solved in {attempt.guesses.length} guess{attempt.guesses.length > 1 ? 'es' : ''}!
               </p>
               <p className="text-amber-300">
-                Time: {formatTime(attempt.timeSpent)}
+                Time: {formatTime(myElapsedTime)}
               </p>
             </>
           ) : (
@@ -8232,6 +8184,7 @@ function WordleGame({
               {attemptsList.map((a, i) => {
                 const player = players.find(p => p.id === a.playerId);
                 const isYou = a.playerId === currentUser.id;
+                const elapsedTime = calculateElapsedTime(a);
                 return (
                   <div key={a.id} className={`flex justify-between text-sm p-2 rounded ${isYou ? 'bg-amber-800/50' : ''}`}>
                     <span className={`flex items-center gap-2 ${a.solved ? 'text-green-400' : 'text-gray-400'}`}>
@@ -8240,7 +8193,7 @@ function WordleGame({
                       {isYou && <span className="text-amber-400 text-xs">(You)</span>}
                     </span>
                     <span className="text-amber-300">
-                      {a.solved ? `${a.guesses.length} guesses, ${formatTime(a.timeSpent)}` : 'Did not solve'}
+                      {a.solved ? `${a.guesses.length} guesses, ${formatTime(elapsedTime)}` : 'Did not solve'}
                     </span>
                   </div>
                 );
@@ -8262,7 +8215,7 @@ function WordleGame({
         </h2>
         <div className="flex items-center gap-2 text-amber-300">
           <Clock className="w-4 h-4" />
-          <span className="text-sm sm:text-base">{formatTime(displayTime)}</span>
+          <span className="text-xs sm:text-sm">Started: {formatStartTime(attempt.startedAt)}</span>
         </div>
       </div>
 
