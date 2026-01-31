@@ -1332,13 +1332,6 @@ export default function SurvivorFantasyApp() {
     );
     setPlayerAdvantages(updated);
 
-    // Send notification
-    await addNotification({
-      type: 'advantage_queued',
-      message: `An advantage has been queued for Week ${weekNumber}!`,
-      targetPlayerId: null
-    });
-
     alert(result.message);
   };
 
@@ -3794,23 +3787,12 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       switch (adv.advantageId) {
         case 'extra-vote': {
           // Extra Vote: Already applied during QOTW voting
-          // Just mark as resolved and notify
-          await addNotification({
-            type: 'advantage_resolved',
-            message: `${playerName}'s Extra Vote was applied for ${scoringQ.title}!`,
-            targetPlayerId: null
-          });
           break;
         }
 
         case 'vote-steal': {
           // Vote Steal: Already applied during QOTW voting
-          // Notify the effect
-          await addNotification({
-            type: 'advantage_resolved',
-            message: `${playerName}'s Vote Steal took a vote from ${targetName} for ${scoringQ.title}!`,
-            targetPlayerId: null
-          });
+          // Notify the victim only
           await addNotification({
             type: 'vote_stolen',
             message: `${playerName} stole your QOTW vote for ${scoringQ.title}!`,
@@ -4076,12 +4058,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     setQuestionnaires(updated);
     const leagueStore = getLeagueStorage();
     await leagueStore.set('questionnaires', JSON.stringify(updated));
-
-    await addNotification({
-      type: 'qotw_voting_open',
-      message: `QOTW voting is now open for ${questionnaire.title}!`,
-      targetPlayerId: null
-    });
 
     alert('QOTW voting opened!');
   };
