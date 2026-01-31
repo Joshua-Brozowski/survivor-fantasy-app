@@ -37,6 +37,11 @@ survivor-fantasy-app/
 - **Password Security**: Server-side hashing with bcrypt (10 salt rounds)
   - Auto-migration: Legacy plaintext passwords hashed on first login
   - Minimum 8 character password requirement
+- **Rate Limiting**: Brute force protection on login
+  - 5 failed attempts per IP+player before lockout
+  - 15 minute lockout duration
+  - Tracks attempts in MongoDB (`ratelimit_` keys)
+  - Clears on successful login
 - Password recovery with security questions
 - Passwords stored in MongoDB per player (hashed)
 - "Stay logged in" option using localStorage
@@ -781,6 +786,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] PWA support (installable app with home screen icon)
 - [x] Confetti celebrations (Wordle wins, season finalized)
 - [x] Wordle timestamp-based timing (more reliable than running timer)
+- [x] Login rate limiting (brute force protection)
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)

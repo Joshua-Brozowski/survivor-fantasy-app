@@ -600,7 +600,8 @@ export default function SurvivorFantasyApp() {
           setShowLeagueSelector(true);
         }
       } else {
-        alert('Invalid username or password');
+        // Show rate limit message if available, otherwise generic error
+        alert(result.error || 'Invalid username or password');
       }
     } else {
       // Don't reveal whether username exists - same error message

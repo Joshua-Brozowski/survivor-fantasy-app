@@ -8,6 +8,76 @@ let cachedDb = null;
 const SALT_ROUNDS = 10;
 const DEFAULT_PASSWORD = 'password123';
 
+// Rate limiting settings
+const MAX_LOGIN_ATTEMPTS = 5;        // Max failed attempts before lockout
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;  // 15 minutes
+
+// Get client IP from request (handles Vercel proxying)
+function getClientIP(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.headers['x-real-ip'] || req.socket?.remoteAddress || 'unknown';
+}
+
+// Check if IP is rate limited for a specific player
+async function isRateLimited(collection, ip, playerId) {
+  const key = `ratelimit_${ip}_${playerId}`;
+  const doc = await collection.findOne({ key });
+
+  if (!doc) return { limited: false, attemptsLeft: MAX_LOGIN_ATTEMPTS };
+
+  const { attempts, lockedUntil } = doc.value;
+
+  // Check if currently locked out
+  if (lockedUntil && new Date(lockedUntil) > new Date()) {
+    const remainingMs = new Date(lockedUntil) - new Date();
+    const remainingMin = Math.ceil(remainingMs / 60000);
+    return { limited: true, remainingMinutes: remainingMin };
+  }
+
+  // Lockout expired, reset if needed
+  if (lockedUntil && new Date(lockedUntil) <= new Date()) {
+    await collection.deleteOne({ key });
+    return { limited: false, attemptsLeft: MAX_LOGIN_ATTEMPTS };
+  }
+
+  return { limited: false, attemptsLeft: MAX_LOGIN_ATTEMPTS - attempts };
+}
+
+// Record a failed login attempt
+async function recordFailedAttempt(collection, ip, playerId) {
+  const key = `ratelimit_${ip}_${playerId}`;
+  const doc = await collection.findOne({ key });
+
+  let attempts = 1;
+  let lockedUntil = null;
+
+  if (doc) {
+    attempts = (doc.value.attempts || 0) + 1;
+  }
+
+  // Lock out if max attempts reached
+  if (attempts >= MAX_LOGIN_ATTEMPTS) {
+    lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS).toISOString();
+  }
+
+  await collection.updateOne(
+    { key },
+    { $set: { key, value: { attempts, lockedUntil, lastAttempt: new Date().toISOString() } } },
+    { upsert: true }
+  );
+
+  return { attempts, lockedUntil, attemptsLeft: MAX_LOGIN_ATTEMPTS - attempts };
+}
+
+// Clear rate limit on successful login
+async function clearRateLimit(collection, ip, playerId) {
+  const key = `ratelimit_${ip}_${playerId}`;
+  await collection.deleteOne({ key });
+}
+
 async function connectToDatabase() {
   // Check if cached connection is still alive
   if (cachedClient && cachedDb) {
@@ -114,6 +184,18 @@ export default async function handler(req, res) {
           return;
         }
 
+        // Check rate limiting
+        const clientIP = getClientIP(req);
+        const rateLimitStatus = await isRateLimited(collection, clientIP, playerId);
+
+        if (rateLimitStatus.limited) {
+          res.status(429).json({
+            success: false,
+            error: `Too many failed attempts. Try again in ${rateLimitStatus.remainingMinutes} minute(s).`
+          });
+          return;
+        }
+
         const doc = await collection.findOne({ key: passwordKey });
 
         if (!doc) {
@@ -126,10 +208,18 @@ export default async function handler(req, res) {
               { $set: { key: passwordKey, value: hashedPassword, updatedAt: new Date() } },
               { upsert: true }
             );
+            await clearRateLimit(collection, clientIP, playerId);
             res.status(200).json({ success: true, message: 'Login successful' });
             return;
           }
-          res.status(401).json({ success: false, error: 'Invalid password' });
+          // Failed attempt
+          const failInfo = await recordFailedAttempt(collection, clientIP, playerId);
+          res.status(401).json({
+            success: false,
+            error: failInfo.attemptsLeft > 0
+              ? `Invalid password. ${failInfo.attemptsLeft} attempt(s) remaining.`
+              : 'Too many failed attempts. Account locked for 15 minutes.'
+          });
           return;
         }
 
@@ -142,9 +232,16 @@ export default async function handler(req, res) {
           // Compare with hashed password
           const isValid = await bcrypt.compare(password, storedPassword);
           if (isValid) {
+            await clearRateLimit(collection, clientIP, playerId);
             res.status(200).json({ success: true, message: 'Login successful' });
           } else {
-            res.status(401).json({ success: false, error: 'Invalid password' });
+            const failInfo = await recordFailedAttempt(collection, clientIP, playerId);
+            res.status(401).json({
+              success: false,
+              error: failInfo.attemptsLeft > 0
+                ? `Invalid password. ${failInfo.attemptsLeft} attempt(s) remaining.`
+                : 'Too many failed attempts. Account locked for 15 minutes.'
+            });
           }
         } else {
           // Legacy plaintext password - migrate it
@@ -155,9 +252,16 @@ export default async function handler(req, res) {
               { key: passwordKey },
               { $set: { key: passwordKey, value: hashedPassword, updatedAt: new Date() } }
             );
+            await clearRateLimit(collection, clientIP, playerId);
             res.status(200).json({ success: true, message: 'Login successful' });
           } else {
-            res.status(401).json({ success: false, error: 'Invalid password' });
+            const failInfo = await recordFailedAttempt(collection, clientIP, playerId);
+            res.status(401).json({
+              success: false,
+              error: failInfo.attemptsLeft > 0
+                ? `Invalid password. ${failInfo.attemptsLeft} attempt(s) remaining.`
+                : 'Too many failed attempts. Account locked for 15 minutes.'
+            });
           }
         }
         break;
