@@ -546,17 +546,14 @@ export default function SurvivorFantasyApp() {
         } else if (playerLeagues.length === 1) {
           // Only one league - auto-select and proceed
           const leagueId = playerLeagues[0].id;
-          // If already on this league, just set user and ensure view updates
-          if (leagueId === currentLeagueId) {
-            setCurrentUser(player);
-            // Force view change by setting to null then home to ensure re-render
-            setCurrentView(null);
-            setTimeout(() => setCurrentView('home'), 0);
-          } else {
-            setCurrentUser(player);
+          setCurrentUser(player);
+          if (leagueId !== currentLeagueId) {
             await switchLeague(leagueId);
-            setCurrentView('home');
+          } else {
+            // Save league preference to localStorage
+            localStorage.setItem('survivorFantasyLeagueId', leagueId.toString());
           }
+          setCurrentView('home');
         } else {
           // Multiple leagues - show league selector
           setPendingLoginUser(player);
@@ -579,14 +576,12 @@ export default function SurvivorFantasyApp() {
     setShowLeagueSelector(false);
     setPendingLoginUser(null);
 
-    // If already on this league, force view update to ensure re-render
-    if (leagueId === currentLeagueId) {
-      setCurrentView(null);
-      setTimeout(() => setCurrentView('home'), 0);
-    } else {
+    if (leagueId !== currentLeagueId) {
       await switchLeague(leagueId);
-      setCurrentView('home');
+    } else {
+      localStorage.setItem('survivorFantasyLeagueId', leagueId.toString());
     }
+    setCurrentView('home');
   };
 
   const handleFindPlayer = async () => {
