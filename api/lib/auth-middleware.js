@@ -86,6 +86,12 @@ const ADMIN_ONLY_WRITE_KEYS = [
 export function isPublicReadKey(key) {
   // Check exact match or league-prefixed version
   const baseKey = key.replace(/^league_\d+_/, '');
+
+  // Security questions need to be readable for password recovery (before login)
+  if (key.startsWith('security_')) {
+    return true;
+  }
+
   return PUBLIC_READ_KEYS.includes(key) || PUBLIC_READ_KEYS.includes(baseKey);
 }
 
