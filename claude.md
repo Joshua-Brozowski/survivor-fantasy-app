@@ -16,12 +16,15 @@ survivor-fantasy-app/
 ├── src/
 │   ├── app.jsx           # Main application component (all views & logic)
 │   ├── main.jsx          # React entry point
-│   └── db.js             # Storage API wrapper (storage, auth, backup, advantageApi)
+│   └── db.js             # Storage API wrapper (storage, auth, backup, advantageApi, JWT token management)
 ├── api/
+│   ├── lib/
+│   │   ├── jwt.js        # JWT token utilities (generate, verify, cookie handling)
+│   │   └── auth-middleware.js  # Authentication middleware for API routes
 │   ├── storage/
 │   │   └── [key].js      # MongoDB serverless function (dynamic route)
-│   ├── auth.js           # Authentication API (password hashing with bcrypt)
-│   ├── backup.js         # Backup/snapshot management API
+│   ├── auth.js           # Authentication API (login, logout, password management, token refresh)
+│   ├── backup.js         # Backup/snapshot management API (admin only)
 │   └── advantage.js      # Advantage API (atomic purchases, queue system)
 ├── index.html            # HTML template
 ├── package.json          # Dependencies
@@ -33,7 +36,12 @@ survivor-fantasy-app/
 ## Key Features
 
 ### 1. Authentication
-- Simple name/password login system
+- Simple name/password login system with JWT tokens
+- **JWT Token System**:
+  - Access token (15 min expiry) stored in memory - sent via Authorization header
+  - Refresh token (7 day expiry) stored in httpOnly secure cookie
+  - Automatic token refresh on 401 responses
+  - Token refresh on app load for "stay logged in" functionality
 - **Password Security**: Server-side hashing with bcrypt (10 salt rounds)
   - Auto-migration: Legacy plaintext passwords hashed on first login
   - Minimum 8 character password requirement
@@ -42,9 +50,13 @@ survivor-fantasy-app/
   - 15 minute lockout duration
   - Tracks attempts in MongoDB (`ratelimit_` keys)
   - Clears on successful login
+- **API Authorization**:
+  - All write operations require authentication
+  - Admin-only operations (backup, delete, certain writes) require admin role
+  - Public read access for: players, contestants, leagues, leagueMemberships, questionnaires, episodes
 - Password recovery with security questions
 - Passwords stored in MongoDB per player (hashed)
-- "Stay logged in" option using localStorage
+- "Stay logged in" option using localStorage + refresh token
 - **Password visibility toggle**: Eye icon to show/hide password on login form
 - **Login loading state**: Button shows "Loading..." until player data is ready
 - **Name help tooltip**: Question mark icon next to Player Name explains names may vary (e.g., "Charles" → "Charlie")
@@ -529,6 +541,7 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 ## API Routes
 
 **Security & Reliability Features** (all endpoints):
+- **JWT Authentication**: Access tokens via Authorization header, refresh tokens via httpOnly cookies
 - **CORS Restriction**: Only allows requests from `survivor-fantasy-app.vercel.app`, `*.vercel.app` (previews), and `localhost`
 - **Connection Health Check**: Pings MongoDB before reusing cached connections, auto-reconnects if unhealthy
 
@@ -536,8 +549,11 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 Vercel serverless function with dynamic routing for all database operations:
 
 - **GET `/api/storage/{key}`** - Retrieve value by key
-- **POST `/api/storage/{key}`** - Set/update value for key
-- **DELETE `/api/storage/{key}`** - Delete key
+  - Public keys readable without auth: `players`, `contestants`, `leagues`, `leagueMemberships`, `questionnaires`, `episodes`, and league-prefixed versions
+  - Other keys require authentication
+- **POST `/api/storage/{key}`** - Set/update value for key (requires auth)
+  - Admin-only keys: `players`, `contestants`, `leagues`, `leagueMemberships`, `advantages`
+- **DELETE `/api/storage/{key}`** - Delete key (requires admin)
 
 Returns JSON: `{ key, value }` or `{ error: 'Not found' }`
 
@@ -546,16 +562,18 @@ Returns JSON: `{ key, value }` or `{ error: 'Not found' }`
 **Edge Caching**: Static data (`players`, `contestants`, `leagues`, `leagueMemberships`) is cached for 60 seconds with stale-while-revalidate. Dynamic data is not cached.
 
 ### `/api/auth`
-Server-side password management with bcrypt hashing:
+Authentication and password management:
 
-- **POST** with `action: 'login'` - Verify password (auto-migrates plaintext to hashed)
+- **POST** with `action: 'login'` - Verify password, returns access token, sets refresh token cookie
+- **POST** with `action: 'refresh'` - Refresh access token using refresh token cookie
+- **POST** with `action: 'logout'` - Clear refresh token cookie
 - **POST** with `action: 'setPassword'` - Set new hashed password
 - **POST** with `action: 'resetToDefault'` - Reset to default password (hashed)
 - **POST** with `action: 'verifyCurrentPassword'` - Verify before password change
 - **POST** with `action: 'checkDefaultPasswords'` - Check which players still have default password (for admin)
 
 ### `/api/backup`
-Snapshot management for data integrity:
+Snapshot management for data integrity. **All operations require admin authentication.**
 
 - **POST** with `action: 'createSnapshot'` - Create backup with trigger label
 - **GET** with `action: 'getSnapshots'` - List all snapshots (id, trigger, date)
@@ -564,7 +582,8 @@ Snapshot management for data integrity:
 - **POST** with `action: 'deleteSnapshot'` - Delete a specific snapshot
 
 ### `/api/advantage`
-Atomic advantage operations (prevents race conditions):
+Atomic advantage operations (prevents race conditions). **All operations require authentication.**
+Players can only purchase/manage their own advantages (admins can act for any player).
 
 - **POST** with `action: 'purchase'` - Atomically purchase an advantage (checks availability first)
   - Required: `playerId`, `advantageId`, `advantageName`, `advantageDescription`, `advantageType`, `advantageCost`, `leagueId`
@@ -580,10 +599,20 @@ Atomic advantage operations (prevents race conditions):
 ### Local (.env)
 ```
 MONGODB_URI=<your-mongodb-connection-string>
+JWT_SECRET=<random-secure-string-for-access-tokens>
+JWT_REFRESH_SECRET=<different-random-secure-string-for-refresh-tokens>
 ```
 
 ### Vercel Dashboard
-Add same variable: `MONGODB_URI` (without VITE_ prefix for backend)
+Add these environment variables:
+- `MONGODB_URI` - MongoDB connection string
+- `JWT_SECRET` - Secret for signing access tokens (generate a random 32+ char string)
+- `JWT_REFRESH_SECRET` - Secret for signing refresh tokens (different from JWT_SECRET)
+
+**Important**: Generate secure random secrets for production. You can use:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
 ## Deployment
 
@@ -787,6 +816,8 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] Confetti celebrations (Wordle wins, season finalized)
 - [x] Wordle timestamp-based timing (more reliable than running timer)
 - [x] Login rate limiting (brute force protection)
+- [x] JWT authentication (access tokens + httpOnly refresh token cookies)
+- [x] API authorization (protected endpoints, admin-only operations)
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)

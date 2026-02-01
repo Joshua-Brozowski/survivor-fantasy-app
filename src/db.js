@@ -1,6 +1,117 @@
 // Simple storage wrapper for MongoDB API
 const API_BASE = '/api';
 
+// ============================================
+// JWT Token Management
+// ============================================
+
+// Store access token in memory (more secure than localStorage)
+let accessToken = null;
+
+// Get the current access token
+export function getAccessToken() {
+  return accessToken;
+}
+
+// Set the access token (called after login/refresh)
+export function setAccessToken(token) {
+  accessToken = token;
+}
+
+// Clear the access token (called on logout)
+export function clearAccessToken() {
+  accessToken = null;
+}
+
+// Flag to prevent multiple simultaneous refresh attempts
+let isRefreshing = false;
+let refreshPromise = null;
+
+/**
+ * Refresh the access token using the httpOnly refresh token cookie
+ * Returns the new user data or null if refresh failed
+ */
+export async function refreshAccessToken() {
+  // If already refreshing, wait for that to complete
+  if (isRefreshing) {
+    return refreshPromise;
+  }
+
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Include cookies
+        body: JSON.stringify({ action: 'refresh' })
+      });
+
+      if (!response.ok) {
+        clearAccessToken();
+        return null;
+      }
+
+      const data = await response.json();
+      if (data.success && data.accessToken) {
+        setAccessToken(data.accessToken);
+        return data.user;
+      }
+      return null;
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      clearAccessToken();
+      return null;
+    } finally {
+      isRefreshing = false;
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+/**
+ * Authenticated fetch wrapper - adds Authorization header and handles token refresh
+ */
+export async function authFetch(url, options = {}) {
+  const headers = {
+    ...options.headers,
+  };
+
+  // Add auth header if we have a token
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  // Include credentials for cookies
+  let response = await fetch(url, {
+    ...options,
+    headers,
+    credentials: 'include'
+  });
+
+  // If 401 and we had a token, try to refresh
+  if (response.status === 401 && accessToken) {
+    const user = await refreshAccessToken();
+    if (user) {
+      // Retry with new token
+      headers['Authorization'] = `Bearer ${accessToken}`;
+      response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include'
+      });
+    }
+  }
+
+  return response;
+}
+
+// ============================================
+// End Token Management
+// ============================================
+
 // Keys that are league-specific (will be prefixed with league_{id}_)
 export const LEAGUE_SPECIFIC_KEYS = [
   'picks',
@@ -103,13 +214,33 @@ export const auth = {
       const response = await fetch(`${API_BASE}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Include cookies for refresh token
         body: JSON.stringify({ action: 'login', playerId, password })
       });
       const data = await response.json();
-      return { success: response.ok && data.success, error: data.error };
+      if (response.ok && data.success && data.accessToken) {
+        setAccessToken(data.accessToken);
+        return { success: true, user: data.user };
+      }
+      return { success: false, error: data.error };
     } catch (error) {
       console.error('Auth login error:', error);
       return { success: false, error: 'Network error' };
+    }
+  },
+
+  async logout() {
+    try {
+      await fetch(`${API_BASE}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'logout' })
+      });
+    } catch (error) {
+      console.error('Auth logout error:', error);
+    } finally {
+      clearAccessToken();
     }
   },
 
@@ -178,7 +309,7 @@ export const auth = {
 export const backup = {
   async createSnapshot(trigger) {
     try {
-      const response = await fetch(`${API_BASE}/backup`, {
+      const response = await authFetch(`${API_BASE}/backup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'createSnapshot', trigger })
@@ -193,7 +324,7 @@ export const backup = {
 
   async getSnapshots() {
     try {
-      const response = await fetch(`${API_BASE}/backup?action=getSnapshots`);
+      const response = await authFetch(`${API_BASE}/backup?action=getSnapshots`);
       const data = await response.json();
       return { success: response.ok && data.success, snapshots: data.snapshots || [], error: data.error };
     } catch (error) {
@@ -204,7 +335,7 @@ export const backup = {
 
   async restoreSnapshot(snapshotId) {
     try {
-      const response = await fetch(`${API_BASE}/backup`, {
+      const response = await authFetch(`${API_BASE}/backup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'restoreSnapshot', snapshotId })
@@ -219,7 +350,7 @@ export const backup = {
 
   async exportData() {
     try {
-      const response = await fetch(`${API_BASE}/backup?action=exportData`);
+      const response = await authFetch(`${API_BASE}/backup?action=exportData`);
       const data = await response.json();
       return { success: response.ok && data.success, data: data.data, error: data.error };
     } catch (error) {
@@ -230,7 +361,7 @@ export const backup = {
 
   async deleteSnapshot(snapshotId) {
     try {
-      const response = await fetch(`${API_BASE}/backup`, {
+      const response = await authFetch(`${API_BASE}/backup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'deleteSnapshot', snapshotId })
@@ -248,7 +379,7 @@ export const backup = {
 export const advantageApi = {
   async purchase(playerId, advantage, leagueId) {
     try {
-      const response = await fetch(`${API_BASE}/advantage`, {
+      const response = await authFetch(`${API_BASE}/advantage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -275,7 +406,7 @@ export const advantageApi = {
 
   async queueForWeek(playerAdvantageId, weekNumber, targetPlayerId, leagueId) {
     try {
-      const response = await fetch(`${API_BASE}/advantage`, {
+      const response = await authFetch(`${API_BASE}/advantage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -299,7 +430,7 @@ export const advantageApi = {
 
   async cancelQueue(playerAdvantageId, leagueId) {
     try {
-      const response = await fetch(`${API_BASE}/advantage`, {
+      const response = await authFetch(`${API_BASE}/advantage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -323,7 +454,8 @@ export const advantageApi = {
 export const storage = {
   async get(key) {
     try {
-      const response = await fetch(`${API_BASE}/storage/${key}`);
+      // Use authFetch for authenticated reads (will work for public keys too)
+      const response = await authFetch(`${API_BASE}/storage/${key}`);
       if (!response.ok) {
         throw new Error('Not found');
       }
@@ -337,7 +469,7 @@ export const storage = {
 
   async set(key, value) {
     try {
-      const response = await fetch(`${API_BASE}/storage/${key}`, {
+      const response = await authFetch(`${API_BASE}/storage/${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value })
@@ -352,7 +484,7 @@ export const storage = {
 
   async delete(key) {
     try {
-      const response = await fetch(`${API_BASE}/storage/${key}`, {
+      const response = await authFetch(`${API_BASE}/storage/${key}`, {
         method: 'DELETE'
       });
       if (!response.ok) throw new Error('Failed to delete');
@@ -365,10 +497,10 @@ export const storage = {
 
   async list(prefix) {
     try {
-      const url = prefix 
-        ? `${API_BASE}/storage?prefix=${prefix}` 
+      const url = prefix
+        ? `${API_BASE}/storage?prefix=${prefix}`
         : `${API_BASE}/storage`;
-      const response = await fetch(url);
+      const response = await authFetch(url);
       if (!response.ok) throw new Error('Failed to list');
       return await response.json();
     } catch (error) {

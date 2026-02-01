@@ -1,4 +1,5 @@
 import { MongoClient } from 'mongodb';
+import { authenticateRequest, isPublicReadKey, isAdminOnlyWriteKey } from '../lib/auth-middleware.js';
 
 const uri = process.env.MONGODB_URI;
 let cachedClient = null;
@@ -47,7 +48,7 @@ function setCorsHeaders(req, res) {
 
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
 export default async function handler(req, res) {
@@ -66,8 +67,16 @@ export default async function handler(req, res) {
     // Get key from Vercel's dynamic route parameter
     const { key } = req.query;
 
+    // Authenticate request (returns user object or null)
+    const user = authenticateRequest(req);
+
     if (req.method === 'GET' && key) {
-      // Get single key
+      // Public keys can be read without auth, others require auth
+      if (!isPublicReadKey(key) && !user) {
+        res.status(401).json({ error: 'Authentication required' });
+        return;
+      }
+
       const doc = await collection.findOne({ key });
       if (doc) {
         // Add edge caching for rarely-changing data (60s cache, 120s stale-while-revalidate)
@@ -83,6 +92,18 @@ export default async function handler(req, res) {
         res.status(404).json({ error: 'Not found' });
       }
     } else if (req.method === 'POST' && key) {
+      // All writes require authentication
+      if (!user) {
+        res.status(401).json({ error: 'Authentication required' });
+        return;
+      }
+
+      // Admin-only keys require admin role
+      if (isAdminOnlyWriteKey(key) && !user.isAdmin) {
+        res.status(403).json({ error: 'Admin access required' });
+        return;
+      }
+
       // Set key
       const { value } = req.body;
       await collection.updateOne(
@@ -92,7 +113,16 @@ export default async function handler(req, res) {
       );
       res.status(200).json({ key, value });
     } else if (req.method === 'DELETE' && key) {
-      // Delete key
+      // Deletes require admin
+      if (!user) {
+        res.status(401).json({ error: 'Authentication required' });
+        return;
+      }
+      if (!user.isAdmin) {
+        res.status(403).json({ error: 'Admin access required' });
+        return;
+      }
+
       await collection.deleteOne({ key });
       res.status(200).json({ key, deleted: true });
     } else {

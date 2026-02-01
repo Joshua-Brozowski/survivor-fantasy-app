@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi } from './db.js';
+import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi, refreshAccessToken, clearAccessToken } from './db.js';
 
 // Confetti celebration utility - respects reduced motion preference
 const fireConfetti = () => {
@@ -287,22 +287,30 @@ export default function SurvivorFantasyApp() {
   };
 
   // Check remembered login after players load from MongoDB
+  // Try to refresh the access token using the httpOnly refresh token cookie
   useEffect(() => {
     if (players.length === 0) return; // Wait for players to load
     const remembered = localStorage.getItem('survivorFantasyUser');
     if (remembered && !currentUser) {
-      try {
-        const userData = JSON.parse(remembered);
-        const player = players.find(p => p.id === userData.id);
-        if (player) {
-          setCurrentUser(player);
-          setCurrentView('home');
-        } else {
+      (async () => {
+        try {
+          // Try to refresh the token (uses httpOnly cookie)
+          const user = await refreshAccessToken();
+          if (user) {
+            // Token refreshed successfully - find full player data
+            const player = players.find(p => p.id === user.id);
+            if (player) {
+              setCurrentUser(player);
+              setCurrentView('home');
+              return;
+            }
+          }
+          // Token refresh failed - clear remembered user
+          localStorage.removeItem('survivorFantasyUser');
+        } catch (e) {
           localStorage.removeItem('survivorFantasyUser');
         }
-      } catch (e) {
-        localStorage.removeItem('survivorFantasyUser');
-      }
+      })();
     }
   }, [players]);
 
@@ -698,7 +706,9 @@ export default function SurvivorFantasyApp() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Clear tokens on server (clears httpOnly cookie) and client
+    await auth.logout();
     setCurrentUser(null);
     setLoginForm({ name: '', password: '', rememberMe: true });
     setRecoveryForm({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });

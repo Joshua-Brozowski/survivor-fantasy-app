@@ -1,5 +1,13 @@
 import { MongoClient } from 'mongodb';
 import bcrypt from 'bcryptjs';
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+  extractRefreshTokenFromCookie,
+  setRefreshTokenCookie,
+  clearRefreshTokenCookie
+} from './lib/jwt.js';
 
 const uri = process.env.MONGODB_URI;
 let cachedClient = null;
@@ -196,6 +204,46 @@ export default async function handler(req, res) {
           return;
         }
 
+        // Helper to handle successful login - generates tokens
+        const handleLoginSuccess = async () => {
+          await clearRateLimit(collection, clientIP, playerId);
+
+          // Fetch player data to include in token
+          const playersDoc = await collection.findOne({ key: 'players' });
+          const players = playersDoc ? JSON.parse(playersDoc.value) : [];
+          const player = players.find(p => p.id === playerId);
+
+          if (!player) {
+            res.status(500).json({ error: 'Player not found' });
+            return;
+          }
+
+          // Generate tokens
+          const accessToken = generateAccessToken(player);
+          const refreshToken = generateRefreshToken(player, 0);
+
+          // Set refresh token as httpOnly cookie
+          setRefreshTokenCookie(res, refreshToken);
+
+          res.status(200).json({
+            success: true,
+            message: 'Login successful',
+            accessToken,
+            user: { id: player.id, name: player.name, isAdmin: player.isAdmin || false }
+          });
+        };
+
+        // Helper to handle failed login
+        const handleLoginFailure = async () => {
+          const failInfo = await recordFailedAttempt(collection, clientIP, playerId);
+          res.status(401).json({
+            success: false,
+            error: failInfo.attemptsLeft > 0
+              ? `Invalid password. ${failInfo.attemptsLeft} attempt(s) remaining.`
+              : 'Too many failed attempts. Account locked for 15 minutes.'
+          });
+        };
+
         const doc = await collection.findOne({ key: passwordKey });
 
         if (!doc) {
@@ -208,18 +256,10 @@ export default async function handler(req, res) {
               { $set: { key: passwordKey, value: hashedPassword, updatedAt: new Date() } },
               { upsert: true }
             );
-            await clearRateLimit(collection, clientIP, playerId);
-            res.status(200).json({ success: true, message: 'Login successful' });
+            await handleLoginSuccess();
             return;
           }
-          // Failed attempt
-          const failInfo = await recordFailedAttempt(collection, clientIP, playerId);
-          res.status(401).json({
-            success: false,
-            error: failInfo.attemptsLeft > 0
-              ? `Invalid password. ${failInfo.attemptsLeft} attempt(s) remaining.`
-              : 'Too many failed attempts. Account locked for 15 minutes.'
-          });
+          await handleLoginFailure();
           return;
         }
 
@@ -232,16 +272,9 @@ export default async function handler(req, res) {
           // Compare with hashed password
           const isValid = await bcrypt.compare(password, storedPassword);
           if (isValid) {
-            await clearRateLimit(collection, clientIP, playerId);
-            res.status(200).json({ success: true, message: 'Login successful' });
+            await handleLoginSuccess();
           } else {
-            const failInfo = await recordFailedAttempt(collection, clientIP, playerId);
-            res.status(401).json({
-              success: false,
-              error: failInfo.attemptsLeft > 0
-                ? `Invalid password. ${failInfo.attemptsLeft} attempt(s) remaining.`
-                : 'Too many failed attempts. Account locked for 15 minutes.'
-            });
+            await handleLoginFailure();
           }
         } else {
           // Legacy plaintext password - migrate it
@@ -252,16 +285,9 @@ export default async function handler(req, res) {
               { key: passwordKey },
               { $set: { key: passwordKey, value: hashedPassword, updatedAt: new Date() } }
             );
-            await clearRateLimit(collection, clientIP, playerId);
-            res.status(200).json({ success: true, message: 'Login successful' });
+            await handleLoginSuccess();
           } else {
-            const failInfo = await recordFailedAttempt(collection, clientIP, playerId);
-            res.status(401).json({
-              success: false,
-              error: failInfo.attemptsLeft > 0
-                ? `Invalid password. ${failInfo.attemptsLeft} attempt(s) remaining.`
-                : 'Too many failed attempts. Account locked for 15 minutes.'
-            });
+            await handleLoginFailure();
           }
         }
         break;
@@ -322,6 +348,50 @@ export default async function handler(req, res) {
           // Legacy plaintext
           res.status(200).json({ valid: password === storedPassword });
         }
+        break;
+      }
+
+      case 'refresh': {
+        // Refresh access token using refresh token from cookie
+        const refreshToken = extractRefreshTokenFromCookie(req);
+        if (!refreshToken) {
+          res.status(401).json({ error: 'No refresh token' });
+          return;
+        }
+
+        const decoded = verifyRefreshToken(refreshToken);
+        if (!decoded) {
+          clearRefreshTokenCookie(res);
+          res.status(401).json({ error: 'Invalid or expired refresh token' });
+          return;
+        }
+
+        // Fetch player data
+        const playersDoc = await collection.findOne({ key: 'players' });
+        const players = playersDoc ? JSON.parse(playersDoc.value) : [];
+        const player = players.find(p => p.id === decoded.playerId);
+
+        if (!player) {
+          clearRefreshTokenCookie(res);
+          res.status(401).json({ error: 'Player not found' });
+          return;
+        }
+
+        // Generate new access token
+        const accessToken = generateAccessToken(player);
+
+        res.status(200).json({
+          success: true,
+          accessToken,
+          user: { id: player.id, name: player.name, isAdmin: player.isAdmin || false }
+        });
+        break;
+      }
+
+      case 'logout': {
+        // Clear refresh token cookie
+        clearRefreshTokenCookie(res);
+        res.status(200).json({ success: true, message: 'Logged out' });
         break;
       }
 

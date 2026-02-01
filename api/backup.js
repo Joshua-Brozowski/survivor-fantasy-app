@@ -1,4 +1,5 @@
 import { MongoClient } from 'mongodb';
+import { requireAdmin } from './lib/auth-middleware.js';
 
 const uri = process.env.MONGODB_URI;
 let cachedClient = null;
@@ -98,7 +99,7 @@ function setCorsHeaders(req, res) {
 
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
 export default async function handler(req, res) {
@@ -109,6 +110,10 @@ export default async function handler(req, res) {
     res.status(200).end();
     return;
   }
+
+  // All backup operations require admin
+  const user = requireAdmin(req, res);
+  if (!user) return; // Response already sent
 
   try {
     const { db } = await connectToDatabase();

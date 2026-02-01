@@ -1,4 +1,5 @@
 import { MongoClient } from 'mongodb';
+import { requireAuth, canModifyPlayer } from './lib/auth-middleware.js';
 
 const uri = process.env.MONGODB_URI;
 let cachedClient = null;
@@ -47,7 +48,7 @@ function setCorsHeaders(req, res) {
 
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
 export default async function handler(req, res) {
@@ -58,6 +59,10 @@ export default async function handler(req, res) {
     res.status(200).end();
     return;
   }
+
+  // All advantage operations require authentication
+  const user = requireAuth(req, res);
+  if (!user) return; // Response already sent
 
   try {
     const { db } = await connectToDatabase();
@@ -72,6 +77,12 @@ export default async function handler(req, res) {
 
         if (!playerId || !advantageId || !leagueId) {
           res.status(400).json({ error: 'Missing required fields' });
+          return;
+        }
+
+        // Verify user can only purchase for themselves (or admin for anyone)
+        if (!canModifyPlayer(user, playerId)) {
+          res.status(403).json({ error: 'Cannot purchase advantages for other players' });
           return;
         }
 
