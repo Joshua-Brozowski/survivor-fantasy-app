@@ -50,6 +50,7 @@ survivor-fantasy-app/
   - 15 minute lockout duration
   - Tracks attempts in MongoDB (`ratelimit_` keys)
   - Clears on successful login
+  - Admin can check/clear via `checkRateLimit` and `clearRateLimit` actions
 - **API Authorization**:
   - All write operations require authentication
   - Admin-only operations (backup, delete, certain writes) require admin role
@@ -571,6 +572,8 @@ Authentication and password management:
 - **POST** with `action: 'resetToDefault'` - Reset to default password (hashed)
 - **POST** with `action: 'verifyCurrentPassword'` - Verify before password change
 - **POST** with `action: 'checkDefaultPasswords'` - Check which players still have default password (for admin)
+- **POST** with `action: 'checkRateLimit'` - Check if a player is rate-limited (for debugging)
+- **POST** with `action: 'clearRateLimit'` - Clear rate limit for a player (for lockout recovery)
 
 ### `/api/backup`
 Snapshot management for data integrity. **All operations require admin authentication.**
@@ -769,6 +772,14 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 
 **Notification dropdown hidden**:
 - Header has z-50 to ensure dropdown appears on top
+
+**Can't login (rate limited)**:
+- After 5 failed attempts, account is locked for 15 minutes
+- To clear: `curl -X POST "https://survivor-fantasy-app-gamma.vercel.app/api/auth" -H "Content-Type: application/json" -d '{"action":"clearRateLimit","playerId":PLAYER_ID}'`
+
+**Login button does nothing for multi-league users**:
+- Users in multiple leagues see a "Select League" screen after login
+- League selector must render BEFORE the login form in app.jsx
 
 **Database Performance**:
 - Ensure `game_data` collection has an index on `{ key: 1 }` in MongoDB Atlas
