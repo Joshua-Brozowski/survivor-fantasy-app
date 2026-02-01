@@ -395,6 +395,29 @@ export default async function handler(req, res) {
         break;
       }
 
+      case 'clearRateLimit': {
+        // Clear rate limit for a player (use when locked out)
+        const clientIP = getClientIP(req);
+        const key = `ratelimit_${clientIP}_${playerId}`;
+        await collection.deleteOne({ key });
+        res.status(200).json({ success: true, message: 'Rate limit cleared' });
+        break;
+      }
+
+      case 'checkRateLimit': {
+        // Check if a player is rate limited (for debugging)
+        const clientIP = getClientIP(req);
+        const rateLimitStatus = await isRateLimited(collection, clientIP, playerId);
+        res.status(200).json({
+          success: true,
+          limited: rateLimitStatus.limited,
+          remainingMinutes: rateLimitStatus.remainingMinutes,
+          attemptsLeft: rateLimitStatus.attemptsLeft,
+          ip: clientIP
+        });
+        break;
+      }
+
       default:
         res.status(400).json({ error: 'Invalid action' });
     }
