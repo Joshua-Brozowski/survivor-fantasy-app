@@ -17,7 +17,7 @@ const SALT_ROUNDS = 10;
 const DEFAULT_PASSWORD = 'password123';
 
 // Rate limiting settings
-const MAX_LOGIN_ATTEMPTS = 5;        // Max failed attempts before lockout
+const MAX_LOGIN_ATTEMPTS = 10;       // Max failed attempts before lockout
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;  // 15 minutes
 
 // Get client IP from request (handles Vercel proxying)
