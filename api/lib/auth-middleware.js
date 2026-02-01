@@ -54,18 +54,33 @@ export function canModifyPlayer(user, targetPlayerId) {
 
 /**
  * List of storage keys that are public (readable without auth)
- * These are needed for login/display before authentication
+ * These are needed for app loading and display before authentication
  */
 const PUBLIC_READ_KEYS = [
+  // Global data
   'players',
   'contestants',
   'leagues',
   'leagueMemberships',
+  // League-specific data (needed for app display)
+  'picks',
+  'picksLocked',
   'questionnaires',
+  'submissions',
+  'qotWVotes',
+  'pickScores',
+  'playerScores',
+  'latePenalties',
+  'playerAdvantages',
+  'advantages',
   'episodes',
+  'notifications',
+  'challenges',
+  'challengeAttempts',
   'gamePhase',
   'currentSeason',
-  'advantages'
+  'seasonHistory',
+  'seasonFinalized'
 ];
 
 /**

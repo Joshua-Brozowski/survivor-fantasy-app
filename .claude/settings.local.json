@@ -14,7 +14,8 @@
       "WebFetch(domain:www.paramountplus.com)",
       "Bash(git pull:*)",
       "Bash(git config:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(curl:*)"
     ]
   }
 }
