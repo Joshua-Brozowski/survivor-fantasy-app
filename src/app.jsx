@@ -1646,6 +1646,67 @@ export default function SurvivorFantasyApp() {
     await finalizeChallenge(challengeId);
   };
 
+  // League Selector Modal (shown when user is in multiple leagues)
+  // Must be checked BEFORE the login screen since currentUser is still null at this point
+  if (showLeagueSelector && pendingLoginUser) {
+    const userLeagueIds = leagueMemberships
+      .filter(m => m.playerId === pendingLoginUser.id)
+      .map(m => m.leagueId);
+    const userLeagues = leagues.filter(l => userLeagueIds.includes(l.id));
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900 flex items-center justify-center p-3 sm:p-4">
+        <div className="bg-black/60 backdrop-blur-sm p-5 sm:p-8 rounded-lg shadow-2xl max-w-md w-full border-2 border-amber-600">
+          <div className="flex items-center justify-center mb-4 sm:mb-6">
+            <Flame className="w-10 h-10 sm:w-12 sm:h-12 text-orange-500 mr-3" />
+            <h1 className="text-2xl sm:text-3xl font-bold text-amber-400">Select League</h1>
+          </div>
+
+          <p className="text-amber-200 text-center mb-6">
+            Welcome back, <span className="text-white font-semibold">{pendingLoginUser.name}</span>!
+            <br />
+            <span className="text-sm text-amber-300">Choose a league to enter:</span>
+          </p>
+
+          <div className="space-y-3">
+            {userLeagues.map(league => {
+              const leaguePlayers = getLeaguePlayers(league.id);
+              return (
+                <button
+                  key={league.id}
+                  onClick={() => completeLoginWithLeague(league.id)}
+                  className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-4 px-4 rounded-lg font-semibold hover:from-amber-500 hover:to-orange-500 transition text-left"
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="text-lg">{league.name}</span>
+                      {league.isDefault && (
+                        <span className="ml-2 text-xs bg-amber-800/50 px-2 py-0.5 rounded">Default</span>
+                      )}
+                    </div>
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                  <p className="text-xs text-amber-200/80 mt-1">
+                    {leaguePlayers.length} player{leaguePlayers.length !== 1 ? 's' : ''}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => {
+              setShowLeagueSelector(false);
+              setPendingLoginUser(null);
+            }}
+            className="w-full mt-6 text-amber-300 text-sm hover:text-amber-200 transition"
+          >
+            Back to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Login Screen
   if (!currentUser) {
@@ -1834,67 +1895,6 @@ export default function SurvivorFantasyApp() {
               </button>
             </div>
           )}
-        </div>
-      </div>
-    );
-  }
-
-  // League Selector Modal (shown when user is in multiple leagues)
-  if (showLeagueSelector && pendingLoginUser) {
-    const userLeagueIds = leagueMemberships
-      .filter(m => m.playerId === pendingLoginUser.id)
-      .map(m => m.leagueId);
-    const userLeagues = leagues.filter(l => userLeagueIds.includes(l.id));
-
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900 flex items-center justify-center p-3 sm:p-4">
-        <div className="bg-black/60 backdrop-blur-sm p-5 sm:p-8 rounded-lg shadow-2xl max-w-md w-full border-2 border-amber-600">
-          <div className="flex items-center justify-center mb-4 sm:mb-6">
-            <Flame className="w-10 h-10 sm:w-12 sm:h-12 text-orange-500 mr-3" />
-            <h1 className="text-2xl sm:text-3xl font-bold text-amber-400">Select League</h1>
-          </div>
-
-          <p className="text-amber-200 text-center mb-6">
-            Welcome back, <span className="text-white font-semibold">{pendingLoginUser.name}</span>!
-            <br />
-            <span className="text-sm text-amber-300">Choose a league to enter:</span>
-          </p>
-
-          <div className="space-y-3">
-            {userLeagues.map(league => {
-              const leaguePlayers = getLeaguePlayers(league.id);
-              return (
-                <button
-                  key={league.id}
-                  onClick={() => completeLoginWithLeague(league.id)}
-                  className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-4 px-4 rounded-lg font-semibold hover:from-amber-500 hover:to-orange-500 transition text-left"
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <span className="text-lg">{league.name}</span>
-                      {league.isDefault && (
-                        <span className="ml-2 text-xs bg-amber-800/50 px-2 py-0.5 rounded">Default</span>
-                      )}
-                    </div>
-                    <ChevronRight className="w-5 h-5" />
-                  </div>
-                  <p className="text-xs text-amber-200/80 mt-1">
-                    {leaguePlayers.length} player{leaguePlayers.length !== 1 ? 's' : ''}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            onClick={() => {
-              setShowLeagueSelector(false);
-              setPendingLoginUser(null);
-            }}
-            className="w-full mt-6 text-amber-300 text-sm hover:text-amber-200 transition"
-          >
-            Back to Login
-          </button>
         </div>
       </div>
     );
