@@ -46,7 +46,7 @@ survivor-fantasy-app/
   - Auto-migration: Legacy plaintext passwords hashed on first login
   - Minimum 8 character password requirement
 - **Rate Limiting**: Brute force protection on login
-  - 5 failed attempts per IP+player before lockout
+  - 10 failed attempts per IP+player before lockout
   - 15 minute lockout duration
   - Tracks attempts in MongoDB (`ratelimit_` keys)
   - Clears on successful login
@@ -774,7 +774,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - Header has z-50 to ensure dropdown appears on top
 
 **Can't login (rate limited)**:
-- After 5 failed attempts, account is locked for 15 minutes
+- After 10 failed attempts, account is locked for 15 minutes
 - To clear: `curl -X POST "https://survivor-fantasy-app-gamma.vercel.app/api/auth" -H "Content-Type: application/json" -d '{"action":"clearRateLimit","playerId":PLAYER_ID}'`
 
 **Login button does nothing for multi-league users**:
