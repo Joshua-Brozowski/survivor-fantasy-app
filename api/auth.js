@@ -151,7 +151,52 @@ export default async function handler(req, res) {
     const collection = db.collection('game_data');
     const { action, playerId, password, newPassword } = req.body;
 
-    // Special case: checkDefaultPasswords doesn't need playerId
+    // Special cases that don't need playerId
+    if (action === 'refresh' || action === 'logout') {
+      // These actions use the refresh token cookie, not playerId
+      if (action === 'refresh') {
+        const refreshToken = extractRefreshTokenFromCookie(req);
+        if (!refreshToken) {
+          res.status(401).json({ error: 'No refresh token' });
+          return;
+        }
+
+        const decoded = verifyRefreshToken(refreshToken);
+        if (!decoded) {
+          clearRefreshTokenCookie(res);
+          res.status(401).json({ error: 'Invalid or expired refresh token' });
+          return;
+        }
+
+        // Fetch player data
+        const playersDoc = await collection.findOne({ key: 'players' });
+        const players = playersDoc ? JSON.parse(playersDoc.value) : [];
+        const player = players.find(p => p.id === decoded.playerId);
+
+        if (!player) {
+          clearRefreshTokenCookie(res);
+          res.status(401).json({ error: 'Player not found' });
+          return;
+        }
+
+        // Generate new access token
+        const accessToken = generateAccessToken(player);
+
+        res.status(200).json({
+          success: true,
+          accessToken,
+          user: { id: player.id, name: player.name, isAdmin: player.isAdmin || false }
+        });
+        return;
+      }
+
+      if (action === 'logout') {
+        clearRefreshTokenCookie(res);
+        res.status(200).json({ success: true, message: 'Logged out' });
+        return;
+      }
+    }
+
     if (action === 'checkDefaultPasswords') {
       // Check which players still have the default password
       const passwordDocs = await collection.find({ key: /^password_/ }).toArray();
@@ -348,50 +393,6 @@ export default async function handler(req, res) {
           // Legacy plaintext
           res.status(200).json({ valid: password === storedPassword });
         }
-        break;
-      }
-
-      case 'refresh': {
-        // Refresh access token using refresh token from cookie
-        const refreshToken = extractRefreshTokenFromCookie(req);
-        if (!refreshToken) {
-          res.status(401).json({ error: 'No refresh token' });
-          return;
-        }
-
-        const decoded = verifyRefreshToken(refreshToken);
-        if (!decoded) {
-          clearRefreshTokenCookie(res);
-          res.status(401).json({ error: 'Invalid or expired refresh token' });
-          return;
-        }
-
-        // Fetch player data
-        const playersDoc = await collection.findOne({ key: 'players' });
-        const players = playersDoc ? JSON.parse(playersDoc.value) : [];
-        const player = players.find(p => p.id === decoded.playerId);
-
-        if (!player) {
-          clearRefreshTokenCookie(res);
-          res.status(401).json({ error: 'Player not found' });
-          return;
-        }
-
-        // Generate new access token
-        const accessToken = generateAccessToken(player);
-
-        res.status(200).json({
-          success: true,
-          accessToken,
-          user: { id: player.id, name: player.name, isAdmin: player.isAdmin || false }
-        });
-        break;
-      }
-
-      case 'logout': {
-        // Clear refresh token cookie
-        clearRefreshTokenCookie(res);
-        res.status(200).json({ success: true, message: 'Logged out' });
         break;
       }
 
