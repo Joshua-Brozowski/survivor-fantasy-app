@@ -8,6 +8,7 @@ import {
   setRefreshTokenCookie,
   clearRefreshTokenCookie
 } from './lib/jwt.js';
+import { authenticateRequest } from './lib/auth-middleware.js';
 
 const uri = process.env.MONGODB_URI;
 let cachedClient = null;
@@ -198,7 +199,17 @@ export default async function handler(req, res) {
     }
 
     if (action === 'checkDefaultPasswords') {
-      // Check which players still have the default password
+      // Check which players still have the default password - admin only
+      const authUser = authenticateRequest(req);
+      if (!authUser) {
+        res.status(401).json({ error: 'Authentication required' });
+        return;
+      }
+      if (!authUser.isAdmin) {
+        res.status(403).json({ error: 'Admin access required' });
+        return;
+      }
+
       const passwordDocs = await collection.find({ key: /^password_/ }).toArray();
       const results = {};
 
@@ -339,7 +350,20 @@ export default async function handler(req, res) {
       }
 
       case 'setPassword': {
-        // Set/change password (hashed)
+        // Set/change password (hashed) - requires authentication
+        // User can only change their own password (or admin can change anyone's)
+        const authUser = authenticateRequest(req);
+        if (!authUser) {
+          res.status(401).json({ error: 'Authentication required' });
+          return;
+        }
+
+        // Check authorization: user can only change own password unless admin
+        if (authUser.playerId !== playerId && !authUser.isAdmin) {
+          res.status(403).json({ error: 'Cannot change another player\'s password' });
+          return;
+        }
+
         if (!newPassword) {
           res.status(400).json({ error: 'Missing newPassword' });
           return;
@@ -356,7 +380,17 @@ export default async function handler(req, res) {
       }
 
       case 'resetToDefault': {
-        // Reset password to default (hashed)
+        // Reset password to default (hashed) - admin only
+        const authUser = authenticateRequest(req);
+        if (!authUser) {
+          res.status(401).json({ error: 'Authentication required' });
+          return;
+        }
+        if (!authUser.isAdmin) {
+          res.status(403).json({ error: 'Admin access required' });
+          return;
+        }
+
         const hashedDefault = await bcrypt.hash(DEFAULT_PASSWORD, SALT_ROUNDS);
         await collection.updateOne(
           { key: passwordKey },
@@ -397,7 +431,17 @@ export default async function handler(req, res) {
       }
 
       case 'clearRateLimit': {
-        // Clear rate limit for a player (use when locked out)
+        // Clear rate limit for a player (use when locked out) - admin only
+        const authUser = authenticateRequest(req);
+        if (!authUser) {
+          res.status(401).json({ error: 'Authentication required' });
+          return;
+        }
+        if (!authUser.isAdmin) {
+          res.status(403).json({ error: 'Admin access required' });
+          return;
+        }
+
         const clientIP = getClientIP(req);
         const key = `ratelimit_${clientIP}_${playerId}`;
         await collection.deleteOne({ key });
@@ -406,7 +450,17 @@ export default async function handler(req, res) {
       }
 
       case 'checkRateLimit': {
-        // Check if a player is rate limited (for debugging)
+        // Check if a player is rate limited (for debugging) - admin only
+        const authUser = authenticateRequest(req);
+        if (!authUser) {
+          res.status(401).json({ error: 'Authentication required' });
+          return;
+        }
+        if (!authUser.isAdmin) {
+          res.status(403).json({ error: 'Admin access required' });
+          return;
+        }
+
         const clientIP = getClientIP(req);
         const rateLimitStatus = await isRateLimited(collection, clientIP, playerId);
         res.status(200).json({

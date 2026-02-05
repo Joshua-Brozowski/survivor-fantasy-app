@@ -246,7 +246,8 @@ export const auth = {
 
   async setPassword(playerId, newPassword) {
     try {
-      const response = await fetch(`${API_BASE}/auth`, {
+      // Requires authentication - user can only change own password (or admin)
+      const response = await authFetch(`${API_BASE}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'setPassword', playerId, newPassword })
@@ -261,7 +262,8 @@ export const auth = {
 
   async resetToDefault(playerId) {
     try {
-      const response = await fetch(`${API_BASE}/auth`, {
+      // Requires admin authentication
+      const response = await authFetch(`${API_BASE}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'resetToDefault', playerId })
@@ -291,7 +293,8 @@ export const auth = {
 
   async checkDefaultPasswords() {
     try {
-      const response = await fetch(`${API_BASE}/auth`, {
+      // Requires admin authentication
+      const response = await authFetch(`${API_BASE}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'checkDefaultPasswords' })

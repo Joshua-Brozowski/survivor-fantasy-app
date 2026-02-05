@@ -565,13 +565,18 @@ Returns JSON: `{ key, value }` or `{ error: 'Not found' }`
 ### `/api/auth`
 Authentication and password management:
 
+**Public actions (no auth required):**
 - **POST** with `action: 'login'` - Verify password, returns access token, sets refresh token cookie
 - **POST** with `action: 'refresh'` - Refresh access token using refresh token cookie
 - **POST** with `action: 'logout'` - Clear refresh token cookie
-- **POST** with `action: 'setPassword'` - Set new hashed password
+- **POST** with `action: 'verifyCurrentPassword'` - Verify before password change (user proves identity via password)
+
+**Authenticated actions:**
+- **POST** with `action: 'setPassword'` - Set new hashed password (requires auth, user can only change own password unless admin)
+
+**Admin-only actions:**
 - **POST** with `action: 'resetToDefault'` - Reset to default password (hashed)
-- **POST** with `action: 'verifyCurrentPassword'` - Verify before password change
-- **POST** with `action: 'checkDefaultPasswords'` - Check which players still have default password (for admin)
+- **POST** with `action: 'checkDefaultPasswords'` - Check which players still have default password
 - **POST** with `action: 'checkRateLimit'` - Check if a player is rate-limited (for debugging)
 - **POST** with `action: 'clearRateLimit'` - Clear rate limit for a player (for lockout recovery)
 
@@ -775,7 +780,10 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 
 **Can't login (rate limited)**:
 - After 10 failed attempts, account is locked for 15 minutes
-- To clear: `curl -X POST "https://survivor-fantasy-app-gamma.vercel.app/api/auth" -H "Content-Type: application/json" -d '{"action":"clearRateLimit","playerId":PLAYER_ID}'`
+- Options to recover:
+  1. Wait 15 minutes for lockout to expire
+  2. Admin can clear via direct database access (MongoDB Atlas → delete `ratelimit_IP_PLAYERID` document)
+- Note: `clearRateLimit` API action now requires admin authentication for security
 
 **Login button does nothing for multi-league users**:
 - Users in multiple leagues see a "Select League" screen after login
@@ -829,6 +837,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] Login rate limiting (brute force protection)
 - [x] JWT authentication (access tokens + httpOnly refresh token cookies)
 - [x] API authorization (protected endpoints, admin-only operations)
+- [x] Auth endpoint security (setPassword requires auth, admin-only: resetToDefault, checkDefaultPasswords, clearRateLimit, checkRateLimit)
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
