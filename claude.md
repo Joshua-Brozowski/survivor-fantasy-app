@@ -464,6 +464,7 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 - `seasonHistory` - Archived season data
 - `challenges` - Array of Wordle challenge objects
 - `challengeAttempts` - Array of player challenge attempts
+- `usage_visits` - Global player visit tracking (see Usage Analytics below)
 
 ### Key Data Structures
 
@@ -531,6 +532,26 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
   resolvedAt: ISO_string | null        // When the advantage effect was applied
 }
 ```
+
+**Usage Visits** (stored in `usage_visits` global key):
+```javascript
+{
+  // Keyed by player ID (as number)
+  3: {
+    total: number,         // All-time app opens for this player
+    lastSeen: ISO_string,  // Timestamp of most recent visit
+    weeks: {
+      "2026-W08": number,  // ISO week key → visit count that week
+      "2026-W09": number,
+      // ...one entry per week of the season
+    }
+  }
+}
+```
+- Global key (not league-specific) — one record covers all leagues
+- Updated silently on every app open (manual login AND "stay logged in" token refresh)
+- Admin-only view: Admin Panel → Usage Analytics
+- Silently fails (try/catch) so tracking never breaks the app
 
 **Backup Snapshot** (stored in `backups` collection):
 ```javascript
@@ -848,6 +869,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] JWT authentication (access tokens + httpOnly refresh token cookies)
 - [x] API authorization (protected endpoints, admin-only operations)
 - [x] Auth endpoint security (setPassword requires auth, admin-only: resetToDefault, checkDefaultPasswords, clearRateLimit, checkRateLimit)
+- [x] Usage Analytics (Phase 1) — visit tracking per player, per week + total; admin-only panel; captures both manual login and "stay logged in" sessions silently
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)

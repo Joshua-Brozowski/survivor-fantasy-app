@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi, refreshAccessToken, clearAccessToken } from './db.js';
@@ -249,6 +249,9 @@ export default function SurvivorFantasyApp() {
   const [advantageModal, setAdvantageModal] = useState({ show: false, advantage: null, step: 'confirm' });
   const [advantageTarget, setAdvantageTarget] = useState(null);
 
+  // Usage tracking - prevents double-counting visits within a single session
+  const hasTrackedVisit = useRef(false);
+
   // Banner notification tracking - IDs of banners currently visible on Home tab
   const [visibleBannerIds, setVisibleBannerIds] = useState([]);
   const [previousView, setPreviousView] = useState('home');
@@ -284,6 +287,35 @@ export default function SurvivorFantasyApp() {
     }
     const leagueStore = getLeagueStorage();
     return leagueStore.set(key, value);
+  };
+
+  // Returns ISO week string e.g. "2026-W08" for grouping visits by week
+  const getISOWeekKey = (date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+    const week1 = new Date(d.getFullYear(), 0, 4);
+    const weekNum = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    return `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+  };
+
+  // Record a visit for the current user - called once per app session, silently fails
+  const recordVisit = async (playerId) => {
+    if (isGuestMode()) return;
+    try {
+      const result = await storage.get('usage_visits');
+      const visits = result ? JSON.parse(result.value) : {};
+      const playerData = visits[playerId] || { total: 0, weeks: {}, lastSeen: null };
+      const now = new Date();
+      const weekKey = getISOWeekKey(now);
+      playerData.total = (playerData.total || 0) + 1;
+      playerData.weeks[weekKey] = (playerData.weeks[weekKey] || 0) + 1;
+      playerData.lastSeen = now.toISOString();
+      visits[playerId] = playerData;
+      await storage.set('usage_visits', JSON.stringify(visits));
+    } catch (e) {
+      // Silently fail - visit tracking should never interrupt the app
+    }
   };
 
   // Check remembered login after players load from MongoDB
@@ -358,6 +390,15 @@ export default function SurvivorFantasyApp() {
       return () => clearTimeout(timer);
     }
   }, [currentView, visibleBannerIds.join(',')]);
+
+  // Record a visit once per session when the user is confirmed and app data is loaded.
+  // Captures both manual logins and "stay logged in" token-refresh sessions.
+  useEffect(() => {
+    if (isDataLoaded && currentUser && !hasTrackedVisit.current) {
+      hasTrackedVisit.current = true;
+      recordVisit(currentUser.id);
+    }
+  }, [isDataLoaded, currentUser]);
 
   const loadGameData = async () => {
     try {
@@ -709,6 +750,7 @@ export default function SurvivorFantasyApp() {
   const handleLogout = async () => {
     // Clear tokens on server (clears httpOnly cookie) and client
     await auth.logout();
+    hasTrackedVisit.current = false; // Allow tracking next login in same session
     setCurrentUser(null);
     setLoginForm({ name: '', password: '', rememberMe: true });
     setRecoveryForm({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
@@ -3576,6 +3618,8 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [dragOverNew, setDragOverNew] = useState(false);
   const [dragOverEdit, setDragOverEdit] = useState(null);
   const [notificationForm, setNotificationForm] = useState({ selectedPlayers: [], message: '', sendToAll: false });
+  const [usageData, setUsageData] = useState(null);
+  const [loadingUsage, setLoadingUsage] = useState(false);
 
   // Helper function to convert image file to Base64
   const handleImageFile = (file, callback) => {
@@ -6615,6 +6659,145 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   }
 
 
+  if (adminView === 'usage-analytics') {
+    const loadUsageData = async () => {
+      setLoadingUsage(true);
+      try {
+        const result = await storage.get('usage_visits');
+        setUsageData(result ? JSON.parse(result.value) : {});
+      } catch (e) {
+        setUsageData({});
+      }
+      setLoadingUsage(false);
+    };
+
+    if (usageData === null && !loadingUsage) {
+      loadUsageData();
+    }
+
+    const timeAgo = (isoString) => {
+      if (!isoString) return 'Never';
+      const diff = Date.now() - new Date(isoString).getTime();
+      const minutes = Math.floor(diff / 60000);
+      if (minutes < 1) return 'Just now';
+      if (minutes < 60) return `${minutes}m ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours}h ago`;
+      const days = Math.floor(hours / 24);
+      return `${days}d ago`;
+    };
+
+    // Collect all weeks seen across all players, sorted chronologically
+    const allWeeks = usageData
+      ? [...new Set(Object.values(usageData).flatMap(d => Object.keys(d.weeks || {})))].sort()
+      : [];
+
+    const totalVisits = usageData
+      ? Object.values(usageData).reduce((sum, d) => sum + (d.total || 0), 0)
+      : 0;
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-cyan-700">
+          <h2 className="text-2xl font-bold text-gray-300 mb-2 flex items-center gap-2">
+            <TrendingUp className="w-6 h-6 text-cyan-400" />
+            Usage Analytics
+          </h2>
+          <p className="text-gray-500 text-sm mb-6">App opens per player — both manual logins and "stay logged in" sessions are counted.</p>
+
+          {loadingUsage && (
+            <p className="text-gray-400 text-center py-8">Loading...</p>
+          )}
+
+          {!loadingUsage && usageData !== null && (
+            <>
+              {/* Summary */}
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                <div className="bg-cyan-900/30 border border-cyan-700 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-cyan-400">{totalVisits}</p>
+                  <p className="text-xs text-cyan-300">Total Opens (All Players)</p>
+                </div>
+                <div className="bg-teal-900/30 border border-teal-700 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-teal-400">{allWeeks.length}</p>
+                  <p className="text-xs text-teal-300">Weeks Tracked</p>
+                </div>
+              </div>
+
+              {/* Per-player table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-gray-700">
+                      <th className="text-left py-2 pr-4 font-semibold">Player</th>
+                      <th className="text-center py-2 px-3 font-semibold">Total</th>
+                      <th className="text-left py-2 px-3 font-semibold">Last Seen</th>
+                      {allWeeks.map(w => (
+                        <th key={w} className="text-center py-2 px-2 font-semibold text-xs whitespace-nowrap">
+                          {w.replace('-W', ' W')}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {players.map(player => {
+                      const data = usageData[player.id] || { total: 0, weeks: {}, lastSeen: null };
+                      const hasVisits = data.total > 0;
+                      return (
+                        <tr key={player.id} className="border-b border-gray-800 hover:bg-gray-900/40">
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center text-xs font-bold text-white border border-gray-500">
+                                {player.name.charAt(0)}
+                              </div>
+                              <span className={`font-medium ${hasVisits ? 'text-white' : 'text-gray-500'}`}>{player.name}</span>
+                              {player.isAdmin && <Crown className="w-3 h-3 text-yellow-400" />}
+                            </div>
+                          </td>
+                          <td className="text-center py-3 px-3">
+                            <span className={`font-bold text-base ${hasVisits ? 'text-cyan-400' : 'text-gray-600'}`}>
+                              {data.total || 0}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-gray-400 text-xs whitespace-nowrap">
+                            {timeAgo(data.lastSeen)}
+                          </td>
+                          {allWeeks.map(w => (
+                            <td key={w} className="text-center py-3 px-2">
+                              {data.weeks[w] ? (
+                                <span className="text-teal-300 font-semibold">{data.weeks[w]}</span>
+                              ) : (
+                                <span className="text-gray-700">—</span>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <button
+                onClick={loadUsageData}
+                className="mt-4 px-4 py-2 bg-cyan-800 text-cyan-200 rounded font-semibold hover:bg-cyan-700 transition flex items-center gap-2 text-sm"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Refresh
+              </button>
+            </>
+          )}
+
+          <button
+            onClick={() => setAdminView('main')}
+            className="w-full mt-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+          >
+            Back to Controls
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Guest Mode Banner */}
@@ -6932,6 +7115,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               <div className="flex items-center gap-2">
                 <Key className="w-5 h-5" />
                 <span>Password Management</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => { setUsageData(null); setAdminView('usage-analytics'); }}
+            className="bg-gradient-to-r from-cyan-700 to-teal-700 text-white py-4 px-6 rounded-lg font-semibold hover:from-cyan-600 hover:to-teal-600 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" />
+                <span>Usage Analytics</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
