@@ -5744,6 +5744,77 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             </div>
           </div>
 
+          {/* Picks Status */}
+          <div className="mt-6 bg-gray-900/30 p-4 rounded-lg border border-gray-600">
+            <p className="text-gray-300 font-semibold mb-3">Picks Status</p>
+
+            {/* Instinct Picks */}
+            {(() => {
+              const instinctCount = leaguePlayers.filter(p =>
+                picks.some(pk => pk.playerId === p.id && pk.type === 'instinct')
+              ).length;
+              const allIn = instinctCount === leaguePlayers.length;
+              return (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-400 text-sm font-medium">Instinct Picks</span>
+                    <span className={`font-bold text-sm px-2 py-0.5 rounded ${allIn ? 'bg-green-800 text-green-300' : 'bg-gray-700 text-white'}`}>
+                      {instinctCount} / {leaguePlayers.length}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {leaguePlayers.map(player => {
+                      const pick = picks.find(pk => pk.playerId === player.id && pk.type === 'instinct');
+                      const contestant = pick ? contestants.find(c => c.id === pick.contestantId) : null;
+                      return (
+                        <div key={player.id} className="flex items-center justify-between text-sm px-3 py-1.5 rounded bg-black/30">
+                          <span className={pick ? 'text-white' : 'text-gray-500'}>{player.name}</span>
+                          {pick
+                            ? <span className="text-green-400 text-xs flex items-center gap-1"><Check className="w-3 h-3" />{contestant?.name || 'Unknown'}</span>
+                            : <span className="text-gray-600 text-xs">No pick</span>
+                          }
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Final Picks — only shown when that phase is open or later */}
+            {['final-picks', 'mid-season', 'finale'].includes(safeGamePhase) && (() => {
+              const finalCount = leaguePlayers.filter(p =>
+                picks.some(pk => pk.playerId === p.id && pk.type === 'final')
+              ).length;
+              const allIn = finalCount === leaguePlayers.length;
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-gray-400 text-sm font-medium">Final Picks</span>
+                    <span className={`font-bold text-sm px-2 py-0.5 rounded ${allIn ? 'bg-green-800 text-green-300' : 'bg-gray-700 text-white'}`}>
+                      {finalCount} / {leaguePlayers.length}
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {leaguePlayers.map(player => {
+                      const pick = picks.find(pk => pk.playerId === player.id && pk.type === 'final');
+                      const contestant = pick ? contestants.find(c => c.id === pick.contestantId) : null;
+                      return (
+                        <div key={player.id} className="flex items-center justify-between text-sm px-3 py-1.5 rounded bg-black/30">
+                          <span className={pick ? 'text-white' : 'text-gray-500'}>{player.name}</span>
+                          {pick
+                            ? <span className="text-green-400 text-xs flex items-center gap-1"><Check className="w-3 h-3" />{contestant?.name || 'Unknown'}</span>
+                            : <span className="text-gray-600 text-xs">No pick</span>
+                          }
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Picks Lock Control */}
           <div className="mt-6 bg-amber-900/20 p-4 rounded-lg border border-amber-600">
             <p className="text-amber-300 font-semibold mb-3">Picks Lock Control</p>

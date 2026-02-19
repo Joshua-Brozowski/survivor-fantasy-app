@@ -226,6 +226,7 @@ Layout from top to bottom:
 - Jump directly to any phase
 - Phase guide with descriptions
 - Confirmation required for going backward
+- **Picks Status**: Per-player tally showing who has/hasn't submitted instinct picks (always shown) and final picks (shown when phase is `final-picks` or later); displays contestant name for each pick; X/9 counter turns green when all players have picked
 
 **Season Management**:
 - Archive current season
@@ -870,6 +871,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] API authorization (protected endpoints, admin-only operations)
 - [x] Auth endpoint security (setPassword requires auth, admin-only: resetToDefault, checkDefaultPasswords, clearRateLimit, checkRateLimit)
 - [x] Usage Analytics (Phase 1) — visit tracking per player, per week + total; admin-only panel; captures both manual login and "stay logged in" sessions silently
+- [x] Picks Status tally in Phase Control — shows who has/hasn't made instinct & final picks with contestant name; X/9 counter turns green when all submitted; final picks section only appears when phase is final-picks or later
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
