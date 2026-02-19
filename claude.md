@@ -405,8 +405,18 @@ The app is installable on mobile devices for an app-like experience.
 **Features**:
 - Custom flame icon on home screen
 - Opens fullscreen (no browser UI)
-- Themed status bar (amber)
+- Solid black status bar on iOS (intentional — avoids safe-area-inset complexity)
 - Shows as "Survivor FL" in app switcher
+
+**iOS Status Bar Decision**:
+- `apple-mobile-web-app-status-bar-style` is set to `"black"` (NOT `"black-translucent"`)
+- `viewport-fit=cover` is intentionally absent from the viewport meta tag
+- Reason: `black-translucent` + `viewport-fit=cover` causes content to render behind the
+  status bar, requiring `env(safe-area-inset-top)` padding on every fixed/sticky element.
+  Using `"black"` means iOS renders a solid status bar above the content — no safe area
+  handling needed now or in any future feature additions.
+- DO NOT change these back to `black-translucent` / add `viewport-fit=cover` without also
+  adding `paddingTop: 'env(safe-area-inset-top)'` to the `<header>` in app.jsx.
 
 **Files**:
 - `public/manifest.json` - App metadata and icon references
