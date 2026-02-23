@@ -3594,6 +3594,11 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     }
     return true;
   };
+
+  // League-scoped storage helper — AdminPanel is a separate component so it can't
+  // access getLeagueStorage() from the parent scope; recreate it using the prop.
+  const getLeagueStorage = () => createLeagueStorage(currentLeagueId || 1);
+
   const [newQ, setNewQ] = useState({
     title: '',
     episodeNumber: episodes.length + 1,
