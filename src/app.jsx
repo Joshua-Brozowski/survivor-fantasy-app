@@ -3625,6 +3625,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [notificationForm, setNotificationForm] = useState({ selectedPlayers: [], message: '', sendToAll: false });
   const [usageData, setUsageData] = useState(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
+  const [expandedSubmissionsQ, setExpandedSubmissionsQ] = useState(null);
 
   // Helper function to convert image file to Base64
   const handleImageFile = (file, callback) => {
@@ -7302,6 +7303,13 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                           <p className="text-yellow-300 text-sm">
                             Episode {q.episodeNumber} • {qSubmissions.length}/{players.length} submitted
                           </p>
+                          <button
+                            onClick={() => setExpandedSubmissionsQ(expandedSubmissionsQ === q.id ? null : q.id)}
+                            className="text-yellow-400 hover:text-yellow-200 text-xs flex items-center gap-1 mt-0.5"
+                          >
+                            <Users size={12} />
+                            {expandedSubmissionsQ === q.id ? 'Hide' : 'See who'}
+                          </button>
                           <p className={`text-sm ${isPastDeadline ? 'text-red-400' : 'text-green-400'}`}>
                             Deadline: {deadline.toLocaleString()} {isPastDeadline ? '(PASSED)' : ''}
                           </p>
@@ -7348,6 +7356,25 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                         </div>
                       </div>
                     </div>
+                    {expandedSubmissionsQ === q.id && (
+                      <div className="mt-3 pt-3 border-t border-yellow-700/40">
+                        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                          {players.map(player => {
+                            const sub = submissions.filter(s => s.questionnaireId === q.id).find(s => s.playerId === player.id);
+                            return (
+                              <div key={player.id} className={`flex items-center gap-1.5 px-2 py-1 rounded text-sm ${sub ? 'bg-green-900/30' : 'bg-red-900/20'}`}>
+                                {sub
+                                  ? <Check size={12} className="text-green-400 shrink-0" />
+                                  : <X size={12} className="text-red-400 shrink-0" />
+                                }
+                                <span className={sub ? 'text-green-200' : 'text-red-300'}>{player.name}</span>
+                                {sub?.isLate && <span className="text-yellow-400 text-xs ml-auto">Late</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
