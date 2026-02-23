@@ -2905,7 +2905,7 @@ export default function SurvivorFantasyApp() {
             qotWVotes={qotWVotes}
             setQotWVotes={setQotWVotes}
             players={leaguePlayers}
-            guestSafeSet={guestSafeSet}
+            guestSafeLeagueSet={guestSafeLeagueSet}
             isGuestMode={isGuestMode}
             playerAdvantages={playerAdvantages}
           />
@@ -4430,8 +4430,41 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             </div>
           )}
 
+          {/* Submissions Status — who has/hasn't submitted */}
           <div className="bg-yellow-900/30 border border-yellow-600 p-4 rounded-lg mb-6">
-            <p className="text-yellow-300 font-semibold">Submissions: {qSubmissions.length} / {players.length}</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-yellow-300 font-semibold">Submissions</p>
+              <span className={`font-bold text-sm px-2 py-0.5 rounded ${qSubmissions.length === leaguePlayers.length ? 'bg-green-800 text-green-300' : 'bg-gray-700 text-white'}`}>
+                {qSubmissions.length} / {leaguePlayers.length}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {leaguePlayers.map(player => {
+                const sub = qSubmissions.find(s => s.playerId === player.id);
+                const timeAgo = (iso) => {
+                  const diff = Date.now() - new Date(iso).getTime();
+                  const mins = Math.floor(diff / 60000);
+                  if (mins < 1) return 'just now';
+                  if (mins < 60) return `${mins}m ago`;
+                  const hrs = Math.floor(mins / 60);
+                  if (hrs < 24) return `${hrs}h ago`;
+                  return `${Math.floor(hrs / 24)}d ago`;
+                };
+                return (
+                  <div key={player.id} className="flex items-center justify-between text-sm px-3 py-1.5 rounded bg-black/30">
+                    <span className={sub ? 'text-white' : 'text-gray-500'}>{player.name}</span>
+                    {sub ? (
+                      <span className="text-green-400 text-xs flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        {timeAgo(sub.submittedAt)}{sub.isLate ? ' · late' : ''}
+                      </span>
+                    ) : (
+                      <span className="text-gray-600 text-xs">Not submitted</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <div className="space-y-4 mb-6">
@@ -7664,7 +7697,7 @@ function NotificationBanners({ notifications, currentUser, markNotificationSeen,
   );
 }
 
-function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmissions, contestants, latePenalties, setLatePenalties, qotWVotes, setQotWVotes, players, guestSafeSet, isGuestMode, playerAdvantages }) {
+function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmissions, contestants, latePenalties, setLatePenalties, qotWVotes, setQotWVotes, players, guestSafeLeagueSet, isGuestMode, playerAdvantages }) {
   const activeQ = questionnaires.find(q => q.status === 'active');
   const mySubmission = activeQ ? submissions.find(s => s.questionnaireId === activeQ.id && s.playerId === currentUser.id) : null;
   const [answers, setAnswers] = useState({});
