@@ -6908,6 +6908,137 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     );
   }
 
+  if (adminView === 'advantage-inspector') {
+    const ADVANTAGE_DEFS = [
+      { id: 'extra-vote',     name: 'Extra Vote',           cost: 15 },
+      { id: 'vote-steal',     name: 'Vote Steal',           cost: 20 },
+      { id: 'double-trouble', name: 'Double Trouble',       cost: 25 },
+      { id: 'point-steal',    name: 'Thief in the Shadows', cost: 30 },
+    ];
+    const activeAdvantages = playerAdvantages.filter(pa => !pa.used);
+    const usedAdvantages   = playerAdvantages.filter(pa => pa.used);
+    const currentLeagueName = leagues?.find(l => l.id === currentLeagueId)?.name || 'Current League';
+
+    const availableCount = ADVANTAGE_DEFS.filter(adv => !activeAdvantages.find(pa => pa.advantageId === adv.id)).length;
+    const ownedCount     = activeAdvantages.filter(pa => pa.queuedForWeek === null).length;
+    const queuedCount    = activeAdvantages.filter(pa => pa.queuedForWeek !== null).length;
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-gray-800 border border-gray-600 p-6 rounded-lg">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-white text-xl font-bold flex items-center gap-2">
+                <Zap className="w-5 h-5 text-purple-400" />
+                Advantage Inspector
+              </h2>
+              <span className="text-xs text-purple-300 bg-purple-900/40 border border-purple-700 px-2 py-0.5 rounded mt-1 inline-block">{currentLeagueName}</span>
+            </div>
+          </div>
+
+          {/* Summary chips */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            <span className="px-3 py-1 rounded-full bg-gray-700 text-gray-300 text-sm font-semibold">{availableCount} Available</span>
+            <span className="px-3 py-1 rounded-full bg-green-900/50 text-green-300 text-sm font-semibold">{ownedCount} Owned</span>
+            <span className="px-3 py-1 rounded-full bg-yellow-900/50 text-yellow-300 text-sm font-semibold">{queuedCount} Queued</span>
+            <span className="px-3 py-1 rounded-full bg-gray-700/60 text-gray-400 text-sm font-semibold">{usedAdvantages.length} Used this season</span>
+          </div>
+
+          {/* 4 Advantage Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            {ADVANTAGE_DEFS.map(adv => {
+              const owner = activeAdvantages.find(pa => pa.advantageId === adv.id);
+              const ownerPlayer  = owner ? players.find(p => p.id === owner.playerId) : null;
+              const targetPlayer = owner?.targetPlayerId ? players.find(p => p.id === owner.targetPlayerId) : null;
+              const isQueued     = owner && owner.queuedForWeek !== null;
+              const isOwned      = owner && owner.queuedForWeek === null;
+
+              let borderColor = 'border-gray-600';
+              let bgColor     = 'bg-gray-700/30';
+              if (isQueued) { borderColor = 'border-yellow-500'; bgColor = 'bg-yellow-900/20'; }
+              else if (isOwned) { borderColor = 'border-green-600'; bgColor = 'bg-green-900/20'; }
+
+              return (
+                <div key={adv.id} className={`border ${borderColor} ${bgColor} p-4 rounded-lg`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white font-bold">{adv.name}</span>
+                    <span className="text-xs text-gray-400 bg-gray-700 px-2 py-0.5 rounded">{adv.cost} pts</span>
+                  </div>
+                  {!owner && (
+                    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-gray-700 text-gray-300">Available</span>
+                  )}
+                  {isOwned && (
+                    <div>
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-green-900/60 text-green-300 font-semibold">{ownerPlayer?.name ?? `Player ${owner.playerId}`} owns it</span>
+                      <p className="text-gray-500 text-xs mt-1">Not queued yet</p>
+                    </div>
+                  )}
+                  {isQueued && (
+                    <div>
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-yellow-900/60 text-yellow-300 font-semibold">
+                        {ownerPlayer?.name ?? `Player ${owner.playerId}`} — Week {owner.queuedForWeek}
+                      </span>
+                      {targetPlayer && (
+                        <p className="text-red-300 text-xs mt-1">Target: {targetPlayer.name}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Usage History */}
+          {usedAdvantages.length > 0 && (
+            <div>
+              <h3 className="text-gray-300 font-semibold mb-3 text-sm uppercase tracking-wide">Season History</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-400 border-b border-gray-700">
+                      <th className="text-left py-2 pr-4 font-semibold">Player</th>
+                      <th className="text-left py-2 pr-4 font-semibold">Advantage</th>
+                      <th className="text-center py-2 px-3 font-semibold">Week</th>
+                      <th className="text-left py-2 px-3 font-semibold">Target</th>
+                      <th className="text-left py-2 pl-3 font-semibold">Resolved</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usedAdvantages.map(pa => {
+                      const player = players.find(p => p.id === pa.playerId);
+                      const target = pa.targetPlayerId ? players.find(p => p.id === pa.targetPlayerId) : null;
+                      return (
+                        <tr key={pa.id} className="border-b border-gray-800 hover:bg-gray-700/20">
+                          <td className="py-2 pr-4 text-white">{player?.name ?? `Player ${pa.playerId}`}</td>
+                          <td className="py-2 pr-4 text-purple-300">{pa.name}</td>
+                          <td className="py-2 px-3 text-center text-gray-300">{pa.queuedForWeek ?? '—'}</td>
+                          <td className="py-2 px-3 text-red-300">{target?.name ?? '—'}</td>
+                          <td className="py-2 pl-3 text-gray-400 text-xs">{pa.resolvedAt ? new Date(pa.resolvedAt).toLocaleDateString() : '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {playerAdvantages.length === 0 && (
+            <p className="text-gray-500 text-sm text-center py-4">No advantages have been purchased this season.</p>
+          )}
+        </div>
+
+        <button
+          onClick={() => setAdminView('main')}
+          className="w-full py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+        >
+          Back to Controls
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Guest Mode Banner */}
@@ -7277,6 +7408,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               <div className="flex items-center gap-2">
                 <Trophy className="w-5 h-5" />
                 <span>League Management</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('advantage-inspector')}
+            className="bg-gradient-to-r from-purple-600 to-violet-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-purple-500 hover:to-violet-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5" />
+                <span>Advantage Inspector</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
