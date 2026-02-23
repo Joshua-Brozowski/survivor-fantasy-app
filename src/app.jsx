@@ -251,6 +251,9 @@ export default function SurvivorFantasyApp() {
 
   // Usage tracking - prevents double-counting visits within a single session
   const hasTrackedVisit = useRef(false);
+  const tabVisitsRef   = useRef({});        // In-memory tab counts for current session
+  const sessionTabsRef = useRef(new Set()); // Unique tabs visited this session
+  const flushTimerRef  = useRef(null);      // Debounce timer for tab data flush
 
   // Banner notification tracking - IDs of banners currently visible on Home tab
   const [visibleBannerIds, setVisibleBannerIds] = useState([]);
@@ -315,6 +318,29 @@ export default function SurvivorFantasyApp() {
       await storage.set('usage_visits', JSON.stringify(visits));
     } catch (e) {
       // Silently fail - visit tracking should never interrupt the app
+    }
+  };
+
+  // Flush in-memory tab visit counts to storage - silently fails like recordVisit
+  const flushTabData = async (playerId) => {
+    if (isGuestMode() || Object.keys(tabVisitsRef.current).length === 0) return;
+    try {
+      const result = await storage.get('usage_visits');
+      const visits = result ? JSON.parse(result.value) : {};
+      const playerData = visits[playerId] || { total: 0, weeks: {}, lastSeen: null };
+      const existingTabs = playerData.tabs || {};
+      Object.entries(tabVisitsRef.current).forEach(([tab, count]) => {
+        existingTabs[tab] = (existingTabs[tab] || 0) + count;
+      });
+      playerData.tabs = existingTabs;
+      playerData.lastSessionDepth = sessionTabsRef.current.size;
+      visits[playerId] = playerData;
+      await storage.set('usage_visits', JSON.stringify(visits));
+      // Reset in-memory counts after successful flush to avoid double-counting
+      tabVisitsRef.current = {};
+      sessionTabsRef.current = new Set();
+    } catch (e) {
+      // Silently fail - tab tracking should never interrupt the app
     }
   };
 
@@ -399,6 +425,17 @@ export default function SurvivorFantasyApp() {
       recordVisit(currentUser.id);
     }
   }, [isDataLoaded, currentUser]);
+
+  // Track tab/feature usage in memory, flush to storage after 30s of inactivity
+  useEffect(() => {
+    if (!currentUser || !isDataLoaded || isGuestMode()) return;
+    tabVisitsRef.current[currentView] = (tabVisitsRef.current[currentView] || 0) + 1;
+    sessionTabsRef.current.add(currentView);
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = setTimeout(() => {
+      flushTabData(currentUser.id);
+    }, 30000);
+  }, [currentView, currentUser, isDataLoaded]);
 
   const loadGameData = async () => {
     try {
@@ -748,6 +785,8 @@ export default function SurvivorFantasyApp() {
   };
 
   const handleLogout = async () => {
+    // Flush any pending tab data before clearing state (fire-and-forget)
+    if (currentUser) flushTabData(currentUser.id);
     // Clear tokens on server (clears httpOnly cookie) and client
     await auth.logout();
     hasTrackedVisit.current = false; // Allow tracking next login in same session
@@ -6813,7 +6852,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             <TrendingUp className="w-6 h-6 text-cyan-400" />
             Usage Analytics
           </h2>
-          <p className="text-gray-500 text-sm mb-6">App opens per player — both manual logins and "stay logged in" sessions are counted.</p>
+          <p className="text-gray-500 text-sm mb-6">App opens and tab usage per player — both manual logins and "stay logged in" sessions are counted.</p>
 
           {loadingUsage && (
             <p className="text-gray-400 text-center py-8">Loading...</p>
@@ -6841,6 +6880,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                       <th className="text-left py-2 pr-4 font-semibold">Player</th>
                       <th className="text-center py-2 px-3 font-semibold">Total</th>
                       <th className="text-left py-2 px-3 font-semibold">Last Seen</th>
+                      <th className="text-center py-2 px-3 font-semibold">Depth</th>
                       {allWeeks.map(w => (
                         <th key={w} className="text-center py-2 px-2 font-semibold text-xs whitespace-nowrap">
                           {w.replace('-W', ' W')}
@@ -6871,6 +6911,11 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                           <td className="py-3 px-3 text-gray-400 text-xs whitespace-nowrap">
                             {timeAgo(data.lastSeen)}
                           </td>
+                          <td className="text-center py-3 px-3">
+                            <span className={`text-sm font-semibold ${data.lastSessionDepth ? 'text-yellow-300' : 'text-gray-700'}`}>
+                              {data.lastSessionDepth ?? '—'}
+                            </span>
+                          </td>
                           {allWeeks.map(w => (
                             <td key={w} className="text-center py-3 px-2">
                               {data.weeks[w] ? (
@@ -6885,6 +6930,48 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                     })}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Tab Breakdown */}
+              <div className="mt-6">
+                <h3 className="text-gray-400 font-semibold mb-3 text-sm uppercase tracking-wide">Tab Usage (All-Time)</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-400 border-b border-gray-700">
+                        <th className="text-left py-2 pr-4 font-semibold">Player</th>
+                        {['home','picks','questionnaire','challenge','leaderboard','advantages','admin'].map(tab => (
+                          <th key={tab} className="text-center py-2 px-2 font-semibold text-xs capitalize whitespace-nowrap">
+                            {tab === 'questionnaire' ? 'Q\'aire' : tab === 'challenge' ? 'Wordle' : tab === 'leaderboard' ? 'Board' : tab === 'advantages' ? "Adv's" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {players.map(player => {
+                        const data = usageData[player.id] || {};
+                        const tabs = data.tabs || {};
+                        const hasTabData = Object.keys(tabs).length > 0;
+                        return (
+                          <tr key={player.id} className="border-b border-gray-800 hover:bg-gray-900/40">
+                            <td className="py-2 pr-4">
+                              <span className={`font-medium ${hasTabData ? 'text-white' : 'text-gray-500'}`}>{player.name}</span>
+                            </td>
+                            {['home','picks','questionnaire','challenge','leaderboard','advantages','admin'].map(tab => (
+                              <td key={tab} className="text-center py-2 px-2">
+                                {tabs[tab] ? (
+                                  <span className="text-cyan-300 font-semibold">{tabs[tab]}</span>
+                                ) : (
+                                  <span className="text-gray-700">—</span>
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <button
