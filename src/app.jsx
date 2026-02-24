@@ -3733,6 +3733,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [expandedSubmissionsQ, setExpandedSubmissionsQ] = useState(null);
   const [showAllWeeks, setShowAllWeeks] = useState(false);
+  const [penaltyWaivers, setPenaltyWaivers] = useState(new Set()); // Player IDs waived from -5 penalty for current scoring session
 
   // Helper function to convert image file to Base64
   const handleImageFile = (file, callback) => {
@@ -3851,7 +3852,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     alert(`Questionnaire re-opened!\n\nNew deadline: ${newDeadline.toLocaleString()}\nLocks at: ${newLockedAt.toLocaleString()}`);
   };
 
-  const calculateScores = (questionnaire, correctAns) => {
+  const calculateScores = (questionnaire, correctAns, waivedSet = new Set()) => {
     const scores = {};
     const qSubmissions = submissions.filter(s => s.questionnaireId === questionnaire.id);
 
@@ -3869,7 +3870,8 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
         }
       });
 
-      if (sub.penalty) {
+      // Apply late penalty only if this player is not waived
+      if (sub.penalty && !waivedSet.has(sub.playerId)) {
         score -= sub.penalty;
       }
 
@@ -3889,7 +3891,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     // Auto-snapshot before releasing/re-scoring
     await backup.createSnapshot(isRescore ? 'before-rescore' : 'before-release-scores');
 
-    const newScores = calculateScores(scoringQ, correctAnswers);
+    const newScores = calculateScores(scoringQ, correctAnswers, penaltyWaivers);
 
     // For re-scoring, get old scores and calculate adjustments
     if (isRescore) {
@@ -4075,7 +4077,35 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
     // Save updated advantages
     await leagueStore.set('playerAdvantages', JSON.stringify(updatedPlayerAdvantages));
-    setPlayerAdvantages(updatedPlayerAdvantages)
+    setPlayerAdvantages(updatedPlayerAdvantages);
+
+    // Apply non-submission penalty (-5) for players who didn't submit and weren't waived.
+    // Read fresh from storage to avoid stale closure state after advantage writes.
+    const submittedIds = new Set(
+      submissions.filter(s => s.questionnaireId === scoringQ.id).map(s => s.playerId)
+    );
+    const nonSubmitters = leaguePlayers.filter(
+      p => !submittedIds.has(p.id) && !penaltyWaivers.has(p.id)
+    );
+    if (nonSubmitters.length > 0) {
+      const freshResult = await leagueStore.get('playerScores');
+      const updatedScores = freshResult ? JSON.parse(freshResult.value) : {};
+      for (const player of nonSubmitters) {
+        if (!updatedScores[player.id]) updatedScores[player.id] = { totalPoints: 0, breakdown: [] };
+        updatedScores[player.id].breakdown.push({
+          description: `No submission - ${scoringQ.title}`,
+          points: -5,
+          date: new Date().toISOString(),
+          type: 'questionnaire'
+        });
+        updatedScores[player.id].totalPoints = updatedScores[player.id].breakdown.reduce(
+          (sum, e) => sum + e.points, 0
+        );
+      }
+      setPlayerScores(updatedScores);
+      await leagueStore.set('playerScores', JSON.stringify(updatedScores));
+    }
+    setPenaltyWaivers(new Set());
 
     await addNotification({
       type: 'scores_released',
@@ -4561,17 +4591,38 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                   if (hrs < 24) return `${hrs}h ago`;
                   return `${Math.floor(hrs / 24)}d ago`;
                 };
+                const eligibleForWaiver = !isRescore && (!sub || sub.isLate);
+                const isWaived = penaltyWaivers.has(player.id);
                 return (
                   <div key={player.id} className="flex items-center justify-between text-sm px-3 py-1.5 rounded bg-black/30">
                     <span className={sub ? 'text-white' : 'text-gray-500'}>{player.name}</span>
-                    {sub ? (
-                      <span className="text-green-400 text-xs flex items-center gap-1">
-                        <Check className="w-3 h-3" />
-                        {timeAgo(sub.submittedAt)}{sub.isLate ? ' · late' : ''}
-                      </span>
-                    ) : (
-                      <span className="text-gray-600 text-xs">Not submitted</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {sub ? (
+                        <span className="text-green-400 text-xs flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          {timeAgo(sub.submittedAt)}{sub.isLate ? ' · late' : ''}
+                        </span>
+                      ) : (
+                        <span className="text-gray-600 text-xs">Not submitted</span>
+                      )}
+                      {eligibleForWaiver && (
+                        <button
+                          onClick={() => {
+                            const next = new Set(penaltyWaivers);
+                            if (next.has(player.id)) next.delete(player.id);
+                            else next.add(player.id);
+                            setPenaltyWaivers(next);
+                          }}
+                          className={`text-xs px-2 py-0.5 rounded border transition ${
+                            isWaived
+                              ? 'bg-green-900/50 text-green-300 border-green-600'
+                              : 'bg-gray-800 text-gray-400 border-gray-600 hover:border-yellow-500 hover:text-yellow-300'
+                          }`}
+                        >
+                          {isWaived ? '✓ Waived' : 'Waive -5'}
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -4646,21 +4697,46 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           <div className="bg-green-900/30 border border-green-600 p-4 rounded-lg mb-6">
             <h3 className="text-green-300 font-semibold mb-3">Score Preview</h3>
             <div className="space-y-2">
-              {Object.entries(calculateScores(scoringQ, correctAnswers)).map(([playerId, score]) => {
-                const player = players.find(p => p.id === parseInt(playerId));
-                const sub = qSubmissions.find(s => s.playerId === parseInt(playerId));
-                return (
-                  <div key={playerId} className="flex items-center justify-between text-white">
-                    <span>{player?.name}</span>
-                    <div className="text-right">
-                      <span className="font-bold text-green-400">{score} points</span>
-                      {sub?.penalty > 0 && (
-                        <span className="text-red-400 text-sm ml-2">(Late: -{sub.penalty})</span>
-                      )}
+              {(() => {
+                const scores = calculateScores(scoringQ, correctAnswers, penaltyWaivers);
+                const submittedIds = new Set(qSubmissions.map(s => s.playerId));
+                const rows = [];
+
+                // Submitted players
+                Object.entries(scores).forEach(([playerId, score]) => {
+                  const player = players.find(p => p.id === parseInt(playerId));
+                  const sub = qSubmissions.find(s => s.playerId === parseInt(playerId));
+                  const wasLate = sub?.isLate && sub?.penalty > 0;
+                  const lateWaived = wasLate && penaltyWaivers.has(parseInt(playerId));
+                  rows.push(
+                    <div key={playerId} className="flex items-center justify-between text-white">
+                      <span>{player?.name}</span>
+                      <div className="text-right">
+                        <span className="font-bold text-green-400">{score} pts</span>
+                        {wasLate && !lateWaived && <span className="text-red-400 text-xs ml-2">(incl. late -{sub.penalty})</span>}
+                        {lateWaived && <span className="text-yellow-400 text-xs ml-2">(late waived)</span>}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+
+                // Non-submitters (only on first-time release, not re-score)
+                if (!isRescore) {
+                  leaguePlayers.filter(p => !submittedIds.has(p.id)).forEach(player => {
+                    const waived = penaltyWaivers.has(player.id);
+                    rows.push(
+                      <div key={`ns-${player.id}`} className="flex items-center justify-between text-gray-400">
+                        <span>{player.name}</span>
+                        <span className={`font-bold text-xs ${waived ? 'text-yellow-400' : 'text-red-400'}`}>
+                          {waived ? 'Waived (0 pts)' : '-5 pts (no submission)'}
+                        </span>
+                      </div>
+                    );
+                  });
+                }
+
+                return rows;
+              })()}
             </div>
           </div>
 
@@ -4677,6 +4753,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 setAdminView('main');
                 setScoringQ(null);
                 setCorrectAnswers({});
+                setPenaltyWaivers(new Set());
               }}
               className="px-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
             >
