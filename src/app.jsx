@@ -251,9 +251,9 @@ export default function SurvivorFantasyApp() {
 
   // Usage tracking - prevents double-counting visits within a single session
   const hasTrackedVisit = useRef(false);
-  const tabVisitsRef   = useRef({});        // In-memory tab counts for current session
-  const sessionTabsRef = useRef(new Set()); // Unique tabs visited this session
-  const flushTimerRef  = useRef(null);      // Debounce timer for tab data flush
+  const tabVisitsRef     = useRef({});        // In-memory tab counts for current session
+  const sessionTabsRef   = useRef(new Set()); // Unique tabs visited this session (full session, never reset)
+  const flushIntervalRef = useRef(null);      // Interval handle for periodic tab data flush
 
   // Banner notification tracking - IDs of banners currently visible on Home tab
   const [visibleBannerIds, setVisibleBannerIds] = useState([]);
@@ -336,9 +336,9 @@ export default function SurvivorFantasyApp() {
       playerData.lastSessionDepth = sessionTabsRef.current.size;
       visits[playerId] = playerData;
       await storage.set('usage_visits', JSON.stringify(visits));
-      // Reset in-memory counts after successful flush to avoid double-counting
+      // Reset tab counts (already written) but keep the session Set intact —
+      // sessionTabsRef accumulates unique tabs for the full session for accurate depth
       tabVisitsRef.current = {};
-      sessionTabsRef.current = new Set();
     } catch (e) {
       // Silently fail - tab tracking should never interrupt the app
     }
@@ -426,16 +426,23 @@ export default function SurvivorFantasyApp() {
     }
   }, [isDataLoaded, currentUser]);
 
-  // Track tab/feature usage in memory, flush to storage after 30s of inactivity
+  // Track tab visits in memory — just update refs, no flushing here
   useEffect(() => {
     if (!currentUser || !isDataLoaded || isGuestMode()) return;
     tabVisitsRef.current[currentView] = (tabVisitsRef.current[currentView] || 0) + 1;
     sessionTabsRef.current.add(currentView);
-    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
-    flushTimerRef.current = setTimeout(() => {
-      flushTabData(currentUser.id);
-    }, 30000);
   }, [currentView, currentUser, isDataLoaded]);
+
+  // Flush tab data to storage every 2 minutes — captures active sessions regardless of tab-switching frequency
+  useEffect(() => {
+    if (!currentUser || !isDataLoaded || isGuestMode()) return;
+    flushIntervalRef.current = setInterval(() => {
+      flushTabData(currentUser.id);
+    }, 2 * 60 * 1000);
+    return () => {
+      if (flushIntervalRef.current) clearInterval(flushIntervalRef.current);
+    };
+  }, [currentUser, isDataLoaded]);
 
   const loadGameData = async () => {
     try {
@@ -785,7 +792,8 @@ export default function SurvivorFantasyApp() {
   };
 
   const handleLogout = async () => {
-    // Flush any pending tab data before clearing state (fire-and-forget)
+    // Stop interval and flush any remaining tab data before clearing state
+    if (flushIntervalRef.current) clearInterval(flushIntervalRef.current);
     if (currentUser) flushTabData(currentUser.id);
     // Clear tokens on server (clears httpOnly cookie) and client
     await auth.logout();
