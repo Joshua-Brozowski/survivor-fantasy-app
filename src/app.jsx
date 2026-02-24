@@ -3732,6 +3732,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [usageData, setUsageData] = useState(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [expandedSubmissionsQ, setExpandedSubmissionsQ] = useState(null);
+  const [showAllWeeks, setShowAllWeeks] = useState(false);
 
   // Helper function to convert image file to Base64
   const handleImageFile = (file, callback) => {
@@ -6941,7 +6942,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
         }, { name: '—', total: 0 })
       : { name: '—' };
 
-    const [showAllWeeks, setShowAllWeeks] = useState(false);
     const displayWeeks = showAllWeeks ? allWeeks : recentWeeks;
 
     return (
@@ -7734,7 +7734,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                     {expandedSubmissionsQ === q.id && (
                       <div className="mt-3 pt-3 border-t border-yellow-700/40">
                         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                          {players.map(player => {
+                          {leaguePlayers.map(player => {
                             const sub = submissions.filter(s => s.questionnaireId === q.id).find(s => s.playerId === player.id);
                             return (
                               <div key={player.id} className={`flex items-center gap-1.5 px-2 py-1 rounded text-sm ${sub ? 'bg-green-900/30' : 'bg-red-900/20'}`}>
