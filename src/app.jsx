@@ -3171,7 +3171,7 @@ export default function SurvivorFantasyApp() {
                       <ul className="text-amber-100/80 space-y-1 ml-4">
                         <li>• Immunity Win: <span className="text-green-400">+2</span></li>
                         <li>• Reward Win: <span className="text-green-400">+1</span></li>
-                        <li>• Found Idol/Advantage: <span className="text-green-400">+1</span></li>
+                        <li>• Found Idol/Advantage: <span className="text-green-400">+2</span></li>
                         <li>• Played Idol/Advantage: <span className="text-green-400">+1</span></li>
                         <li>• Votes Against (survived): <span className="text-green-400">+1 each</span></li>
                         <li>• Incorrect Vote: <span className="text-red-400">-1</span></li>
@@ -4185,6 +4185,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     const scoredPicks = Object.values(episodeScoring.pickScoresData).filter(
       data => data.survived || data.foundIdol || data.journey || data.immunity ||
               data.reward || data.votesReceived || data.playedIdol || data.incorrectVote ||
+              data.votedOutWithIdol || data.madeMerge ||
               data.final5 || data.final3 || data.soleSurvivor
     ).length;
 
@@ -4200,13 +4201,15 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     Object.entries(episodeScoring.pickScoresData).forEach(([pickId, scoreData]) => {
       let points = 0;
       if (scoreData.survived) points += 1;
+      if (scoreData.madeMerge) points += 5;
       if (scoreData.foundIdol) points += 2;
       if (scoreData.journey) points += 1;
-      if (scoreData.immunity) points += 1;
+      if (scoreData.immunity) points += 2;
       if (scoreData.reward) points += 1;
       if (scoreData.votesReceived) points += scoreData.votesReceived;
       if (scoreData.playedIdol) points += 1;
       if (scoreData.incorrectVote) points -= 1;
+      if (scoreData.votedOutWithIdol) points -= 2;
       // Finale bonuses
       if (scoreData.final5) points += 10;
       if (scoreData.final3) points += 15;
@@ -4790,12 +4793,14 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                               {[
                                 { key: 'survived', label: 'Survived (+1)' },
-                                { key: 'immunity', label: 'Won Immunity (+1)' },
+                                { key: 'immunity', label: 'Won Immunity (+2)' },
                                 { key: 'reward', label: 'Won Reward (+1)' },
                                 { key: 'journey', label: 'Went on Journey (+1)' },
                                 { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
                                 { key: 'playedIdol', label: 'Played Idol (+1)' },
-                                { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
+                                { key: 'madeMerge', label: 'Made Merge (+5)' },
+                                { key: 'incorrectVote', label: 'Incorrect Vote (-1)' },
+                                { key: 'votedOutWithIdol', label: 'Voted Out w/ Idol (-2)' }
                               ].map(({ key, label }) => (
                                 <label key={key} className="flex items-center gap-2 text-white text-sm">
                                   <input
@@ -4816,6 +4821,28 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                                   {label}
                                 </label>
                               ))}
+                            </div>
+                            {/* Votes Received number input */}
+                            <div className="flex items-center gap-3 mb-3">
+                              <label className="text-white text-sm whitespace-nowrap">Votes Against (survived):</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="20"
+                                value={episodeScoring.pickScoresData[instinctPick.id]?.votesReceived || ''}
+                                onChange={(e) => {
+                                  const current = episodeScoring.pickScoresData[instinctPick.id] || {};
+                                  setEpisodeScoring({
+                                    ...episodeScoring,
+                                    pickScoresData: {
+                                      ...episodeScoring.pickScoresData,
+                                      [instinctPick.id]: { ...current, votesReceived: parseInt(e.target.value) || 0 }
+                                    }
+                                  });
+                                }}
+                                className="w-16 px-2 py-1 rounded bg-black/50 text-white border border-gray-600 focus:outline-none focus:border-blue-400"
+                              />
+                              <span className="text-green-400 text-xs">+1 per vote</span>
                             </div>
                             {/* Final Placement Bonuses - Gold styling, mutually exclusive (radio buttons) */}
                             <div className="mt-2 pt-2 border-t border-yellow-600/50">
@@ -4889,13 +4916,13 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                           <>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                               {[
-                                { key: 'survived', label: 'Survived (+1)' },
-                                { key: 'immunity', label: 'Won Immunity (+1)' },
+                                { key: 'immunity', label: 'Won Immunity (+2)' },
                                 { key: 'reward', label: 'Won Reward (+1)' },
                                 { key: 'journey', label: 'Went on Journey (+1)' },
                                 { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
                                 { key: 'playedIdol', label: 'Played Idol (+1)' },
-                                { key: 'incorrectVote', label: 'Incorrect Vote (-1)' }
+                                { key: 'incorrectVote', label: 'Incorrect Vote (-1)' },
+                                { key: 'votedOutWithIdol', label: 'Voted Out w/ Idol (-2)' }
                               ].map(({ key, label }) => (
                                 <label key={key} className="flex items-center gap-2 text-white text-sm">
                                   <input
@@ -4916,6 +4943,28 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                                   {label}
                                 </label>
                               ))}
+                            </div>
+                            {/* Votes Received number input */}
+                            <div className="flex items-center gap-3 mb-3">
+                              <label className="text-white text-sm whitespace-nowrap">Votes Against (survived):</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="20"
+                                value={episodeScoring.pickScoresData[finalPick.id]?.votesReceived || ''}
+                                onChange={(e) => {
+                                  const current = episodeScoring.pickScoresData[finalPick.id] || {};
+                                  setEpisodeScoring({
+                                    ...episodeScoring,
+                                    pickScoresData: {
+                                      ...episodeScoring.pickScoresData,
+                                      [finalPick.id]: { ...current, votesReceived: parseInt(e.target.value) || 0 }
+                                    }
+                                  });
+                                }}
+                                className="w-16 px-2 py-1 rounded bg-black/50 text-white border border-gray-600 focus:outline-none focus:border-blue-400"
+                              />
+                              <span className="text-green-400 text-xs">+1 per vote</span>
                             </div>
                             {/* Final Placement Bonuses - Gold styling, mutually exclusive (radio buttons) */}
                             <div className="mt-2 pt-2 border-t border-yellow-600/50">
