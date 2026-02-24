@@ -161,7 +161,8 @@ Layout from top to bottom:
 - Correct answer: +2
 - Incorrect: -1 (optional questions) or 0 (required)
 - Late penalty: -5 points (flat)
-- No submission: 0 points (no penalty, just nothing scored)
+- No submission: -5 points (same as late — applied automatically at score release)
+- Admin can waive the -5 penalty per player (covers both late and no-submission) via toggle in the scoring panel before releasing
 - QotW Winner: +5 points
 
 ### 7. Leaderboard
@@ -545,14 +546,25 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
       "2026-W08": number,  // ISO week key → visit count that week
       "2026-W09": number,
       // ...one entry per week of the season
-    }
+    },
+    tabs: {                // All-time cumulative visit counts per tab
+      home: number, picks: number, questionnaire: number,
+      challenge: number, leaderboard: number, advantages: number, admin: number
+    },
+    tabDurations: {        // All-time cumulative seconds spent per tab (visible time only)
+      home: number, picks: number, questionnaire: number,
+      challenge: number, leaderboard: number, advantages: number, admin: number
+    },
+    lastSessionDepth: number  // Unique tabs visited in most recent session
   }
 }
 ```
 - Global key (not league-specific) — one record covers all leagues
-- Updated silently on every app open (manual login AND "stay logged in" token refresh)
-- Admin-only view: Admin Panel → Usage Analytics
-- Silently fails (try/catch) so tracking never breaks the app
+- `total` / `weeks` / `lastSeen`: updated once per session on app load
+- `tabs` / `tabDurations` / `lastSessionDepth`: flushed every 2 min and on logout
+- Tab durations pause automatically when phone is locked or app is backgrounded (Visibility API)
+- Admin-only view: Admin Panel → Usage Analytics (player cards + tab detail table + weekly opens)
+- All tracking silently fails (try/catch) so it never interrupts the app
 
 **Backup Snapshot** (stored in `backups` collection):
 ```javascript
@@ -870,7 +882,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] JWT authentication (access tokens + httpOnly refresh token cookies)
 - [x] API authorization (protected endpoints, admin-only operations)
 - [x] Auth endpoint security (setPassword requires auth, admin-only: resetToDefault, checkDefaultPasswords, clearRateLimit, checkRateLimit)
-- [x] Usage Analytics (Phase 1) — visit tracking per player, per week + total; admin-only panel; captures both manual login and "stay logged in" sessions silently
+- [x] Usage Analytics — visit tracking per player per week; tab visit counts; time-on-tab (pauses when phone locked/app backgrounded via Visibility API); session depth; admin dashboard with player cards, tab detail table, weekly opens; flushed every 2 min + on logout; silently fails
 - [x] Picks Status tally in Phase Control — shows who has/hasn't made instinct & final picks with contestant name; X/9 counter turns green when all submitted; final picks section only appears when phase is final-picks or later
 
 ### Planned Features
