@@ -79,15 +79,17 @@ survivor-fantasy-app/
 ### 4. Home Page
 Layout from top to bottom:
 1. **Welcome Banner** - Gradient banner with "Welcome to Survivor Fantasy Season X, {Name}!"
-2. **How to Play Section** - Explains each tab (Picks, Questionnaire, Leaderboard, Advantages) with icons
-   - Includes "How Your Picks Earn Points" subsection with scoring breakdown
-3. **Your Stats Section** - Total points, current rank, and 3 stat boxes (Players Competing, Survivors, Still in Game)
-4. **Picks Status** - Two cards showing Instinct Pick and Final Pick status, plus questionnaire status
-5. **Cast Accordion** - Collapsible section titled "Check Out This Season's Cast"
+2. **Your Stats Section** - Total points, current rank, and 3 stat boxes (Players Competing, Survivors, Still in Game)
+3. **Picks Status** - Two cards showing Instinct Pick and Final Pick status, plus questionnaire status
+4. **Cast Accordion** - Collapsible section titled "Check Out This Season's Cast"
    - Default collapsed
    - Shows all contestants with photos and bio paragraphs
    - Tribe color-coded borders (purple/orange/teal)
    - Eliminated contestants marked
+5. **How to Play Accordion** - Collapsible section at the bottom of the home page
+   - Default collapsed
+   - Explains each tab (Picks, Questionnaire, Leaderboard, Advantages) with icons
+   - Includes "How Your Picks Earn Points" subsection with scoring breakdown
 
 ### 5. Picks System
 
@@ -866,7 +868,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] Leaderboard current user highlight (cyan glow)
 - [x] Cast photo auto-sync from DEFAULT_CAST
 - [x] Admin password status indicator (see who changed from default)
-- [x] Home page rework (Welcome banner, How to Play at top, separate Stats section)
+- [x] Home page rework (Welcome banner, Stats section, Picks Status, Cast accordion, How to Play accordion at bottom)
 - [x] Cast accordion on Picks page with info banner
 - [x] Login name help tooltip (explains name variations)
 - [x] CORS restriction (API only accepts requests from allowed origins)
