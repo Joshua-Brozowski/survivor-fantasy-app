@@ -2010,6 +2010,7 @@ export default function SurvivorFantasyApp() {
                       className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
                       placeholder="New password"
                     />
+                    <p className="text-amber-400/70 text-xs mt-1">Minimum 8 characters</p>
                   </div>
                   <div>
                     <label className="block text-amber-200 mb-2">Confirm Password</label>
@@ -2343,6 +2344,7 @@ export default function SurvivorFantasyApp() {
                       placeholder="Enter new password"
                       className="w-full px-3 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
                     />
+                    <p className="text-amber-400/70 text-xs mt-1">Minimum 8 characters</p>
                   </div>
                   <div>
                     <label className="block text-amber-200 text-sm mb-1">Confirm New Password</label>
@@ -2364,8 +2366,8 @@ export default function SurvivorFantasyApp() {
                         alert('New passwords do not match');
                         return;
                       }
-                      if (passwordChange.new.length < 4) {
-                        alert('Password must be at least 4 characters');
+                      if (passwordChange.new.length < 8) {
+                        alert('Password must be at least 8 characters');
                         return;
                       }
                       const success = await changePassword(passwordChange.current, passwordChange.new);
