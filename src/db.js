@@ -260,6 +260,22 @@ export const auth = {
     }
   },
 
+  async resetPasswordViaRecovery(playerId, securityAnswer, newPassword) {
+    try {
+      // No auth token needed — server verifies the security answer before setting password
+      const response = await fetch(`${API_BASE}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resetPasswordViaRecovery', playerId, securityAnswer, newPassword })
+      });
+      const data = await response.json();
+      return { success: response.ok && data.success, error: data.error };
+    } catch (error) {
+      console.error('Auth resetPasswordViaRecovery error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
   async resetToDefault(playerId) {
     try {
       // Requires admin authentication

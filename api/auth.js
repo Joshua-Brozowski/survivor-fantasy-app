@@ -150,7 +150,7 @@ export default async function handler(req, res) {
   try {
     const { db } = await connectToDatabase();
     const collection = db.collection('game_data');
-    const { action, playerId, password, newPassword } = req.body;
+    const { action, playerId, password, newPassword, securityAnswer } = req.body;
 
     // Special cases that don't need playerId
     if (action === 'refresh' || action === 'logout') {
@@ -470,6 +470,47 @@ export default async function handler(req, res) {
           attemptsLeft: rateLimitStatus.attemptsLeft,
           ip: clientIP
         });
+        break;
+      }
+
+      case 'resetPasswordViaRecovery': {
+        // Reset password via security question verification — no auth token required.
+        // The server verifies the security answer before allowing the password change.
+        if (!securityAnswer || !newPassword) {
+          res.status(400).json({ error: 'Missing required fields' });
+          return;
+        }
+
+        if (newPassword.length < 8) {
+          res.status(400).json({ error: 'Password must be at least 8 characters' });
+          return;
+        }
+
+        // Fetch stored security question/answer from database
+        const securityKey = `security_${playerId}`;
+        const securityDoc = await collection.findOne({ key: securityKey });
+
+        if (!securityDoc) {
+          res.status(400).json({ error: 'No security question set for this player' });
+          return;
+        }
+
+        const { answer: storedAnswer } = JSON.parse(securityDoc.value);
+
+        // Verify the answer (case-insensitive, trimmed — same as client-side check)
+        if (securityAnswer.toLowerCase().trim() !== storedAnswer.toLowerCase().trim()) {
+          res.status(401).json({ error: 'Incorrect security answer' });
+          return;
+        }
+
+        // Answer verified — hash and store new password
+        const hashedPassword = await bcrypt.hash(newPassword, SALT_ROUNDS);
+        await collection.updateOne(
+          { key: passwordKey },
+          { $set: { key: passwordKey, value: hashedPassword, updatedAt: new Date() } },
+          { upsert: true }
+        );
+        res.status(200).json({ success: true, message: 'Password reset successfully' });
         break;
       }
 

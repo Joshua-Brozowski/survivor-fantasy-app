@@ -836,8 +836,8 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
-    // Use server-side password hashing
-    const result = await auth.setPassword(recoveryPlayer.id, recoveryForm.newPassword);
+    // Reset password via server-side security answer verification (no auth token needed)
+    const result = await auth.resetPasswordViaRecovery(recoveryPlayer.id, recoveryForm.securityAnswer, recoveryForm.newPassword);
 
     if (result.success) {
       alert('Password reset successfully! You can now login with your new password.');

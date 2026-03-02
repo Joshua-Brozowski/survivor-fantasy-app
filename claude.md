@@ -616,6 +616,7 @@ Authentication and password management:
 - **POST** with `action: 'refresh'` - Refresh access token using refresh token cookie
 - **POST** with `action: 'logout'` - Clear refresh token cookie
 - **POST** with `action: 'verifyCurrentPassword'` - Verify before password change (user proves identity via password)
+- **POST** with `action: 'resetPasswordViaRecovery'` - Reset password via security question (no auth required; server verifies the security answer from DB before setting password — used by forgot-password flow)
 
 **Authenticated actions:**
 - **POST** with `action: 'setPassword'` - Set new hashed password (requires auth, user can only change own password unless admin)
