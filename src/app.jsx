@@ -4639,6 +4639,23 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                           {isWaived ? '✓ Waived' : 'Waive -5'}
                         </button>
                       )}
+                      {!isRescore && sub && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete ${player.name}'s submission? They will need to resubmit.`)) return;
+                            const leagueStore = getLeagueStorage();
+                            const updated = submissions.filter(
+                              s => !(s.questionnaireId === scoringQ.id && s.playerId === player.id)
+                            );
+                            setSubmissions(updated);
+                            await leagueStore.set('submissions', JSON.stringify(updated));
+                          }}
+                          className="text-xs px-1.5 py-0.5 rounded border border-red-700 text-red-400 hover:bg-red-900/40 hover:border-red-500 transition"
+                          title="Delete submission"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
