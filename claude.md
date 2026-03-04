@@ -546,29 +546,32 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
   // Keyed by player ID (as number)
   3: {
     total: number,         // All-time app opens for this player
-    lastSeen: ISO_string,  // Timestamp of most recent visit
-    weeks: {
-      "2026-W08": number,  // ISO week key → visit count that week
-      "2026-W09": number,
-      // ...one entry per week of the season
+    lastSeen: ISO_string,  // Timestamp of most recent app open
+    lastHeartbeat: ISO_string,  // Updated every 2-min flush — used for "Active Now" green dot
+    weeks: {               // ISO week → open count (legacy, kept for historical reference)
+      "2026-W08": number,
     },
-    tabs: {                // All-time cumulative visit counts per tab
+    thursdayWeeks: {       // Thursday-based week key → open count (resets each Thursday)
+      "thu-2026-02-27": number,  // Date of the Thursday that started that week
+    },
+    totalSeconds: number,  // All-time accumulated seconds in-app (visible time only)
+    weekSeconds: {         // Thursday-based week key → seconds in-app that week
+      "thu-2026-02-27": number,
+    },
+    tabs: {                // All-time cumulative tab visit counts
       home: number, picks: number, questionnaire: number,
       challenge: number, leaderboard: number, advantages: number, admin: number
-    },
-    tabDurations: {        // All-time cumulative seconds spent per tab (visible time only)
-      home: number, picks: number, questionnaire: number,
-      challenge: number, leaderboard: number, advantages: number, admin: number
-    },
-    lastSessionDepth: number  // Unique tabs visited in most recent session
+    }
   }
 }
 ```
 - Global key (not league-specific) — one record covers all leagues
-- `total` / `weeks` / `lastSeen`: updated once per session on app load
-- `tabs` / `tabDurations` / `lastSessionDepth`: flushed every 2 min and on logout
-- Tab durations pause automatically when phone is locked or app is backgrounded (Visibility API)
-- Admin-only view: Admin Panel → Usage Analytics (player cards + tab detail table + weekly opens)
+- `total` / `weeks` / `thursdayWeeks` / `lastSeen`: updated once per session on app load (`recordVisit`)
+- `tabs` / `totalSeconds` / `weekSeconds` / `lastHeartbeat`: flushed every 2 min and on logout (`flushTabData`)
+- Time pauses automatically when phone is locked or app is backgrounded (Visibility API)
+- "Active Now" green dot: admin view checks if `lastHeartbeat` is within the last 3 minutes
+- Week resets every Thursday (`getThursdayWeekKey` in app.jsx)
+- Admin-only view: Admin Panel → Usage Analytics (player overview table + tab visit breakdown table)
 - All tracking silently fails (try/catch) so it never interrupts the app
 
 **Backup Snapshot** (stored in `backups` collection):
@@ -888,7 +891,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] JWT authentication (access tokens + httpOnly refresh token cookies)
 - [x] API authorization (protected endpoints, admin-only operations)
 - [x] Auth endpoint security (setPassword requires auth, admin-only: resetToDefault, checkDefaultPasswords, clearRateLimit, checkRateLimit)
-- [x] Usage Analytics — visit tracking per player per week; tab visit counts; time-on-tab (pauses when phone locked/app backgrounded via Visibility API); session depth; admin dashboard with player cards, tab detail table, weekly opens; flushed every 2 min + on logout; silently fails
+- [x] Usage Analytics — opens count + time in app (total + this-week); Thursday-based weekly reset; tab visit counts; Visibility API pausing; heartbeat-based "Active Now" green dot (3-min window); admin dashboard with player overview table + tab breakdown table; flushed every 2 min + on logout; silently fails
 - [x] Picks Status tally in Phase Control — shows who has/hasn't made instinct & final picks with contestant name; X/9 counter turns green when all submitted; final picks section only appears when phase is final-picks or later
 
 ### Planned Features

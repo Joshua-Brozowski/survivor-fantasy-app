@@ -251,13 +251,12 @@ export default function SurvivorFantasyApp() {
   const [advantageTarget, setAdvantageTarget] = useState(null);
 
   // Usage tracking - prevents double-counting visits within a single session
-  const hasTrackedVisit = useRef(false);
-  const tabVisitsRef     = useRef({});        // In-memory tab counts for current session
-  const sessionTabsRef   = useRef(new Set()); // Unique tabs visited this session (full session, never reset)
-  const flushIntervalRef = useRef(null);      // Interval handle for periodic tab data flush
-  const tabStartTimeRef  = useRef(null);      // When current tab's timing started (null = paused/hidden)
-  const tabDurationsRef  = useRef({});        // Accumulated seconds per tab for current flush window
-  const activeTabRef     = useRef('home');    // Live mirror of currentView for use in event handler closures
+  const hasTrackedVisit  = useRef(false);
+  const tabVisitsRef     = useRef({});     // In-memory tab visit counts (flushed periodically)
+  const flushIntervalRef = useRef(null);   // Interval handle for periodic data flush
+  const sessionStartRef  = useRef(null);   // When current timing window started (null = paused/hidden)
+  const pendingSecondsRef = useRef(0);     // Accumulated seconds not yet written to storage
+  const activeTabRef     = useRef('home'); // Live mirror of currentView for event handler closures
 
   // Banner notification tracking - IDs of banners currently visible on Home tab
   const [visibleBannerIds, setVisibleBannerIds] = useState([]);
@@ -306,7 +305,17 @@ export default function SurvivorFantasyApp() {
     return `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
   };
 
-  // Record a visit for the current user - called once per app session, silently fails
+  // Returns Thursday-based week key e.g. "thu-2026-03-05" (date of most recent Thursday)
+  // Weeks run Thursday–Wednesday so "this week" resets every Thursday
+  const getThursdayWeekKey = (date = new Date()) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    const daysSinceThursday = (d.getDay() + 3) % 7; // Thu=0, Fri=1, ..., Wed=6
+    d.setDate(d.getDate() - daysSinceThursday);
+    return `thu-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  // Record a visit (open) for the current user - called once per app session, silently fails
   const recordVisit = async (playerId) => {
     if (isGuestMode()) return;
     try {
@@ -315,8 +324,11 @@ export default function SurvivorFantasyApp() {
       const playerData = visits[playerId] || { total: 0, weeks: {}, lastSeen: null };
       const now = new Date();
       const weekKey = getISOWeekKey(now);
+      const thursdayKey = getThursdayWeekKey(now);
       playerData.total = (playerData.total || 0) + 1;
       playerData.weeks[weekKey] = (playerData.weeks[weekKey] || 0) + 1;
+      playerData.thursdayWeeks = playerData.thursdayWeeks || {};
+      playerData.thursdayWeeks[thursdayKey] = (playerData.thursdayWeeks[thursdayKey] || 0) + 1;
       playerData.lastSeen = now.toISOString();
       visits[playerId] = playerData;
       await storage.set('usage_visits', JSON.stringify(visits));
@@ -325,17 +337,16 @@ export default function SurvivorFantasyApp() {
     }
   };
 
-  // Flush in-memory tab visit counts and durations to storage - silently fails like recordVisit
+  // Flush in-memory tab visits and accumulated time to storage — silently fails like recordVisit
   const flushTabData = async (playerId) => {
     if (isGuestMode()) return;
-    // Snapshot current tab's elapsed time without modifying refs yet —
-    // if the write fails we want to retry with full data next interval
-    const currentTabElapsed = (tabStartTimeRef.current !== null && !document.hidden)
-      ? Math.floor((Date.now() - tabStartTimeRef.current) / 1000)
+    // Snapshot elapsed time since sessionStartRef was set (without touching refs yet —
+    // if the write fails, refs are unchanged so next flush retries with full data)
+    const additionalSecs = (sessionStartRef.current !== null && !document.hidden)
+      ? Math.floor((Date.now() - sessionStartRef.current) / 1000)
       : 0;
-    const hasData = Object.keys(tabVisitsRef.current).length > 0 ||
-                    Object.keys(tabDurationsRef.current).length > 0 ||
-                    currentTabElapsed > 0;
+    const totalPending = pendingSecondsRef.current + additionalSecs;
+    const hasData = Object.keys(tabVisitsRef.current).length > 0 || totalPending > 0;
     if (!hasData) return;
     try {
       const result = await storage.get('usage_visits');
@@ -347,24 +358,21 @@ export default function SurvivorFantasyApp() {
         existingTabs[tab] = (existingTabs[tab] || 0) + count;
       });
       playerData.tabs = existingTabs;
-      // Merge tab durations (include current tab's snapshot)
-      const existingDurations = playerData.tabDurations || {};
-      const durationsToWrite = { ...tabDurationsRef.current };
-      if (currentTabElapsed > 0) {
-        durationsToWrite[activeTabRef.current] = (durationsToWrite[activeTabRef.current] || 0) + currentTabElapsed;
-      }
-      Object.entries(durationsToWrite).forEach(([tab, secs]) => {
-        existingDurations[tab] = (existingDurations[tab] || 0) + secs;
-      });
-      playerData.tabDurations = existingDurations;
-      playerData.lastSessionDepth = sessionTabsRef.current.size;
+      // Accumulate total all-time seconds
+      playerData.totalSeconds = (playerData.totalSeconds || 0) + totalPending;
+      // Accumulate this-week seconds (Thursday-based, resets each Thursday)
+      const thursdayKey = getThursdayWeekKey();
+      playerData.weekSeconds = playerData.weekSeconds || {};
+      playerData.weekSeconds[thursdayKey] = (playerData.weekSeconds[thursdayKey] || 0) + totalPending;
+      // Write heartbeat timestamp so admin can show green dot for active users
+      playerData.lastHeartbeat = new Date().toISOString();
       visits[playerId] = playerData;
       await storage.set('usage_visits', JSON.stringify(visits));
-      // Only reset on successful write — refs unchanged on failure so next flush retries
+      // Only reset on successful write — unchanged on failure so next flush retries
       tabVisitsRef.current = {};
-      tabDurationsRef.current = {};
-      // Restart the current tab's timer from now (so we don't double-count on next flush)
-      if (!document.hidden) tabStartTimeRef.current = Date.now();
+      pendingSecondsRef.current = 0;
+      // Restart the in-session timer from now (so we don't double-count on next flush)
+      if (sessionStartRef.current !== null && !document.hidden) sessionStartRef.current = Date.now();
     } catch (e) {
       // Silently fail - tab tracking should never interrupt the app
     }
@@ -449,28 +457,19 @@ export default function SurvivorFantasyApp() {
     if (isDataLoaded && currentUser && !hasTrackedVisit.current) {
       hasTrackedVisit.current = true;
       recordVisit(currentUser.id);
+      // Start session timer (only if page is visible)
+      if (!document.hidden) sessionStartRef.current = Date.now();
     }
   }, [isDataLoaded, currentUser]);
 
-  // Track tab visits and time-on-tab in memory — no flushing here
+  // Count tab visits in memory — no timing logic here, just increment the counter
   useEffect(() => {
     if (!currentUser || !isDataLoaded || isGuestMode()) return;
-    // Credit elapsed time to the tab being left (activeTabRef holds the previous tab)
-    if (tabStartTimeRef.current !== null) {
-      const elapsed = Math.floor((Date.now() - tabStartTimeRef.current) / 1000);
-      if (elapsed > 0) {
-        tabDurationsRef.current[activeTabRef.current] = (tabDurationsRef.current[activeTabRef.current] || 0) + elapsed;
-      }
-    }
-    // Update visit count and session depth for the tab being entered
     tabVisitsRef.current[currentView] = (tabVisitsRef.current[currentView] || 0) + 1;
-    sessionTabsRef.current.add(currentView);
-    // Start timing the new tab — only if the page is currently visible
-    tabStartTimeRef.current = document.hidden ? null : Date.now();
     activeTabRef.current = currentView;
   }, [currentView, currentUser, isDataLoaded]);
 
-  // Flush tab data to storage every 2 minutes — captures active sessions regardless of tab-switching frequency
+  // Flush tab visit counts and accumulated time to storage every 2 minutes
   useEffect(() => {
     if (!currentUser || !isDataLoaded || isGuestMode()) return;
     flushIntervalRef.current = setInterval(() => {
@@ -481,23 +480,20 @@ export default function SurvivorFantasyApp() {
     };
   }, [currentUser, isDataLoaded]);
 
-  // Pause/resume time-on-tab when phone locks or app is backgrounded (Visibility API)
-  // Uses activeTabRef to avoid stale closure — handler registered once, always reads live tab
+  // Pause/resume session timer when phone locks or app is backgrounded (Visibility API)
   useEffect(() => {
     if (!currentUser || !isDataLoaded || isGuestMode()) return;
     const handleVisibilityChange = () => {
       if (document.hidden) {
         // Phone locked / app backgrounded — credit elapsed time and pause timer
-        if (tabStartTimeRef.current !== null) {
-          const elapsed = Math.floor((Date.now() - tabStartTimeRef.current) / 1000);
-          if (elapsed > 0) {
-            tabDurationsRef.current[activeTabRef.current] = (tabDurationsRef.current[activeTabRef.current] || 0) + elapsed;
-          }
-          tabStartTimeRef.current = null;
+        if (sessionStartRef.current !== null) {
+          const elapsed = Math.floor((Date.now() - sessionStartRef.current) / 1000);
+          if (elapsed > 0) pendingSecondsRef.current += elapsed;
+          sessionStartRef.current = null;
         }
       } else {
-        // App foregrounded — resume timing current tab
-        tabStartTimeRef.current = Date.now();
+        // App foregrounded — resume timing
+        sessionStartRef.current = Date.now();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -858,6 +854,8 @@ export default function SurvivorFantasyApp() {
     // Clear tokens on server (clears httpOnly cookie) and client
     await auth.logout();
     hasTrackedVisit.current = false; // Allow tracking next login in same session
+    sessionStartRef.current = null;
+    pendingSecondsRef.current = 0;
     setCurrentUser(null);
     setLoginForm({ name: '', password: '', rememberMe: true });
     setRecoveryForm({ name: '', securityAnswer: '', newPassword: '', confirmPassword: '' });
@@ -7147,9 +7145,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       setLoadingUsage(false);
     };
 
-    if (usageData === null && !loadingUsage) {
-      loadUsageData();
-    }
+    if (usageData === null && !loadingUsage) loadUsageData();
 
     const timeAgo = (isoString) => {
       if (!isoString) return 'Never';
@@ -7159,8 +7155,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       if (minutes < 60) return `${minutes}m ago`;
       const hours = Math.floor(minutes / 60);
       if (hours < 24) return `${hours}h ago`;
-      const days = Math.floor(hours / 24);
-      return `${days}d ago`;
+      return `${Math.floor(hours / 24)}d ago`;
     };
 
     const fmtTime = (secs) => {
@@ -7170,38 +7165,30 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
     };
 
+    // Thursday week key matching getThursdayWeekKey() on the client
+    const currentThursdayKey = (() => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      const daysSince = (d.getDay() + 3) % 7;
+      d.setDate(d.getDate() - daysSince);
+      return `thu-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+
     const TAB_KEYS = ['home','picks','questionnaire','challenge','leaderboard','advantages','admin'];
     const TAB_LABELS = { home:'Home', picks:'Picks', questionnaire:"Q'aire", challenge:'Wordle', leaderboard:'Board', advantages:"Adv's", admin:'Admin' };
 
-    const allWeeks = usageData
-      ? [...new Set(Object.values(usageData).flatMap(d => Object.keys(d.weeks || {})))].sort()
-      : [];
-    const recentWeeks = allWeeks.slice(-6);
+    const isActiveNow = (data) => {
+      if (!data?.lastHeartbeat) return false;
+      return Date.now() - new Date(data.lastHeartbeat).getTime() < 3 * 60 * 1000;
+    };
 
     const totalVisits = usageData
       ? Object.values(usageData).reduce((sum, d) => sum + (d.total || 0), 0)
       : 0;
 
-    const currentWeekKey = (() => {
-      const d = new Date(); d.setHours(0,0,0,0);
-      d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
-      const w1 = new Date(d.getFullYear(), 0, 4);
-      const wn = 1 + Math.round(((d - w1) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7);
-      return `${d.getFullYear()}-W${String(wn).padStart(2,'0')}`;
-    })();
-
-    const activeThisWeek = usageData
-      ? Object.values(usageData).filter(d => (d.weeks || {})[currentWeekKey] > 0).length
+    const activeNowCount = usageData
+      ? players.filter(p => isActiveNow(usageData[p.id])).length
       : 0;
-
-    const mostActive = usageData
-      ? players.reduce((best, p) => {
-          const t = (usageData[p.id] || {}).total || 0;
-          return t > (best.total || 0) ? { name: p.name, total: t } : best;
-        }, { name: '—', total: 0 })
-      : { name: '—' };
-
-    const displayWeeks = showAllWeeks ? allWeeks : recentWeeks;
 
     return (
       <div className="space-y-6">
@@ -7214,7 +7201,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 <TrendingUp className="w-6 h-6 text-cyan-400" />
                 Usage Analytics
               </h2>
-              <p className="text-gray-500 text-xs mt-1">Tab time pauses when phone is locked or app is backgrounded.</p>
+              <p className="text-gray-500 text-xs mt-1">Time pauses when phone is locked. Week resets Thursday.</p>
             </div>
             <button
               onClick={loadUsageData}
@@ -7229,72 +7216,65 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
           {!loadingUsage && usageData !== null && (
             <>
-              {/* Summary chips — 4 stats */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+              {/* Summary chips */}
+              <div className="grid grid-cols-2 gap-3 mb-6">
                 <div className="bg-cyan-900/30 border border-cyan-700 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-cyan-400">{totalVisits}</p>
                   <p className="text-xs text-cyan-300">Total Opens</p>
                 </div>
                 <div className="bg-green-900/30 border border-green-700 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-green-400">{activeThisWeek}</p>
-                  <p className="text-xs text-green-300">Active This Week</p>
-                </div>
-                <div className="bg-teal-900/30 border border-teal-700 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-teal-400">{allWeeks.length}</p>
-                  <p className="text-xs text-teal-300">Weeks Tracked</p>
-                </div>
-                <div className="bg-purple-900/30 border border-purple-700 rounded-lg p-3 text-center">
-                  <p className="text-lg font-bold text-purple-400 truncate">{mostActive.name}</p>
-                  <p className="text-xs text-purple-300">Most Active</p>
+                  <p className="text-2xl font-bold text-green-400">{activeNowCount}</p>
+                  <p className="text-xs text-green-300">Active Now</p>
                 </div>
               </div>
 
-              {/* Player cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-                {players.map(player => {
-                  const data = usageData[player.id] || {};
-                  const tabs = data.tabs || {};
-                  const durations = data.tabDurations || {};
-                  const maxTabCount = Math.max(1, ...TAB_KEYS.map(t => tabs[t] || 0));
-                  return (
-                    <div key={player.id} className="bg-gray-800/60 border border-gray-700 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-700 to-teal-800 flex items-center justify-center text-sm font-bold text-white border border-cyan-600">
-                            {player.name.charAt(0)}
-                          </div>
-                          <div>
-                            <span className="text-white font-semibold text-sm flex items-center gap-1">
-                              {player.name}
-                              {player.isAdmin && <Crown className="w-3 h-3 text-yellow-400" />}
-                            </span>
-                            <span className="text-gray-500 text-xs">{timeAgo(data.lastSeen)}</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-cyan-400 font-bold text-lg">{data.total || 0}</span>
-                          <p className="text-gray-600 text-xs">opens</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 mt-2">
-                        <span className="text-gray-600 text-xs mr-1">Depth {data.lastSessionDepth ?? '—'} ·</span>
-                        {TAB_KEYS.filter(t => t !== 'admin').map(tab => {
-                          const count = tabs[tab] || 0;
-                          const opacity = count === 0 ? 'opacity-20' : count / maxTabCount >= 0.66 ? 'opacity-100' : count / maxTabCount >= 0.33 ? 'opacity-60' : 'opacity-35';
-                          return (
-                            <span key={tab} title={`${TAB_LABELS[tab]}: ${count} visits${durations[tab] ? ` · ${fmtTime(durations[tab])}` : ''}`}
-                              className={`w-2.5 h-2.5 rounded-full bg-cyan-400 ${opacity} cursor-default`} />
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+              {/* Main player table */}
+              <div className="mb-8">
+                <h3 className="text-gray-400 font-semibold mb-3 text-sm uppercase tracking-wide">Player Overview</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-gray-400 border-b border-gray-700">
+                        <th className="py-2 pr-2 w-4"></th>
+                        <th className="text-left py-2 pr-4 font-semibold">Player</th>
+                        <th className="text-center py-2 px-2 font-semibold text-xs">Opens</th>
+                        <th className="text-center py-2 px-2 font-semibold text-xs">This Wk</th>
+                        <th className="text-center py-2 px-2 font-semibold text-xs">Total Time</th>
+                        <th className="text-center py-2 px-2 font-semibold text-xs">Wk Time</th>
+                        <th className="text-right py-2 pl-2 font-semibold text-xs">Last Seen</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {players.map(player => {
+                        const data = usageData[player.id] || {};
+                        const active = isActiveNow(data);
+                        const thisWkOpens = (data.thursdayWeeks || {})[currentThursdayKey] || 0;
+                        const wkSecs = (data.weekSeconds || {})[currentThursdayKey] || 0;
+                        return (
+                          <tr key={player.id} className="border-b border-gray-800 hover:bg-gray-900/40">
+                            <td className="py-2 pr-2">
+                              <span
+                                className={`inline-block w-2 h-2 rounded-full ${active ? 'bg-green-400' : 'bg-gray-700'}`}
+                                title={active ? 'Active now' : 'Offline'}
+                              />
+                            </td>
+                            <td className="py-2 pr-4 text-white font-medium">{player.name}</td>
+                            <td className="text-center py-2 px-2 text-cyan-300 font-semibold">{data.total || 0}</td>
+                            <td className="text-center py-2 px-2 text-teal-300">{thisWkOpens || '—'}</td>
+                            <td className="text-center py-2 px-2 text-purple-300">{fmtTime(data.totalSeconds) || '—'}</td>
+                            <td className="text-center py-2 px-2 text-indigo-300">{fmtTime(wkSecs) || '—'}</td>
+                            <td className="text-right py-2 pl-2 text-gray-500 text-xs">{timeAgo(data.lastSeen)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              {/* Combined tab detail table — visits + time per cell */}
-              <div className="mb-6">
-                <h3 className="text-gray-400 font-semibold mb-3 text-sm uppercase tracking-wide">Tab Detail (All-Time)</h3>
+              {/* Tab visit breakdown */}
+              <div>
+                <h3 className="text-gray-400 font-semibold mb-3 text-sm uppercase tracking-wide">Tab Visits (All-Time)</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -7309,22 +7289,13 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                       {players.map(player => {
                         const data = usageData[player.id] || {};
                         const tabs = data.tabs || {};
-                        const durations = data.tabDurations || {};
-                        const hasAny = Object.keys(tabs).length > 0;
                         return (
                           <tr key={player.id} className="border-b border-gray-800 hover:bg-gray-900/40">
-                            <td className="py-2 pr-4">
-                              <span className={`font-medium ${hasAny ? 'text-white' : 'text-gray-500'}`}>{player.name}</span>
-                            </td>
+                            <td className="py-2 pr-4 text-white font-medium">{player.name}</td>
                             {TAB_KEYS.map(tab => (
                               <td key={tab} className="text-center py-2 px-2">
                                 {tabs[tab] ? (
-                                  <div>
-                                    <div className="text-cyan-300 font-semibold leading-tight">{tabs[tab]}</div>
-                                    {fmtTime(durations[tab]) && (
-                                      <div className="text-purple-400 text-xs leading-tight">{fmtTime(durations[tab])}</div>
-                                    )}
-                                  </div>
+                                  <span className="text-cyan-300 font-semibold">{tabs[tab]}</span>
                                 ) : (
                                   <span className="text-gray-700">—</span>
                                 )}
@@ -7337,53 +7308,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                   </table>
                 </div>
               </div>
-
-              {/* Weekly opens — last 6 weeks by default, expandable */}
-              {allWeeks.length > 0 && (
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-gray-400 font-semibold text-sm uppercase tracking-wide">Weekly Opens</h3>
-                    {allWeeks.length > 6 && (
-                      <button onClick={() => setShowAllWeeks(v => !v)} className="text-xs text-cyan-400 hover:text-cyan-200">
-                        {showAllWeeks ? 'Show less ↑' : `Show all ${allWeeks.length} weeks ↓`}
-                      </button>
-                    )}
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-gray-400 border-b border-gray-700">
-                          <th className="text-left py-2 pr-4 font-semibold">Player</th>
-                          {displayWeeks.map(w => (
-                            <th key={w} className="text-center py-2 px-2 font-semibold text-xs whitespace-nowrap">
-                              {w.replace('-W', ' W')}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {players.map(player => {
-                          const data = usageData[player.id] || {};
-                          return (
-                            <tr key={player.id} className="border-b border-gray-800 hover:bg-gray-900/40">
-                              <td className="py-2 pr-4 text-white font-medium">{player.name}</td>
-                              {displayWeeks.map(w => (
-                                <td key={w} className="text-center py-2 px-2">
-                                  {(data.weeks || {})[w] ? (
-                                    <span className="text-teal-300 font-semibold">{data.weeks[w]}</span>
-                                  ) : (
-                                    <span className="text-gray-700">—</span>
-                                  )}
-                                </td>
-                              ))}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
             </>
           )}
 
