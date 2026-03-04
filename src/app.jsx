@@ -3750,6 +3750,8 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [expandedSubmissionsQ, setExpandedSubmissionsQ] = useState(null);
   const [showAllWeeks, setShowAllWeeks] = useState(false);
+  const [auditLog, setAuditLog] = useState(null);
+  const [loadingAudit, setLoadingAudit] = useState(false);
   const [penaltyWaivers, setPenaltyWaivers] = useState(new Set()); // Player IDs waived from -5 penalty for current scoring session
 
   // Helper function to convert image file to Base64
@@ -4642,13 +4644,32 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                       {!isRescore && sub && (
                         <button
                           onClick={async () => {
-                            if (!confirm(`Delete ${player.name}'s submission? They will need to resubmit.`)) return;
+                            if (!confirm(`Delete ${player.name}'s submission? A backup will be created automatically.`)) return;
+                            // Safety snapshot before deletion
+                            await backup.createSnapshot('before-delete-submission');
+                            // Remove submission from storage
                             const leagueStore = getLeagueStorage();
                             const updated = submissions.filter(
                               s => !(s.questionnaireId === scoringQ.id && s.playerId === player.id)
                             );
                             setSubmissions(updated);
                             await leagueStore.set('submissions', JSON.stringify(updated));
+                            // Append to audit log
+                            try {
+                              const logResult = await leagueStore.get('submissionAuditLog');
+                              const log = logResult ? JSON.parse(logResult.value) : [];
+                              log.push({
+                                id: Date.now(),
+                                action: 'deleted',
+                                playerId: player.id,
+                                playerName: player.name,
+                                questionnaireId: scoringQ.id,
+                                questionnaireTitle: scoringQ.title,
+                                timestamp: new Date().toISOString(),
+                                deletedBy: 'admin'
+                              });
+                              await leagueStore.set('submissionAuditLog', JSON.stringify(log));
+                            } catch (e) { /* silently fail */ }
                           }}
                           className="text-xs px-1.5 py-0.5 rounded border border-red-700 text-red-400 hover:bg-red-900/40 hover:border-red-500 transition"
                           title="Delete submission"
@@ -7036,6 +7057,84 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   }
 
 
+  if (adminView === 'submission-audit-log') {
+    const loadAuditLog = async () => {
+      setLoadingAudit(true);
+      try {
+        const leagueStore = getLeagueStorage();
+        const result = await leagueStore.get('submissionAuditLog');
+        const log = result ? JSON.parse(result.value) : [];
+        setAuditLog(log.slice().reverse()); // Newest first
+      } catch (e) {
+        setAuditLog([]);
+      }
+      setLoadingAudit(false);
+    };
+
+    if (auditLog === null && !loadingAudit) loadAuditLog();
+
+    const timeAgo = (iso) => {
+      const diff = Date.now() - new Date(iso).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      return `${Math.floor(hrs / 24)}d ago`;
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-yellow-600">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-yellow-400">Submission Log</h2>
+            <button onClick={() => setAdminView('main')}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition text-sm">
+              ← Back
+            </button>
+          </div>
+          <p className="text-yellow-200/70 text-sm mb-4">
+            Append-only record of every questionnaire submission and admin deletion. Use this to resolve disputes about whether a player submitted.
+          </p>
+          {loadingAudit && <p className="text-yellow-300 text-center py-8">Loading...</p>}
+          {!loadingAudit && auditLog !== null && auditLog.length === 0 && (
+            <p className="text-gray-400 text-center py-8">No submissions recorded yet.</p>
+          )}
+          {!loadingAudit && auditLog && auditLog.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-yellow-300 border-b border-yellow-800">
+                    <th className="text-left py-2 px-3 font-semibold">Player</th>
+                    <th className="text-left py-2 px-3 font-semibold">Questionnaire</th>
+                    <th className="text-center py-2 px-3 font-semibold">Action</th>
+                    <th className="text-right py-2 px-3 font-semibold">Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLog.map(entry => (
+                    <tr key={entry.id} className="border-b border-yellow-900/30 hover:bg-yellow-900/10">
+                      <td className="py-2 px-3 text-white">{entry.playerName}</td>
+                      <td className="py-2 px-3 text-yellow-200">{entry.questionnaireTitle}</td>
+                      <td className="py-2 px-3 text-center">
+                        {entry.action === 'submitted' ? (
+                          <span className="px-2 py-0.5 rounded text-xs bg-green-900/50 text-green-300 border border-green-700">Submitted</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded text-xs bg-red-900/50 text-red-300 border border-red-700">Deleted by admin</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-right text-gray-400 text-xs">{timeAgo(entry.timestamp)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (adminView === 'usage-analytics') {
     const loadUsageData = async () => {
       setLoadingUsage(true);
@@ -7766,6 +7865,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           </button>
 
           <button
+            onClick={() => { setAuditLog(null); setAdminView('submission-audit-log'); }}
+            className="bg-gradient-to-r from-orange-700 to-amber-700 text-white py-4 px-6 rounded-lg font-semibold hover:from-orange-600 hover:to-amber-600 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5" />
+                <span>Submission Log</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
             onClick={() => setAdminView('backup-management')}
             className="bg-gradient-to-r from-slate-600 to-zinc-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-slate-500 hover:to-zinc-500 transition text-left"
           >
@@ -8344,6 +8456,25 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
     const updatedSubmissions = [...submissions.filter(s => !(s.questionnaireId === activeQ.id && s.playerId === currentUser.id)), newSubmission];
     setSubmissions(updatedSubmissions);
     await guestSafeLeagueSet('submissions', JSON.stringify(updatedSubmissions));
+
+    // Append to submission audit log (silently — never interrupts submission flow)
+    if (!isGuestMode()) {
+      try {
+        const leagueStore = getLeagueStorage();
+        const logResult = await leagueStore.get('submissionAuditLog');
+        const log = logResult ? JSON.parse(logResult.value) : [];
+        log.push({
+          id: Date.now(),
+          action: 'submitted',
+          playerId: currentUser.id,
+          playerName: currentUser.name,
+          questionnaireId: activeQ.id,
+          questionnaireTitle: activeQ.title,
+          timestamp: new Date().toISOString()
+        });
+        await leagueStore.set('submissionAuditLog', JSON.stringify(log));
+      } catch (e) { /* silently fail */ }
+    }
 
     const demoSuffix = isGuestMode() ? ' (Demo mode - not saved)' : '';
     alert(isLate ? `Submitted! Late penalty applied: -5 points${demoSuffix}` : `Submitted successfully!${demoSuffix}`);
