@@ -195,6 +195,7 @@ Layout from top to bottom:
 - Preview scores before releasing
 - Auto-calculates QotW winner from votes
 - Release scores with one click
+- **Delete Submission**: Trash icon next to each submitted player row; requires confirm dialog; auto-creates a `before-delete-submission` snapshot before removal; appends a "Deleted by admin" entry to the Submission Audit Log; hidden in re-score mode
 - **Re-Score**: Edit correct answers after release
   - Calculates score adjustments (difference)
   - Does not re-apply advantage effects
@@ -271,6 +272,7 @@ Layout from top to bottom:
   - Before episode scoring
   - Before contestant eliminations/un-eliminations
   - Before re-scoring questionnaires
+  - Before admin deletes a player's questionnaire submission
 - **Manual backup**: Create snapshot on demand
 - **Export Data**: Download all game data as JSON file
 - **Restore**: Revert to any previous snapshot
@@ -469,6 +471,7 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 - `challenges` - Array of Wordle challenge objects
 - `challengeAttempts` - Array of player challenge attempts
 - `usage_visits` - Global player visit tracking (see Usage Analytics below)
+- `submissionAuditLog` - League-specific append-only log of all questionnaire submission events (player submitted, admin deleted); keyed as `league_{id}_submissionAuditLog`; viewable in Admin Panel → Submission Log
 
 ### Key Data Structures
 
