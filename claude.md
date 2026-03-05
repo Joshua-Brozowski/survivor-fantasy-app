@@ -152,6 +152,9 @@ Layout from top to bottom:
 - Question of the Week (required text response, if enabled)
 - **Vote on LAST week's QotW** - voting happens during next week's questionnaire
 - Late penalty: -5 points (flat rate for any late submission)
+- **Submit button shows "Submitting..." and disables during write** — prevents double-submit
+- **Safe concurrent submission**: re-reads the current submissions array from MongoDB immediately before writing, so concurrent submissions from other players are preserved rather than overwritten
+- **Write failure surfaced**: if the MongoDB write fails, player sees an explicit error and their form answers are preserved for retry (no silent data loss)
 
 **QotW Voting Flow**:
 - Week 1: Players answer Episode 1 QotW (no voting yet)
@@ -881,6 +884,7 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] CORS restriction (API only accepts requests from allowed origins)
 - [x] Database connection health check (auto-reconnect on stale connections)
 - [x] Score release loading state (prevents double-click issues)
+- [x] Safe concurrent questionnaire submission — re-reads submissions from MongoDB before writing (prevents one player's submission from overwriting another's); submit button shows "Submitting..." and disables during write; explicit error shown if write fails (form preserved for retry)
 - [x] Season reset clears notifications
 - [x] Episode scoring confirmation dialog
 - [x] Edge caching for static data (players, contestants, leagues)

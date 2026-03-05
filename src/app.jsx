@@ -206,6 +206,7 @@ export default function SurvivorFantasyApp() {
   const [currentView, setCurrentView] = useState('home');
   const [questionnaires, setQuestionnaires] = useState([]);
   const [submissions, setSubmissions] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [qotWVotes, setQotWVotes] = useState([]);
   const [latePenalties, setLatePenalties] = useState({});
   const [pickScores, setPickScores] = useState([]);
@@ -8349,7 +8350,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
   const canVoteAgain = myVoteCount < maxVotes;
 
   const handleSubmit = async () => {
-    if (!activeQ) return;
+    if (!activeQ || isSubmitting) return;
 
     const requiredQuestions = activeQ.questions.filter(q => q.required);
     const allRequiredAnswered = requiredQuestions.every(q => answers[q.id]);
@@ -8365,24 +8366,52 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
       return;
     }
 
-    const penalty = isLate ? 5 : 0;
+    setIsSubmitting(true);
+    try {
+      const penalty = isLate ? 5 : 0;
 
-    const newSubmission = {
-      id: Date.now(),
-      questionnaireId: activeQ.id,
-      playerId: currentUser.id,
-      answers,
-      submittedAt: new Date().toISOString(),
-      penalty,
-      isLate
-    };
+      const newSubmission = {
+        id: Date.now(),
+        questionnaireId: activeQ.id,
+        playerId: currentUser.id,
+        answers,
+        submittedAt: new Date().toISOString(),
+        penalty,
+        isLate
+      };
 
-    const updatedSubmissions = [...submissions.filter(s => !(s.questionnaireId === activeQ.id && s.playerId === currentUser.id)), newSubmission];
-    setSubmissions(updatedSubmissions);
-    await guestSafeLeagueSet('submissions', JSON.stringify(updatedSubmissions));
+      // Re-read current submissions from MongoDB immediately before writing.
+      // This prevents overwriting a concurrent submission from another player
+      // whose write landed after this app's state was last loaded.
+      // Falls back to in-memory state if the re-read itself fails.
+      let baseSubmissions = submissions;
+      if (!isGuestMode()) {
+        try {
+          const leagueStore = getLeagueStorage();
+          const freshResult = await leagueStore.get('submissions');
+          if (freshResult) baseSubmissions = JSON.parse(freshResult.value);
+        } catch (e) { /* fall back to in-memory state */ }
+      }
 
-    // Append to submission audit log (silently — never interrupts submission flow)
-    if (!isGuestMode()) {
+      const updatedSubmissions = [
+        ...baseSubmissions.filter(s => !(s.questionnaireId === activeQ.id && s.playerId === currentUser.id)),
+        newSubmission
+      ];
+
+      // Write to MongoDB first — only update local state if it succeeds
+      const writeResult = await guestSafeLeagueSet('submissions', JSON.stringify(updatedSubmissions));
+
+      if (!isGuestMode() && writeResult === null) {
+        // Write failed silently — inform the player so they can retry
+        // Form answers are preserved (setAnswers not called) so nothing is lost
+        alert('Submission failed — your answers were not saved. Please check your connection and try again.');
+        return;
+      }
+
+      // Write confirmed — update local state and clear the form
+      setSubmissions(updatedSubmissions);
+
+      // Append to submission audit log (silently — never interrupts submission flow)
       try {
         const leagueStore = getLeagueStorage();
         const logResult = await leagueStore.get('submissionAuditLog');
@@ -8398,11 +8427,13 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
         });
         await leagueStore.set('submissionAuditLog', JSON.stringify(log));
       } catch (e) { /* silently fail */ }
-    }
 
-    const demoSuffix = isGuestMode() ? ' (Demo mode - not saved)' : '';
-    alert(isLate ? `Submitted! Late penalty applied: -5 points${demoSuffix}` : `Submitted successfully!${demoSuffix}`);
-    setAnswers({});
+      const demoSuffix = isGuestMode() ? ' (Demo mode - not saved)' : '';
+      alert(isLate ? `Submitted! Late penalty applied: -5 points${demoSuffix}` : `Submitted successfully!${demoSuffix}`);
+      setAnswers({});
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleVote = async (qotWAnswerId) => {
@@ -8736,9 +8767,10 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
               <button
                 onClick={handleSubmit}
-                className="w-full py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-lg font-semibold hover:from-amber-500 hover:to-orange-500 transition text-lg"
+                disabled={isSubmitting}
+                className={`w-full py-3 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-lg font-semibold transition text-lg ${isSubmitting ? 'opacity-50 cursor-not-allowed' : 'hover:from-amber-500 hover:to-orange-500'}`}
               >
-                Submit Questionnaire
+                {isSubmitting ? 'Submitting...' : 'Submit Questionnaire'}
               </button>
             </div>
           )}
