@@ -206,7 +206,6 @@ export default function SurvivorFantasyApp() {
   const [currentView, setCurrentView] = useState('home');
   const [questionnaires, setQuestionnaires] = useState([]);
   const [submissions, setSubmissions] = useState([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [qotWVotes, setQotWVotes] = useState([]);
   const [latePenalties, setLatePenalties] = useState({});
   const [pickScores, setPickScores] = useState([]);
@@ -3014,6 +3013,7 @@ export default function SurvivorFantasyApp() {
             setQotWVotes={setQotWVotes}
             players={leaguePlayers}
             guestSafeLeagueSet={guestSafeLeagueSet}
+            getLeagueStorage={getLeagueStorage}
             isGuestMode={isGuestMode}
             playerAdvantages={playerAdvantages}
           />
@@ -8296,10 +8296,11 @@ function NotificationBanners({ notifications, currentUser, markNotificationSeen,
   );
 }
 
-function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmissions, contestants, latePenalties, setLatePenalties, qotWVotes, setQotWVotes, players, guestSafeLeagueSet, isGuestMode, playerAdvantages }) {
+function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmissions, contestants, latePenalties, setLatePenalties, qotWVotes, setQotWVotes, players, guestSafeLeagueSet, getLeagueStorage, isGuestMode, playerAdvantages }) {
   const activeQ = questionnaires.find(q => q.status === 'active');
   const mySubmission = activeQ ? submissions.find(s => s.questionnaireId === activeQ.id && s.playerId === currentUser.id) : null;
   const [answers, setAnswers] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [votingFor, setVotingFor] = useState(null);
   const [viewingArchived, setViewingArchived] = useState(null);
 
