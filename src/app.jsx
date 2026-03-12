@@ -8921,14 +8921,33 @@ function WordleGame({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentGuess, attempt]);
 
-  // Get letter status for coloring
+  // Get letter status for coloring (two-pass algorithm — matches official NYT Wordle)
   const getLetterStatus = (letter, position, word) => {
     if (!activeChallenge) return 'empty';
     const answer = activeChallenge.word;
 
-    if (answer[position] === letter) return 'correct';
-    if (answer.includes(letter)) return 'present';
-    return 'absent';
+    const statuses = Array(5).fill('absent');
+    const answerPool = answer.split('');
+
+    // Pass 1: mark greens, consume matched letters from pool
+    for (let i = 0; i < 5; i++) {
+      if (word[i] === answer[i]) {
+        statuses[i] = 'correct';
+        answerPool[i] = null;
+      }
+    }
+
+    // Pass 2: mark yellows left-to-right from remaining pool
+    for (let i = 0; i < 5; i++) {
+      if (statuses[i] === 'correct') continue;
+      const poolIndex = answerPool.indexOf(word[i]);
+      if (poolIndex !== -1) {
+        statuses[i] = 'present';
+        answerPool[poolIndex] = null;
+      }
+    }
+
+    return statuses[position];
   };
 
   // Get keyboard letter status
