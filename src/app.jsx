@@ -8503,14 +8503,16 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
       );
     }
 
-    const qotwAnswers = submissions
+    const allQotwSubmissions = submissions
       .filter(s => s.questionnaireId === votingQuestionnaire.id && s.answers[votingQotwQuestion.id])
       .map(s => ({
         playerId: s.playerId,
         playerName: players.find(p => p.id === s.playerId)?.name,
         answer: s.answers[votingQotwQuestion.id]
-      }))
-      .filter(a => a.playerId !== currentUser.id);
+      }));
+
+    const myAnswer = allQotwSubmissions.find(a => a.playerId === currentUser.id);
+    const qotwAnswers = allQotwSubmissions.filter(a => a.playerId !== currentUser.id);
 
     return (
       <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
@@ -8530,6 +8532,14 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
         </div>
 
         <div className="space-y-4">
+          {/* Current user's own answer — shown at top, not votable */}
+          {myAnswer && (
+            <div className="bg-gradient-to-r from-amber-900/40 to-yellow-900/40 p-4 rounded-lg border border-amber-500">
+              <p className="text-amber-400 font-semibold mb-2">Your Answer</p>
+              <p className="text-white">{myAnswer.answer}</p>
+            </div>
+          )}
+
           {qotwAnswers.map((answer, idx) => (
             <div key={idx} className="bg-gradient-to-r from-purple-900/40 to-pink-900/40 p-4 rounded-lg border border-purple-600">
               {!votingQotwQuestion.anonymous && (
