@@ -143,10 +143,10 @@ const SURVIVOR_WORDS = [
 // Simplified Weekly Advantage System
 // All advantages are queued for a specific week and resolve when scores are released
 const DEFAULT_ADVANTAGES = [
-  { id: 'extra-vote', name: 'Extra Vote', description: 'Your QOTW answer gets +1 bonus vote for the selected week', cost: 15, type: 'qotw', needsTarget: false },
-  { id: 'vote-steal', name: 'Vote Steal', description: 'Block a target player from voting in QOTW and cast their vote yourself for the selected week', cost: 20, type: 'qotw', needsTarget: true },
-  { id: 'double-trouble', name: 'Double Trouble', description: 'Double your questionnaire score and QOTW bonus for the selected week', cost: 25, type: 'multiplier', needsTarget: false },
-  { id: 'point-steal', name: 'Thief in the Shadows', description: 'Steal 5 points from a target player when the week\'s scores are released', cost: 30, type: 'steal', needsTarget: true }
+  { id: 'extra-vote', name: 'Extra Vote', description: 'Your QOTW answer gets +1 bonus vote for the selected week', cost: 3, type: 'qotw', needsTarget: false },
+  { id: 'vote-steal', name: 'Vote Steal', description: 'Block a target player from voting in QOTW and cast their vote yourself for the selected week', cost: 5, type: 'qotw', needsTarget: true },
+  { id: 'double-trouble', name: 'Double Trouble', description: 'Double your questionnaire score and QOTW bonus for the selected week', cost: 8, type: 'multiplier', needsTarget: false },
+  { id: 'point-steal', name: 'Thief in the Shadows', description: 'Steal 5 points from a target player when the week\'s scores are released', cost: 10, type: 'steal', needsTarget: true }
 ];
 
 /**
@@ -7325,10 +7325,10 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
   if (adminView === 'advantage-inspector') {
     const ADVANTAGE_DEFS = [
-      { id: 'extra-vote',     name: 'Extra Vote',           cost: 15 },
-      { id: 'vote-steal',     name: 'Vote Steal',           cost: 20 },
-      { id: 'double-trouble', name: 'Double Trouble',       cost: 25 },
-      { id: 'point-steal',    name: 'Thief in the Shadows', cost: 30 },
+      { id: 'extra-vote',     name: 'Extra Vote',           cost: 3 },
+      { id: 'vote-steal',     name: 'Vote Steal',           cost: 5 },
+      { id: 'double-trouble', name: 'Double Trouble',       cost: 8 },
+      { id: 'point-steal',    name: 'Thief in the Shadows', cost: 10 },
     ];
     const activeAdvantages = playerAdvantages.filter(pa => !pa.used);
     const usedAdvantages   = playerAdvantages.filter(pa => pa.used);
@@ -8688,46 +8688,47 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
                   {question.type === 'multiple-choice' && (
                     <div className="space-y-2">
-                      {question.options.map((option, optIdx) => (
-                        <label key={optIdx} className="flex items-center gap-3 p-3 bg-black/30 rounded cursor-pointer hover:bg-black/50 transition">
-                          <input
-                            type="radio"
-                            name={question.id}
-                            value={option}
-                            checked={answers[question.id] === option}
-                            onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
-                            className="w-4 h-4"
-                          />
-                          <span className="text-white">{option}</span>
-                        </label>
-                      ))}
+                      {question.options.map((option, optIdx) => {
+                        const isSelected = answers[question.id] === option;
+                        return (
+                          <button
+                            key={optIdx}
+                            type="button"
+                            onClick={() => setAnswers({...answers, [question.id]: isSelected ? '' : option})}
+                            className={`w-full flex items-center gap-3 p-3 rounded transition text-left ${
+                              isSelected
+                                ? 'bg-amber-600/50 border border-amber-500 text-white'
+                                : 'bg-black/30 border border-transparent text-white hover:bg-black/50'
+                            }`}
+                          >
+                            <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${isSelected ? 'border-amber-400 bg-amber-400' : 'border-gray-500'}`} />
+                            <span>{option}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 
                   {question.type === 'true-false' && (
                     <div className="flex gap-4">
-                      <label className="flex items-center gap-3 p-3 bg-black/30 rounded cursor-pointer hover:bg-black/50 transition flex-1">
-                        <input
-                          type="radio"
-                          name={question.id}
-                          value="true"
-                          checked={answers[question.id] === 'true'}
-                          onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-white">True</span>
-                      </label>
-                      <label className="flex items-center gap-3 p-3 bg-black/30 rounded cursor-pointer hover:bg-black/50 transition flex-1">
-                        <input
-                          type="radio"
-                          name={question.id}
-                          value="false"
-                          checked={answers[question.id] === 'false'}
-                          onChange={(e) => setAnswers({...answers, [question.id]: e.target.value})}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-white">False</span>
-                      </label>
+                      {['true', 'false'].map((val) => {
+                        const isSelected = answers[question.id] === val;
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => setAnswers({...answers, [question.id]: isSelected ? '' : val})}
+                            className={`flex items-center gap-3 p-3 rounded transition flex-1 ${
+                              isSelected
+                                ? 'bg-amber-600/50 border border-amber-500 text-white'
+                                : 'bg-black/30 border border-transparent text-white hover:bg-black/50'
+                            }`}
+                          >
+                            <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${isSelected ? 'border-amber-400 bg-amber-400' : 'border-gray-500'}`} />
+                            <span>{val.charAt(0).toUpperCase() + val.slice(1)}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
