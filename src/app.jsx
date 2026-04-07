@@ -3904,6 +3904,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     if (releasingScores) return; // Prevent double-click
 
     setReleasingScores(true);
+    try {
     const isRescore = scoringQ.isRescore;
 
     // Auto-snapshot before releasing/re-scoring
@@ -3959,7 +3960,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       });
 
       alert('Scores have been re-calculated and updated!');
-      setReleasingScores(false);
       setAdminView('main');
       setScoringQ(null);
       setCorrectAnswers({});
@@ -4080,6 +4080,9 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           break;
         }
 
+        default:
+          console.warn(`Unknown advantage type queued for resolution: ${adv.advantageId}`);
+          break;
       }
 
       // Mark advantage as used
@@ -4132,8 +4135,13 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     });
 
     alert('Scores released to all players!');
-    setReleasingScores(false);
     setAdminView('main');
+    } catch (err) {
+      console.error('Score release error:', err);
+      alert('An error occurred while releasing scores. Please reload the page and try again. Check the latest backup snapshot for the current state.');
+    } finally {
+      setReleasingScores(false);
+    }
   };
 
   const eliminateContestant = async (contestantId) => {
@@ -5624,7 +5632,8 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
       // QotW wins (+5 each)
       questionnaires.forEach(q => {
-        if (q.qotwWinnerId === player.id) {
+        const winners = Array.isArray(q.qotwWinner) ? q.qotwWinner : (q.qotwWinner ? [q.qotwWinner] : []);
+        if (winners.includes(player.id)) {
           totalPoints += 5;
         }
       });
@@ -5645,7 +5654,10 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       // Most QotW Wins
       qotwKing: leaguePlayers.map(p => ({
         ...p,
-        qotwWins: questionnaires.filter(q => q.qotwWinnerId === p.id).length
+        qotwWins: questionnaires.filter(q => {
+          const winners = Array.isArray(q.qotwWinner) ? q.qotwWinner : (q.qotwWinner ? [q.qotwWinner] : []);
+          return winners.includes(p.id);
+        }).length
       })).sort((a, b) => b.qotwWins - a.qotwWins)[0],
 
       // Most Correct Answers
@@ -8000,7 +8012,8 @@ function SeasonWinnersDisplay({ players, pickScores, submissions, questionnaires
 
     // QotW wins (+5 each)
     questionnaires.forEach(q => {
-      if (q.qotwWinnerId === player.id) {
+      const winners = Array.isArray(q.qotwWinner) ? q.qotwWinner : (q.qotwWinner ? [q.qotwWinner] : []);
+      if (winners.includes(player.id)) {
         totalPoints += 5;
       }
     });
@@ -8019,7 +8032,10 @@ function SeasonWinnersDisplay({ players, pickScores, submissions, questionnaires
 
     qotwKing: players.map(p => ({
       ...p,
-      qotwWins: questionnaires.filter(q => q.qotwWinnerId === p.id).length
+      qotwWins: questionnaires.filter(q => {
+        const winners = Array.isArray(q.qotwWinner) ? q.qotwWinner : (q.qotwWinner ? [q.qotwWinner] : []);
+        return winners.includes(p.id);
+      }).length
     })).sort((a, b) => b.qotwWins - a.qotwWins)[0],
 
     quizWhiz: players.map(p => {
