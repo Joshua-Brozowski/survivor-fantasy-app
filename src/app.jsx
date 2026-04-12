@@ -8319,6 +8319,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [votingFor, setVotingFor] = useState(null);
   const [viewingArchived, setViewingArchived] = useState(null);
+  const [showMyAnswers, setShowMyAnswers] = useState(false);
 
   const isOpen = activeQ && new Date() < new Date(activeQ.deadline) && new Date() < new Date(activeQ.lockedAt);
   const isLocked = activeQ && new Date() >= new Date(activeQ.lockedAt);
@@ -8676,6 +8677,53 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
               {activeQ.scoresReleased && (
                 <div className="mt-3">
                   <p className="text-white font-semibold">Your Score: {mySubmission.score || 0} points</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {mySubmission && (
+            <div className="mb-4">
+              <button
+                onClick={() => setShowMyAnswers(!showMyAnswers)}
+                className="w-full flex items-center justify-between p-3 bg-amber-900/20 border border-amber-700 rounded-lg text-amber-300 hover:bg-amber-900/30 transition"
+              >
+                <span className="font-semibold text-sm">📋 {showMyAnswers ? 'Hide' : 'View'} My Submitted Answers</span>
+                <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showMyAnswers ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showMyAnswers && (
+                <div className="mt-3 space-y-3">
+                  {activeQ.questions.map((q, idx) => {
+                    const myAnswer = mySubmission.answers[q.id];
+                    return (
+                      <div key={q.id} className="p-3 bg-black/40 border border-amber-800/50 rounded-lg">
+                        <p className="text-amber-200 text-sm font-semibold mb-1">
+                          {idx + 1}. {q.text}
+                        </p>
+                        <p className="text-sm">
+                          {myAnswer
+                            ? <span className="bg-amber-700/40 px-2 py-0.5 rounded text-amber-100">{myAnswer}</span>
+                            : <span className="text-gray-400 italic">(no answer)</span>
+                          }
+                        </p>
+                      </div>
+                    );
+                  })}
+
+                  {activeQ.hasQotw !== false && activeQ.qotw?.text && (
+                    <div className="p-3 bg-purple-900/30 border border-purple-700/50 rounded-lg">
+                      <p className="text-purple-300 text-sm font-semibold mb-1">
+                        Question of the Week: {activeQ.qotw.text}
+                      </p>
+                      <p className="text-sm">
+                        {mySubmission.answers[activeQ.qotw.id]
+                          ? <span className="text-purple-100 italic">"{mySubmission.answers[activeQ.qotw.id]}"</span>
+                          : <span className="text-gray-400 italic">(no answer)</span>
+                        }
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
