@@ -249,6 +249,8 @@ export default function SurvivorFantasyApp() {
   // Advantage play modal state
   const [advantageModal, setAdvantageModal] = useState({ show: false, advantage: null, step: 'confirm' });
   const [advantageTarget, setAdvantageTarget] = useState(null);
+  // Steal token modal state
+  const [stealModal, setStealModal] = useState({ show: false, tokenId: null, selectedAdvId: null });
 
   // Usage tracking - prevents double-counting visits within a single session
   const hasTrackedVisit  = useRef(false);
@@ -1573,6 +1575,56 @@ export default function SurvivorFantasyApp() {
     setPlayerAdvantages(updated);
 
     alert('Advantage queue cancelled!');
+  };
+
+  const executeSteal = async (stealTokenId, targetAdvId) => {
+    const stealToken = playerAdvantages.find(a => a.id === stealTokenId);
+    const targetAdv  = playerAdvantages.find(a => a.id === targetAdvId);
+    if (!stealToken || !targetAdv) {
+      alert('Advantage not found. Please refresh and try again.');
+      return;
+    }
+
+    const victimName = players.find(p => p.id === targetAdv.playerId)?.name || 'another player';
+    if (!window.confirm(`Steal ${targetAdv.name} from ${victimName}? This is immediate and cannot be undone.`)) return;
+
+    try {
+      const result = await advantageApi.executeSteal(stealTokenId, targetAdvId, currentLeagueId);
+      if (!result.success) {
+        alert(`Failed: ${result.error}`);
+        return;
+      }
+
+      // Update local state atomically
+      setPlayerAdvantages(prev => prev.map(a => {
+        if (a.id === stealTokenId) {
+          return { ...a, used: true, resolvedAt: new Date().toISOString(), targetPlayerId: targetAdv.playerId, stolenAdvantageId: targetAdv.advantageId };
+        }
+        if (a.id === targetAdvId) {
+          return { ...a, playerId: currentUser.id, queuedForWeek: null, targetPlayerId: null, queuedAt: null };
+        }
+        return a;
+      }));
+
+      // Broadcast notification
+      await addNotification({
+        type: 'advantage_stolen',
+        message: `${currentUser.name} used a Steal an Advantage token and took ${targetAdv.name} from ${victimName}!`,
+        targetPlayerId: null
+      });
+      // Targeted notification to victim
+      await addNotification({
+        type: 'advantage_stolen_victim',
+        message: `Your ${targetAdv.name} was stolen by ${currentUser.name}!`,
+        targetPlayerId: targetAdv.playerId
+      });
+
+      setStealModal({ show: false, tokenId: null, selectedAdvId: null });
+      alert(`You stole ${targetAdv.name} from ${victimName}!`);
+    } catch (err) {
+      console.error('Execute steal error:', err);
+      alert('Something went wrong. Please try again.');
+    }
   };
 
   // ============ WORDLE CHALLENGE FUNCTIONS ============
@@ -3480,6 +3532,70 @@ export default function SurvivorFantasyApp() {
               </div>
             )}
 
+            {/* Steal Token Modal */}
+            {stealModal.show && (
+              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-lg border-2 border-yellow-500 max-w-md w-full max-h-[80vh] overflow-y-auto">
+                  <h3 className="text-xl font-bold text-yellow-400 mb-2">🔮 Steal an Advantage</h3>
+                  <p className="text-yellow-200 text-sm mb-4">Select an advantage to steal from another player. This executes immediately and cannot be undone.</p>
+
+                  {(() => {
+                    const stealable = playerAdvantages.filter(a => !a.used && a.playerId !== currentUser.id);
+                    if (stealable.length === 0) {
+                      return (
+                        <div className="bg-gray-800 p-4 rounded-lg text-center mb-4">
+                          <p className="text-gray-300">No advantages are currently held by other players.</p>
+                          <p className="text-gray-400 text-sm mt-1">Check back once someone buys one!</p>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="space-y-2 mb-4">
+                        {stealable.map(adv => {
+                          const owner = players.find(p => p.id === adv.playerId);
+                          const isSelected = stealModal.selectedAdvId === adv.id;
+                          return (
+                            <button
+                              key={adv.id}
+                              onClick={() => setStealModal({ ...stealModal, selectedAdvId: adv.id })}
+                              className={`w-full p-3 rounded-lg border-2 text-left transition ${
+                                isSelected ? 'border-yellow-500 bg-yellow-900/40' : 'border-gray-600 bg-gray-800/40 hover:border-yellow-600'
+                              }`}
+                            >
+                              <p className="text-white font-semibold">{adv.name}</p>
+                              <p className="text-yellow-300 text-xs">Owned by: {owner?.name}</p>
+                              {adv.queuedForWeek && (
+                                <p className="text-orange-400 text-xs mt-1">⚠️ Queued for Week {adv.queuedForWeek} — steal will cancel their queue</p>
+                              )}
+                              {adv.advantageId === 'steal-token' && (
+                                <p className="text-yellow-400 text-xs mt-1">🔮 This is their steal token!</p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setStealModal({ show: false, tokenId: null, selectedAdvId: null })}
+                      className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => executeSteal(stealModal.tokenId, stealModal.selectedAdvId)}
+                      disabled={!stealModal.selectedAdvId}
+                      className="flex-1 py-2 bg-gradient-to-r from-yellow-600 to-amber-600 text-white rounded font-semibold hover:from-yellow-500 hover:to-amber-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Steal It!
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Your Advantages */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
               <h2 className="text-2xl font-bold text-amber-400 mb-4 flex items-center gap-2">
@@ -3488,11 +3604,12 @@ export default function SurvivorFantasyApp() {
               </h2>
 
               {(() => {
-                const myActiveAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && !a.queuedForWeek);
+                const myStealTokens    = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && a.advantageId === 'steal-token');
+                const myActiveAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && !a.queuedForWeek && a.advantageId !== 'steal-token');
                 const myQueuedAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && a.queuedForWeek);
                 const myUsedAdvs = playerAdvantages.filter(a => a.playerId === currentUser.id && a.used);
 
-                if (myActiveAdvantages.length === 0 && myQueuedAdvantages.length === 0 && myUsedAdvs.length === 0) {
+                if (myStealTokens.length === 0 && myActiveAdvantages.length === 0 && myQueuedAdvantages.length === 0 && myUsedAdvs.length === 0) {
                   return (
                     <p className="text-amber-200 text-center py-8">
                       You haven't purchased any advantages yet. Browse the shop below!
@@ -3502,6 +3619,45 @@ export default function SurvivorFantasyApp() {
 
                 return (
                   <div className="space-y-6">
+
+                    {/* Steal Tokens (Special / Admin-Granted) */}
+                    {myStealTokens.length > 0 && (
+                      <div>
+                        <h3 className="text-lg text-yellow-400 font-semibold mb-3">🔮 Special Power</h3>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {myStealTokens.map(token => {
+                            const expired = new Date() > new Date(token.expiresAt);
+                            const msLeft = new Date(token.expiresAt) - new Date();
+                            const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+                            return (
+                              <div key={token.id} className={`p-4 rounded-lg border-2 ${expired ? 'border-gray-600 bg-gray-900/40 opacity-60' : 'border-yellow-500 bg-gradient-to-br from-yellow-900/40 to-amber-900/40'}`}>
+                                <h4 className="text-white font-bold text-lg mb-1">🔮 Steal an Advantage</h4>
+                                <p className="text-yellow-200 text-sm mb-3">A secret power. Steal any advantage currently held by another player — immediately.</p>
+                                {expired ? (
+                                  <p className="text-red-400 text-sm font-semibold mb-3">⏰ Expired</p>
+                                ) : (
+                                  <p className="text-yellow-300 text-sm font-semibold mb-3">
+                                    ⏰ Expires {new Date(token.expiresAt).toLocaleDateString()} ({daysLeft} day{daysLeft !== 1 ? 's' : ''} left)
+                                  </p>
+                                )}
+                                <button
+                                  onClick={() => setStealModal({ show: true, tokenId: token.id, selectedAdvId: null })}
+                                  disabled={expired}
+                                  className={`w-full py-2 rounded font-semibold transition flex items-center justify-center gap-2 ${
+                                    expired
+                                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                      : 'bg-gradient-to-r from-yellow-600 to-amber-600 text-white hover:from-yellow-500 hover:to-amber-500'
+                                  }`}
+                                >
+                                  {expired ? 'Expired' : '⚡ Use Now'}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Active (Ready to Play) */}
                     {myActiveAdvantages.length > 0 && (
                       <div>
@@ -3569,16 +3725,30 @@ export default function SurvivorFantasyApp() {
                       <div>
                         <h3 className="text-lg text-gray-400 font-semibold mb-3">Used Advantages</h3>
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {myUsedAdvs.map(adv => (
-                            <div key={adv.id} className="bg-gray-900/40 p-4 rounded-lg border border-gray-600 opacity-60">
-                              <h4 className="text-gray-300 font-bold">{adv.name}</h4>
-                              <p className="text-gray-500 text-sm">{adv.description}</p>
-                              <p className="text-gray-500 text-xs mt-2">
-                                Used for Week {adv.queuedForWeek || '?'}
-                                {adv.resolvedAt && ` • Resolved: ${new Date(adv.resolvedAt).toLocaleDateString()}`}
-                              </p>
-                            </div>
-                          ))}
+                          {myUsedAdvs.map(adv => {
+                            const isStealToken = adv.advantageId === 'steal-token';
+                            const victim = isStealToken && adv.targetPlayerId ? players.find(p => p.id === adv.targetPlayerId) : null;
+                            const stolenAdvDef = isStealToken && adv.stolenAdvantageId ? DEFAULT_ADVANTAGES.find(a => a.id === adv.stolenAdvantageId) : null;
+                            return (
+                              <div key={adv.id} className="bg-gray-900/40 p-4 rounded-lg border border-gray-600 opacity-60">
+                                <h4 className="text-gray-300 font-bold">{adv.name}</h4>
+                                {isStealToken ? (
+                                  <p className="text-gray-500 text-xs mt-2">
+                                    Stole {stolenAdvDef?.name || adv.stolenAdvantageId} from {victim?.name || 'another player'}
+                                    {adv.resolvedAt && ` • ${new Date(adv.resolvedAt).toLocaleDateString()}`}
+                                  </p>
+                                ) : (
+                                  <>
+                                    <p className="text-gray-500 text-sm">{adv.description}</p>
+                                    <p className="text-gray-500 text-xs mt-2">
+                                      Used for Week {adv.queuedForWeek || '?'}
+                                      {adv.resolvedAt && ` • Resolved: ${new Date(adv.resolvedAt).toLocaleDateString()}`}
+                                    </p>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -3707,6 +3877,7 @@ export default function SurvivorFantasyApp() {
 function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus }) {
   const [adminView, setAdminView] = useState('main');
   const [releasingScores, setReleasingScores] = useState(false);
+  const [grantTarget, setGrantTarget] = useState('');
 
   // Helper to check guest mode and show alert
   const requireRealUser = (actionName) => {
@@ -7336,6 +7507,25 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   }
 
   if (adminView === 'advantage-inspector') {
+    const grantStealToken = async (playerId) => {
+      if (!requireRealUser('Grant Steal Token')) return;
+      try {
+        const result = await advantageApi.grantStealToken(playerId, currentLeagueId);
+        if (!result.success) { alert(`Failed: ${result.error}`); return; }
+        setPlayerAdvantages(prev => [...prev, result.token]);
+        const recipientName = players.find(p => p.id === playerId)?.name;
+        await addNotification({
+          type: 'steal_token_granted',
+          message: `A secret power has found its way to you. A Steal an Advantage token is now yours — check your Advantages tab. It expires in 3 days. Use it wisely.`,
+          targetPlayerId: playerId
+        });
+        alert(`Steal token granted to ${recipientName}! They have 3 days to use it.`);
+      } catch (err) {
+        console.error('Grant steal token error:', err);
+        alert('Failed to grant steal token. Please try again.');
+      }
+    };
+
     const ADVANTAGE_DEFS = [
       { id: 'extra-vote',     name: 'Extra Vote',           cost: 3 },
       { id: 'vote-steal',     name: 'Vote Steal',           cost: 5 },
@@ -7415,6 +7605,61 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               );
             })}
           </div>
+
+          {/* Grant Steal Token */}
+          {(() => {
+            const activeStealTokens = playerAdvantages.filter(pa => pa.advantageId === 'steal-token' && !pa.used);
+            return (
+              <div className="border border-yellow-600 bg-yellow-900/20 p-4 rounded-lg mb-6">
+                <h3 className="text-yellow-300 font-bold mb-1 flex items-center gap-2">
+                  🔮 Grant Steal Token
+                </h3>
+                <p className="text-yellow-200/70 text-xs mb-3">Give a player a one-time token to steal any advantage from another player. Expires in 3 days.</p>
+
+                {activeStealTokens.length > 0 && (
+                  <div className="mb-3 space-y-1">
+                    <p className="text-yellow-400 text-xs font-semibold uppercase tracking-wide mb-1">Active Tokens</p>
+                    {activeStealTokens.map(t => {
+                      const holder = players.find(p => p.id === t.playerId);
+                      const expired = new Date() > new Date(t.expiresAt);
+                      return (
+                        <p key={t.id} className={`text-xs ${expired ? 'text-red-400' : 'text-yellow-200'}`}>
+                          • {holder?.name} — {expired ? 'EXPIRED' : `expires ${new Date(t.expiresAt).toLocaleDateString()}`}
+                        </p>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <select
+                    value={grantTarget}
+                    onChange={e => setGrantTarget(e.target.value ? parseInt(e.target.value) : '')}
+                    className="flex-1 p-2 rounded bg-gray-800 border border-yellow-600 text-white text-sm"
+                  >
+                    <option value="">Select player...</option>
+                    {leaguePlayers.filter(p => !p.isAdmin).map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      if (!grantTarget) { alert('Select a player first'); return; }
+                      const name = players.find(p => p.id === grantTarget)?.name;
+                      if (window.confirm(`Grant a Steal an Advantage token to ${name}? They'll have 3 days to use it.`)) {
+                        grantStealToken(grantTarget);
+                        setGrantTarget('');
+                      }
+                    }}
+                    disabled={!grantTarget}
+                    className="px-4 py-2 bg-yellow-600 text-white rounded font-semibold hover:bg-yellow-500 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    Grant
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Usage History */}
           {usedAdvantages.length > 0 && (

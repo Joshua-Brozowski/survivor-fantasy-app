@@ -468,6 +468,38 @@ export const advantageApi = {
       console.error('Advantage cancel error:', error);
       return { success: false, error: 'Network error' };
     }
+  },
+
+  async grantStealToken(playerId, leagueId) {
+    try {
+      const response = await authFetch(`${API_BASE}/advantage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'grantStealToken', playerId, leagueId })
+      });
+      const data = await response.json();
+      if (!response.ok) return { success: false, error: data.error };
+      return { success: true, token: data.token };
+    } catch (error) {
+      console.error('Grant steal token error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async executeSteal(stealTokenId, targetAdvantageDbId, leagueId) {
+    try {
+      const response = await authFetch(`${API_BASE}/advantage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'executeSteal', stealTokenId, targetAdvantageDbId, leagueId })
+      });
+      const data = await response.json();
+      if (!response.ok) return { success: false, error: data.error };
+      return { success: true, ...data };
+    } catch (error) {
+      console.error('Execute steal error:', error);
+      return { success: false, error: 'Network error' };
+    }
   }
 };
 

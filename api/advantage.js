@@ -237,6 +237,151 @@ export default async function handler(req, res) {
         break;
       }
 
+      case 'grantStealToken': {
+        // Admin-only: grant a one-time steal token to a player
+        const { playerId: recipientId, leagueId } = req.body;
+
+        if (!recipientId || !leagueId) {
+          res.status(400).json({ error: 'Missing required fields' });
+          return;
+        }
+
+        if (!user.isAdmin) {
+          res.status(403).json({ error: 'Admin only' });
+          return;
+        }
+
+        const key = `league_${leagueId}_playerAdvantages`;
+        const doc = await gameDataCollection.findOne({ key });
+        const advantages = doc ? JSON.parse(doc.value) : [];
+
+        const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+
+        const newToken = {
+          id: Date.now(),
+          playerId: recipientId,
+          advantageId: 'steal-token',
+          name: 'Steal an Advantage',
+          description: 'A secret power. Use it to steal any advantage currently held by another player.',
+          type: 'steal-token',
+          cost: 0,
+          grantedAt: new Date().toISOString(),
+          expiresAt,
+          used: false,
+          queuedForWeek: null,
+          targetPlayerId: null,
+          stolenAdvantageId: null,
+          resolvedAt: null,
+          cancelled: false
+        };
+
+        const updatedAfterGrant = [...advantages, newToken];
+        await gameDataCollection.updateOne(
+          { key },
+          { $set: { key, value: JSON.stringify(updatedAfterGrant), updatedAt: new Date() } },
+          { upsert: true }
+        );
+
+        res.status(200).json({ success: true, token: newToken });
+        break;
+      }
+
+      case 'executeSteal': {
+        // Player uses their steal token to take an advantage from another player
+        const { stealTokenId, targetAdvantageDbId, leagueId } = req.body;
+
+        if (!stealTokenId || !targetAdvantageDbId || !leagueId) {
+          res.status(400).json({ error: 'Missing required fields' });
+          return;
+        }
+
+        const key = `league_${leagueId}_playerAdvantages`;
+        const doc = await gameDataCollection.findOne({ key });
+        const advantages = doc ? JSON.parse(doc.value) : [];
+
+        // Find and validate steal token
+        const tokenIndex = advantages.findIndex(a => a.id === stealTokenId);
+        if (tokenIndex === -1) {
+          res.status(404).json({ error: 'Steal token not found' });
+          return;
+        }
+
+        const stealToken = advantages[tokenIndex];
+
+        if (stealToken.playerId !== user.id && !user.isAdmin) {
+          res.status(403).json({ error: 'This steal token does not belong to you' });
+          return;
+        }
+
+        if (stealToken.used) {
+          res.status(400).json({ error: 'This steal token has already been used' });
+          return;
+        }
+
+        if (new Date() > new Date(stealToken.expiresAt)) {
+          res.status(400).json({ error: 'This steal token has expired' });
+          return;
+        }
+
+        // Find and validate target advantage
+        const targetIndex = advantages.findIndex(a => a.id === targetAdvantageDbId);
+        if (targetIndex === -1) {
+          res.status(404).json({ error: 'Target advantage not found' });
+          return;
+        }
+
+        const targetAdvantage = advantages[targetIndex];
+
+        if (targetAdvantage.used) {
+          res.status(400).json({ error: 'That advantage has already been used' });
+          return;
+        }
+
+        if (targetAdvantage.playerId === stealToken.playerId) {
+          res.status(400).json({ error: 'Cannot steal your own advantage' });
+          return;
+        }
+
+        const stolenFromPlayerId = targetAdvantage.playerId;
+
+        // Atomic: transfer advantage + mark token used in one write
+        const updatedAfterSteal = advantages.map((a, i) => {
+          if (i === tokenIndex) {
+            return {
+              ...a,
+              used: true,
+              resolvedAt: new Date().toISOString(),
+              targetPlayerId: stolenFromPlayerId,
+              stolenAdvantageId: targetAdvantage.advantageId
+            };
+          }
+          if (i === targetIndex) {
+            return {
+              ...a,
+              playerId: stealToken.playerId,
+              queuedForWeek: null,
+              targetPlayerId: null,
+              queuedAt: null
+            };
+          }
+          return a;
+        });
+
+        await gameDataCollection.updateOne(
+          { key },
+          { $set: { key, value: JSON.stringify(updatedAfterSteal), updatedAt: new Date() } },
+          { upsert: true }
+        );
+
+        res.status(200).json({
+          success: true,
+          stolenFromPlayerId,
+          stolenAdvantageName: targetAdvantage.name,
+          stolenAdvantageType: targetAdvantage.advantageId
+        });
+        break;
+      }
+
       default:
         res.status(400).json({ error: 'Invalid action' });
     }
