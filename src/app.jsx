@@ -4052,7 +4052,8 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
         const answer = sub.answers[q.id];
         const correct = correctAns[q.id];
 
-        if (answer === correct) {
+        const isCorrect = Array.isArray(correct) ? correct.includes(answer) : answer === correct;
+        if (isCorrect) {
           score += 2;
         } else if (answer && !q.required) {
           score -= 1;
@@ -4885,16 +4886,36 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 )}
 
                 {q.type === 'cast-dropdown' && (
-                  <select
-                    value={correctAnswers[q.id] || ''}
-                    onChange={(e) => setCorrectAnswers({...correctAnswers, [q.id]: e.target.value})}
-                    className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
-                  >
-                    <option value="">Select correct answer...</option>
-                    {contestants.map(contestant => (
-                      <option key={contestant.id} value={contestant.name}>{contestant.name}</option>
-                    ))}
-                  </select>
+                  <div>
+                    <p className="text-amber-300 text-xs mb-2">Select all correct answers (check multiple for double eliminations):</p>
+                    <div className="space-y-1 max-h-48 overflow-y-auto bg-black/30 p-2 rounded border border-amber-700">
+                      {contestants.map(contestant => {
+                        const current = correctAnswers[q.id];
+                        const isChecked = Array.isArray(current)
+                          ? current.includes(contestant.name)
+                          : current === contestant.name;
+                        return (
+                          <label key={contestant.id} className="flex items-center gap-2 cursor-pointer hover:bg-black/20 px-2 py-1 rounded">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const existing = Array.isArray(current)
+                                  ? [...current]
+                                  : (current ? [current] : []);
+                                const updated = e.target.checked
+                                  ? [...existing, contestant.name]
+                                  : existing.filter(n => n !== contestant.name);
+                                setCorrectAnswers({...correctAnswers, [q.id]: updated});
+                              }}
+                              className="w-4 h-4 accent-amber-500"
+                            />
+                            <span className="text-white text-sm">{contestant.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
 
                 {q.type === 'true-false' && (
@@ -8855,7 +8876,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
             {viewingArchived.questions.map((q, idx) => {
               const myAnswer = mySub?.answers[q.id];
               const correctAnswer = viewingArchived.correctAnswers[q.id];
-              const isCorrect = myAnswer === correctAnswer;
+              const isCorrect = Array.isArray(correctAnswer) ? correctAnswer.includes(myAnswer) : myAnswer === correctAnswer;
               
               return (
                 <div key={q.id} className={`p-4 rounded-lg border-2 ${
@@ -8869,7 +8890,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
                       <span className="text-amber-300">Your Answer:</span> {myAnswer || '(no answer)'}
                     </p>
                     <p className="text-white">
-                      <span className="text-amber-300">Correct Answer:</span> {correctAnswer}
+                      <span className="text-amber-300">Correct Answer:</span> {Array.isArray(correctAnswer) ? correctAnswer.join(' or ') : correctAnswer}
                     </p>
                     <p className={isCorrect ? 'text-green-400 font-semibold' : 'text-red-400 font-semibold'}>
                       {isCorrect ? '✓ Correct (+2)' : myAnswer ? (q.required ? '✗ Incorrect (0)' : '✗ Incorrect (-1)') : '(No answer: 0)'}
