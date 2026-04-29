@@ -308,7 +308,7 @@ export default async function handler(req, res) {
 
         const stealToken = advantages[tokenIndex];
 
-        if (stealToken.playerId !== user.id && !user.isAdmin) {
+        if (stealToken.playerId !== user.playerId && !user.isAdmin) {
           res.status(403).json({ error: 'This steal token does not belong to you' });
           return;
         }
