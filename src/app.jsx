@@ -2836,11 +2836,13 @@ export default function SurvivorFantasyApp() {
             {seasonFinalized && (
               <SeasonWinnersDisplay
                 players={leaguePlayers}
+                picks={picks}
                 pickScores={pickScores}
                 submissions={submissions}
                 questionnaires={questionnaires}
                 challenges={challenges}
                 playerAdvantages={playerAdvantages}
+                playerScores={playerScores}
                 currentSeason={currentSeason}
                 compact={true}
               />
@@ -3155,11 +3157,13 @@ export default function SurvivorFantasyApp() {
             {seasonFinalized && (
               <SeasonWinnersDisplay
                 players={leaguePlayers}
+                picks={picks}
                 pickScores={pickScores}
                 submissions={submissions}
                 questionnaires={questionnaires}
                 challenges={challenges}
                 playerAdvantages={playerAdvantages}
+                playerScores={playerScores}
                 currentSeason={currentSeason}
               />
             )}
@@ -5811,8 +5815,11 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       // Calculate total points from all sources
       let totalPoints = 0;
 
-      // Pick scores
-      const playerPickScores = pickScores.filter(ps => ps.playerId === player.id);
+      // Pick scores (resolve via picks array — pickScores don't store playerId directly)
+      const playerPickScores = pickScores.filter(ps => {
+        const pick = picks.find(p => p.id === ps.pickId);
+        return pick && pick.playerId === player.id;
+      });
       playerPickScores.forEach(ps => { totalPoints += ps.points; });
 
       // Questionnaire scores
@@ -5833,6 +5840,11 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       // Wordle wins (+3 each)
       const wordleWins = challenges.filter(c => c.winnerId === player.id).length;
       totalPoints += wordleWins * 3;
+
+      // playerScores breakdown (advantage costs, Double Trouble bonuses, point thefts, etc.)
+      if (playerScores[player.id]?.breakdown) {
+        totalPoints += playerScores[player.id].breakdown.reduce((sum, entry) => sum + entry.points, 0);
+      }
 
       return { ...player, totalPoints, wordleWins };
     }).sort((a, b) => b.totalPoints - a.totalPoints);
@@ -8251,7 +8263,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 }
 
 // Season Winners Display Component - Shows podium and awards when season is finalized
-function SeasonWinnersDisplay({ players, pickScores, submissions, questionnaires, challenges, playerAdvantages, currentSeason, compact = false }) {
+function SeasonWinnersDisplay({ players, picks, pickScores, submissions, questionnaires, challenges, playerAdvantages, playerScores, currentSeason, compact = false }) {
   // Celebrate when player first views the winners podium
   useEffect(() => {
     const celebratedKey = `survivorCelebrated_season${currentSeason}`;
@@ -8265,8 +8277,11 @@ function SeasonWinnersDisplay({ players, pickScores, submissions, questionnaires
   const playerRankings = players.map(player => {
     let totalPoints = 0;
 
-    // Pick scores
-    const playerPickScores = pickScores.filter(ps => ps.playerId === player.id);
+    // Pick scores (resolve via picks array — pickScores don't store playerId directly)
+    const playerPickScores = pickScores.filter(ps => {
+      const pick = picks.find(p => p.id === ps.pickId);
+      return pick && pick.playerId === player.id;
+    });
     playerPickScores.forEach(ps => { totalPoints += ps.points; });
 
     // Questionnaire scores
@@ -8287,6 +8302,11 @@ function SeasonWinnersDisplay({ players, pickScores, submissions, questionnaires
     // Wordle wins (+3 each)
     const wordleWins = challenges.filter(c => c.winnerId === player.id).length;
     totalPoints += wordleWins * 3;
+
+    // playerScores breakdown (advantage costs, Double Trouble bonuses, point thefts, etc.)
+    if (playerScores[player.id]?.breakdown) {
+      totalPoints += playerScores[player.id].breakdown.reduce((sum, entry) => sum + entry.points, 0);
+    }
 
     return { ...player, totalPoints, wordleWins };
   }).sort((a, b) => b.totalPoints - a.totalPoints);
