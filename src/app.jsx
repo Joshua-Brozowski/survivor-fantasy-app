@@ -5532,6 +5532,26 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             Edit Cast - Season {currentSeason}
           </h2>
 
+          {/* Load Default Cast */}
+          {contestants.length === 0 && (
+            <div className="mb-6 p-4 bg-yellow-900/40 border border-yellow-500 rounded-lg">
+              <p className="text-yellow-300 font-semibold mb-3">No cast loaded yet. Click below to load the Season {currentSeason} default cast.</p>
+              <button
+                onClick={async () => {
+                  if (window.confirm(`Load all ${DEFAULT_CAST.length} default contestants for Season ${currentSeason}?`)) {
+                    const freshCast = DEFAULT_CAST.map(c => ({ ...c, eliminated: false }));
+                    setContestants(freshCast);
+                    await storage.set('contestants', JSON.stringify(freshCast));
+                    alert(`Loaded ${freshCast.length} contestants!`);
+                  }
+                }}
+                className="px-5 py-2 bg-yellow-500 text-black font-bold rounded hover:bg-yellow-400 transition"
+              >
+                Load Default Cast ({DEFAULT_CAST.length} contestants)
+              </button>
+            </div>
+          )}
+
           {/* Add New Contestant */}
           <div className="mb-6 p-4 bg-green-900/30 border border-green-600 rounded-lg">
             <h3 className="text-green-300 font-semibold mb-3 flex items-center gap-2">
@@ -6159,10 +6179,9 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               <button
                 onClick={async () => {
                   if (window.confirm(`Start Season ${newSeasonForm.seasonNumber}? This will archive Season ${currentSeason} and reset all game data.`)) {
-                    // Create empty cast for new season
-                    const emptyCast = [];
-                    await startNewSeason(newSeasonForm.seasonNumber, emptyCast);
-                    alert(`Season ${newSeasonForm.seasonNumber} has begun! Add your new cast in the Cast Editor.`);
+                    const freshCast = DEFAULT_CAST.map(c => ({ ...c, eliminated: false }));
+                    await startNewSeason(newSeasonForm.seasonNumber, freshCast);
+                    alert(`Season ${newSeasonForm.seasonNumber} has begun! Default cast loaded — update it in the Cast Editor if needed.`);
                     setAdminView('cast-editor');
                   }
                 }}
