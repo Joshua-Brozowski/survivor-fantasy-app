@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle, CalendarDays } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi, refreshAccessToken, clearAccessToken, setAccessToken, authFetch } from './db.js';
@@ -327,6 +327,21 @@ export default function SurvivorFantasyApp() {
     const week1 = new Date(d.getFullYear(), 0, 4);
     const weekNum = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
     return `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+  };
+
+  // Shared date formatter — use this instead of ad-hoc toLocaleDateString calls
+  const formatDate = (ts, opts = {}) => {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', ...opts
+    });
+  };
+
+  const formatDateTime = (ts) => {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    });
   };
 
   // Returns Thursday-based week key e.g. "thu-2026-03-05" (date of most recent Thursday)
@@ -1351,7 +1366,7 @@ export default function SurvivorFantasyApp() {
       episodes: [...episodes],
       gamePhase,
       finalStandings: [...players]
-        .map(p => ({ ...p, points: calculateTotalPoints(p.id) }))
+        .map(p => ({ ...p, points: getPoints(p.id) }))
         .sort((a, b) => b.points - a.points)
     };
 
@@ -1427,35 +1442,23 @@ export default function SurvivorFantasyApp() {
     return true;
   };
 
-  const submitInstinctPick = async (contestantId) => {
+  const submitPick = async (type, contestantId) => {
+    const label = type === 'instinct' ? 'Instinct' : 'Final';
     const newPick = {
       id: Date.now(),
       playerId: currentUser.id,
       contestantId,
-      type: 'instinct',
+      type,
       timestamp: Date.now()
     };
-
-    const updatedPicks = [...picks.filter(p => !(p.playerId === currentUser.id && p.type === 'instinct')), newPick];
+    const updatedPicks = [...picks.filter(p => !(p.playerId === currentUser.id && p.type === type)), newPick];
     setPicks(updatedPicks);
     await guestSafeLeagueSet('picks', JSON.stringify(updatedPicks));
-    alert(isGuestMode() ? 'Instinct pick submitted! (Demo mode - not saved)' : 'Instinct pick submitted!');
+    alert(isGuestMode() ? `${label} pick submitted! (Demo mode - not saved)` : `${label} pick submitted!`);
   };
 
-  const submitFinalPick = async (contestantId) => {
-    const newPick = {
-      id: Date.now(),
-      playerId: currentUser.id,
-      contestantId,
-      type: 'final',
-      timestamp: Date.now()
-    };
-
-    const updatedPicks = [...picks.filter(p => !(p.playerId === currentUser.id && p.type === 'final')), newPick];
-    setPicks(updatedPicks);
-    await guestSafeLeagueSet('picks', JSON.stringify(updatedPicks));
-    alert(isGuestMode() ? 'Final pick submitted! (Demo mode - not saved)' : 'Final pick submitted!');
-  };
+  const submitInstinctPick = (contestantId) => submitPick('instinct', contestantId);
+  const submitFinalPick = (contestantId) => submitPick('final', contestantId);
 
   const getInstinctPicksStatus = () => {
     const instinctPicks = picks.filter(p => p.type === 'instinct');
@@ -1516,6 +1519,17 @@ export default function SurvivorFantasyApp() {
 
     return total;
   };
+
+  // Pre-compute points for all players once per data change instead of per-render
+  const allPlayerPoints = useMemo(() => {
+    const map = {};
+    players.forEach(p => { map[p.id] = calculateTotalPoints(p.id); });
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickScores, picks, submissions, questionnaires, playerScores, players]);
+
+  // Cached lookup — falls back to live calculation if map not ready
+  const getPoints = (playerId) => allPlayerPoints[playerId] ?? calculateTotalPoints(playerId);
 
   const getPointBreakdown = (playerId) => {
     const breakdown = [];
@@ -1676,7 +1690,7 @@ export default function SurvivorFantasyApp() {
   };
 
   const purchaseAdvantage = async (advantage) => {
-    const totalPoints = calculateTotalPoints(currentUser.id);
+    const totalPoints = getPoints(currentUser.id);
     if (totalPoints < advantage.cost) {
       alert('Insufficient points to purchase this advantage!');
       return;
@@ -2582,7 +2596,7 @@ export default function SurvivorFantasyApp() {
   const myInstinctPick = picks.find(p => p.playerId === currentUser.id && p.type === 'instinct');
   const myFinalPick = picks.find(p => p.playerId === currentUser.id && p.type === 'final');
   const pickStatus = getInstinctPicksStatus();
-  const myTotalPoints = calculateTotalPoints(currentUser.id);
+  const myTotalPoints = getPoints(currentUser.id);
   const myAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used);
   const myUsedAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && a.used);
   const unreadNotifications = notifications.filter(n => {
@@ -3397,11 +3411,16 @@ export default function SurvivorFantasyApp() {
                 Leaderboard - Season {currentSeason}
               </h2>
 
+              {leaguePlayers.length === 0 && (
+                <div className="text-center py-12 text-gray-400">
+                  <p className="text-lg">No players in this league yet.</p>
+                </div>
+              )}
               <div className="space-y-3">
               {(() => {
                 // Calculate rankings with ties (only players in current league)
                 const sortedPlayers = [...leaguePlayers]
-                  .map(p => ({ ...p, points: calculateTotalPoints(p.id) }))
+                  .map(p => ({ ...p, points: getPoints(p.id) }))
                   .sort((a, b) => b.points - a.points);
 
                 // Build ranking with ties: T-1, T-1, 3 (not T-1, T-1, T-2)
@@ -3553,10 +3572,10 @@ export default function SurvivorFantasyApp() {
                   <p className="text-yellow-300 font-semibold">Leader</p>
                 </div>
                 <p className="text-white text-xl font-bold">
-                  {[...leaguePlayers].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))[0]?.name}
+                  {[...leaguePlayers].sort((a, b) => getPoints(b.id) - getPoints(a.id))[0]?.name}
                 </p>
                 <p className="text-yellow-400 text-sm">
-                  {calculateTotalPoints([...leaguePlayers].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id))[0]?.id)} pts
+                  {getPoints([...leaguePlayers].sort((a, b) => getPoints(b.id) - getPoints(a.id))[0]?.id)} pts
                 </p>
               </div>
               
@@ -3567,11 +3586,11 @@ export default function SurvivorFantasyApp() {
                 </div>
                 <p className="text-white text-xl font-bold">
                   {(() => {
-                    const myPoints = calculateTotalPoints(currentUser.id);
+                    const myPoints = getPoints(currentUser.id);
                     // Rank = 1 + number of league players with MORE points than me
-                    const playersAbove = leaguePlayers.filter(p => calculateTotalPoints(p.id) > myPoints).length;
+                    const playersAbove = leaguePlayers.filter(p => getPoints(p.id) > myPoints).length;
                     const rank = playersAbove + 1;
-                    const isTied = leaguePlayers.filter(p => calculateTotalPoints(p.id) === myPoints).length > 1;
+                    const isTied = leaguePlayers.filter(p => getPoints(p.id) === myPoints).length > 1;
                     return isTied ? `T-${rank}` : `#${rank}`;
                   })()}
                 </p>
@@ -3586,7 +3605,7 @@ export default function SurvivorFantasyApp() {
                   <p className="text-blue-300 font-semibold">Average Score</p>
                 </div>
                 <p className="text-white text-xl font-bold">
-                  {Math.round(players.reduce((sum, p) => sum + calculateTotalPoints(p.id), 0) / players.length)}
+                  {Math.round(players.reduce((sum, p) => sum + getPoints(p.id), 0) / players.length)}
                 </p>
                 <p className="text-blue-400 text-sm">
                   points per player
@@ -3740,7 +3759,7 @@ export default function SurvivorFantasyApp() {
                 <div>
                   <p className="text-amber-300">Current Rank</p>
                   <p className="text-3xl font-bold text-white">
-                    #{[...leaguePlayers].sort((a, b) => calculateTotalPoints(b.id) - calculateTotalPoints(a.id)).findIndex(p => p.id === currentUser.id) + 1}
+                    #{[...leaguePlayers].sort((a, b) => getPoints(b.id) - getPoints(a.id)).findIndex(p => p.id === currentUser.id) + 1}
                     <span className="text-lg text-amber-400 ml-2">of {leaguePlayers.length}</span>
                   </p>
                 </div>

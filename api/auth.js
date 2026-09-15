@@ -397,6 +397,23 @@ export default async function handler(req, res) {
           { $set: { key: passwordKey, value: hashedDefault, updatedAt: new Date() } },
           { upsert: true }
         );
+
+        // Audit log — admin password resets leave a trail
+        const auditKey = 'adminActionLog';
+        const auditDoc = await collection.findOne({ key: auditKey });
+        const auditLog = auditDoc ? JSON.parse(auditDoc.value) : [];
+        auditLog.push({
+          action: 'resetPassword',
+          adminId: authUser.playerId,
+          targetPlayerId: playerId,
+          at: new Date().toISOString()
+        });
+        await collection.updateOne(
+          { key: auditKey },
+          { $set: { key: auditKey, value: JSON.stringify(auditLog), updatedAt: new Date() } },
+          { upsert: true }
+        );
+
         res.status(200).json({ success: true, message: 'Password reset to default' });
         break;
       }
@@ -408,25 +425,31 @@ export default async function handler(req, res) {
           return;
         }
 
-        const doc = await collection.findOne({ key: passwordKey });
-
-        if (!doc) {
-          // No password set - check against default
-          const isValid = password === DEFAULT_PASSWORD;
-          res.status(200).json({ valid: isValid });
+        // Apply same rate limiting as login to prevent brute-force
+        const vcpIP = getClientIP(req);
+        const vcpRateLimit = await isRateLimited(collection, vcpIP, playerId);
+        if (vcpRateLimit.limited) {
+          res.status(429).json({ valid: false, error: `Too many attempts. Try again in ${vcpRateLimit.remainingMinutes} minute(s).` });
           return;
         }
 
-        const storedPassword = doc.value;
-        const isHashed = storedPassword && (storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$'));
+        const doc = await collection.findOne({ key: passwordKey });
 
-        if (isHashed) {
-          const isValid = await bcrypt.compare(password, storedPassword);
-          res.status(200).json({ valid: isValid });
+        let isValid = false;
+        if (!doc) {
+          isValid = password === DEFAULT_PASSWORD;
         } else {
-          // Legacy plaintext
-          res.status(200).json({ valid: password === storedPassword });
+          const storedPassword = doc.value;
+          const isHashed = storedPassword && (storedPassword.startsWith('$2a$') || storedPassword.startsWith('$2b$'));
+          isValid = isHashed
+            ? await bcrypt.compare(password, storedPassword)
+            : password === storedPassword;
         }
+
+        if (!isValid) await recordFailedAttempt(collection, vcpIP, playerId);
+        else await clearRateLimit(collection, vcpIP, playerId);
+
+        res.status(200).json({ valid: isValid });
         break;
       }
 
