@@ -104,6 +104,29 @@ export function clearRefreshTokenCookie(res) {
 }
 
 /**
+ * Generate a short-lived token so a logged-in player can link their Google account from Settings.
+ * Contains their playerId (already authenticated), signed to prevent tampering.
+ */
+export function generateSettingsLinkToken(playerId) {
+  return jwt.sign(
+    { playerId, type: 'settings-link' },
+    JWT_SECRET,
+    { expiresIn: '10m' }
+  );
+}
+
+/** Verify a settings link token — returns { playerId } or null */
+export function verifySettingsLinkToken(token) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.type !== 'settings-link') return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Generate a short-lived token for Google account self-linking
  * Contains the verified Google email, signed so it can't be tampered with
  */

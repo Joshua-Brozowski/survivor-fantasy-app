@@ -1,6 +1,11 @@
 import { MongoClient } from 'mongodb';
 import bcrypt from 'bcryptjs';
-import { generateAccessToken, generateRefreshToken, setRefreshTokenCookie, generateGoogleLinkToken, verifyGoogleLinkToken } from './lib/jwt.js';
+import {
+  generateAccessToken, generateRefreshToken, setRefreshTokenCookie,
+  generateGoogleLinkToken, verifyGoogleLinkToken,
+  generateSettingsLinkToken, verifySettingsLinkToken,
+  verifyAccessToken, extractTokenFromHeader,
+} from './lib/jwt.js';
 
 const uri = process.env.MONGODB_URI;
 let cachedClient = null;
@@ -33,15 +38,20 @@ export default async function handler(req, res) {
       res.setHeader('Location', `${PRODUCTION_URL}?auth_error=not_configured`);
       return res.status(302).end();
     }
-    const params = new URLSearchParams({
+    const oauthParams = {
       client_id: process.env.GOOGLE_CLIENT_ID,
       redirect_uri: REDIRECT_URI,
       response_type: 'code',
       scope: 'openid email profile',
       access_type: 'online',
       prompt: 'select_account',
-    });
-    res.setHeader('Location', `https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+    };
+    // If a settings link token is provided, thread it through as OAuth state
+    // so the callback knows to link the email to an already-authenticated player
+    if (req.query.link_token) {
+      oauthParams.state = `link:${req.query.link_token}`;
+    }
+    res.setHeader('Location', `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams(oauthParams)}`);
     return res.status(302).end();
   }
 
@@ -85,9 +95,39 @@ export default async function handler(req, res) {
         return res.status(302).end();
       }
 
-      // Look up player by email in MongoDB
       const { db } = await connectToDatabase();
       const collection = db.collection('game_data');
+
+      // --- Settings link flow: player was already logged in, just proving Google ownership ---
+      const state = req.query.state || '';
+      if (state.startsWith('link:')) {
+        const settingsToken = state.slice(5); // strip "link:"
+        const decoded = verifySettingsLinkToken(settingsToken);
+        if (!decoded) {
+          res.setHeader('Location', `${PRODUCTION_URL}?auth_error=link_token_expired`);
+          return res.status(302).end();
+        }
+        // Check the email isn't already claimed by a different player
+        const mappingDoc2 = await collection.findOne({ key: 'google_email_mapping' });
+        const mapping2 = mappingDoc2 ? JSON.parse(mappingDoc2.value) : {};
+        const claimedBy = Object.entries(mapping2).find(
+          ([pid, em]) => em?.toLowerCase() === email && String(pid) !== String(decoded.playerId)
+        );
+        if (claimedBy) {
+          res.setHeader('Location', `${PRODUCTION_URL}?auth_error=email_taken`);
+          return res.status(302).end();
+        }
+        mapping2[decoded.playerId] = email;
+        await collection.updateOne(
+          { key: 'google_email_mapping' },
+          { $set: { key: 'google_email_mapping', value: JSON.stringify(mapping2), updatedAt: new Date() } },
+          { upsert: true }
+        );
+        res.setHeader('Location', `${PRODUCTION_URL}/?google_linked=success`);
+        return res.status(302).end();
+      }
+
+      // --- Normal login flow ---
 
       const mappingDoc = await collection.findOne({ key: 'google_email_mapping' });
       const mapping = mappingDoc ? JSON.parse(mappingDoc.value) : {};
@@ -134,6 +174,15 @@ export default async function handler(req, res) {
   // POST: link a Google email to a player account (self-service)
   if (req.method === 'POST') {
     const { action: postAction, linkToken, name, password } = req.body || {};
+
+    // Generate a short-lived token so a logged-in player can link from Settings
+    if (postAction === 'createLinkToken') {
+      const token = extractTokenFromHeader(req);
+      const user = token ? verifyAccessToken(token) : null;
+      if (!user) return res.status(401).json({ error: 'Not authenticated' });
+      const settingsLinkToken = generateSettingsLinkToken(user.playerId);
+      return res.status(200).json({ linkToken: settingsLinkToken });
+    }
 
     if (postAction !== 'link') {
       return res.status(400).json({ error: 'Invalid action' });
