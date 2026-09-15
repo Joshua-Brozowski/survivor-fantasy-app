@@ -143,10 +143,8 @@ const SURVIVOR_WORDS = [
 // Simplified Weekly Advantage System
 // All advantages are queued for a specific week and resolve when scores are released
 const DEFAULT_ADVANTAGES = [
-  { id: 'extra-vote', name: 'Extra Vote', description: 'Your QOTW answer gets +1 bonus vote for the selected week', cost: 3, type: 'qotw', needsTarget: false },
-  { id: 'vote-steal', name: 'Vote Steal', description: 'Block a target player from voting in QOTW and cast their vote yourself for the selected week', cost: 5, type: 'qotw', needsTarget: true },
-  { id: 'double-trouble', name: 'Double Trouble', description: 'Double your questionnaire score and QOTW bonus for the selected week', cost: 8, type: 'multiplier', needsTarget: false },
-  { id: 'point-steal', name: 'Thief in the Shadows', description: 'Steal 5 points from a target player when the week\'s scores are released', cost: 10, type: 'steal', needsTarget: true }
+  { id: 'double-trouble', name: 'Double Trouble', description: "Double your questionnaire score and QOTW bonus for this week's episode", cost: 8, type: 'multiplier', needsTarget: false },
+  { id: 'point-steal', name: 'Thief in the Shadows', description: 'Steal 5 points from a target player when this week\'s scores are released', cost: 10, type: 'steal', needsTarget: true }
 ];
 
 /**
@@ -1480,59 +1478,53 @@ export default function SurvivorFantasyApp() {
     alert(result.message);
   };
 
-  // Queue an advantage for a specific week
-  const queueAdvantageForWeek = async (playerAdvantageId, weekNumber, targetPlayerId = null) => {
+  // Returns true if it's past Wednesday 8 PM (episode cutoff)
+  const isAfterWednesdayCutoff = () => {
+    const now = new Date();
+    return now.getDay() === 3 && now.getHours() >= 20;
+  };
+
+  // Returns the episode number an advantage should apply to (current or next)
+  const getTargetEpisodeForAdvantage = () => {
+    const active = questionnaires.find(q => q.status === 'active');
+    const latestEp = questionnaires.length > 0 ? Math.max(...questionnaires.map(q => q.episodeNumber || 0)) : 0;
+    const baseEp = active ? active.episodeNumber : latestEp;
+    return isAfterWednesdayCutoff() ? baseEp + 1 : baseEp || 1;
+  };
+
+  // Play an advantage for the current (or next) episode
+  const playAdvantageNow = async (playerAdvantageId, targetPlayerId = null) => {
     const advantage = playerAdvantages.find(a => a.id === playerAdvantageId);
-    if (!advantage) {
-      alert('Advantage not found');
-      return;
-    }
+    if (!advantage) { alert('Advantage not found'); return; }
+    if (advantage.used) { alert('This advantage has already been used!'); return; }
+    if (advantage.queuedForWeek) { alert('This advantage is already active. Cancel it first to change.'); return; }
 
-    if (advantage.used) {
-      alert('This advantage has already been used!');
-      return;
-    }
-
-    if (advantage.queuedForWeek) {
-      alert('This advantage is already queued for a week. Cancel it first to change.');
-      return;
-    }
-
-    // Check if advantage needs a target
     const advDef = DEFAULT_ADVANTAGES.find(a => a.id === advantage.advantageId);
-    if (advDef?.needsTarget && !targetPlayerId) {
-      alert('This advantage requires you to select a target player.');
-      return;
-    }
+    if (advDef?.needsTarget && !targetPlayerId) { alert('Please select a target player.'); return; }
+
+    const weekNumber = getTargetEpisodeForAdvantage();
 
     if (isGuestMode()) {
-      // Demo mode - just update local state
       const updated = playerAdvantages.map(a =>
         a.id === playerAdvantageId
           ? { ...a, queuedForWeek: weekNumber, targetPlayerId, queuedAt: new Date().toISOString() }
           : a
       );
       setPlayerAdvantages(updated);
-      alert(`Advantage queued for Week ${weekNumber}! (Demo mode - not saved)`);
+      alert(`Advantage activated for Episode ${weekNumber}! (Demo mode - not saved)`);
       return;
     }
 
     const result = await advantageApi.queueForWeek(playerAdvantageId, weekNumber, targetPlayerId, currentLeagueId);
+    if (!result.success) { alert(result.error || 'Failed to activate advantage'); return; }
 
-    if (!result.success) {
-      alert(result.error || 'Failed to queue advantage');
-      return;
-    }
-
-    // Update local state
     const updated = playerAdvantages.map(a =>
       a.id === playerAdvantageId
         ? { ...a, queuedForWeek: weekNumber, targetPlayerId, queuedAt: new Date().toISOString() }
         : a
     );
     setPlayerAdvantages(updated);
-
-    alert(result.message);
+    alert(`${advantage.name} is now active for Episode ${weekNumber}!`);
   };
 
   // Cancel a queued advantage
@@ -3442,100 +3434,75 @@ export default function SurvivorFantasyApp() {
 
         {currentView === 'advantages' && (
           <div className="space-y-6">
-            {/* Simplified Weekly Advantage Play Modal */}
-            {advantageModal.show && advantageModal.advantage && (
-              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-                <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-lg border-2 border-amber-600 max-w-md w-full">
-                  <h3 className="text-xl font-bold text-amber-400 mb-4">Play {advantageModal.advantage.name}</h3>
-                  <p className="text-amber-200 mb-4">{advantageModal.advantage.description}</p>
+            {/* Advantage Play Modal */}
+            {advantageModal.show && advantageModal.advantage && (() => {
+              const afterCutoff = isAfterWednesdayCutoff();
+              const targetEp = getTargetEpisodeForAdvantage();
+              const advDef = DEFAULT_ADVANTAGES.find(a => a.id === advantageModal.advantage.advantageId);
+              return (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+                  <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-lg border-2 border-amber-600 max-w-md w-full">
+                    <h3 className="text-xl font-bold text-amber-400 mb-2">Play {advantageModal.advantage.name}</h3>
+                    <p className="text-amber-200 mb-4">{advantageModal.advantage.description}</p>
 
-                  {/* Week Selection */}
-                  <div className="mb-4">
-                    <label className="block text-amber-300 mb-2">Select Week to Apply:</label>
-                    <select
-                      value={advantageModal.selectedWeek || ''}
-                      onChange={(e) => setAdvantageModal({ ...advantageModal, selectedWeek: parseInt(e.target.value) })}
-                      className="w-full p-3 rounded-lg bg-gray-800 border-2 border-amber-600 text-white"
-                    >
-                      <option value="">-- Choose a Week --</option>
-                      {questionnaires.length > 0 ? (
-                        questionnaires
-                          .filter(q => !q.scoresReleased)
-                          .map(q => (
-                            <option key={q.id} value={q.episodeNumber}>
-                              Week {q.episodeNumber} {q.id === activeQuestionnaire?.id ? '(Current)' : ''}
-                            </option>
-                          ))
-                      ) : (
-                        <option value="1">Week 1</option>
-                      )}
-                      {/* Also offer future weeks */}
-                      {[...Array(3)].map((_, i) => {
-                        const futureWeek = (questionnaires.length > 0
-                          ? Math.max(...questionnaires.map(q => q.episodeNumber))
-                          : 0) + i + 1;
-                        return (
-                          <option key={`future-${futureWeek}`} value={futureWeek}>
-                            Week {futureWeek} (Future)
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-
-                  {/* Target Player Selection (if needed) */}
-                  {DEFAULT_ADVANTAGES.find(a => a.id === advantageModal.advantage.advantageId)?.needsTarget && (
-                    <div className="mb-4">
-                      <label className="block text-amber-300 mb-2">Select Target Player:</label>
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {leaguePlayers.filter(p => p.id !== currentUser.id).map(player => (
-                          <button
-                            key={player.id}
-                            onClick={() => setAdvantageTarget(player.id)}
-                            className={`w-full p-3 rounded-lg border-2 transition ${
-                              advantageTarget === player.id
-                                ? 'border-amber-500 bg-amber-900/40 text-white'
-                                : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:border-amber-600'
-                            }`}
-                          >
-                            {player.name}
-                          </button>
-                        ))}
+                    {/* Episode indicator */}
+                    {afterCutoff ? (
+                      <div className="mb-4 bg-yellow-900/40 border border-yellow-500 rounded-lg p-3">
+                        <p className="text-yellow-300 font-semibold text-sm">⚠️ Tonight's episode has started</p>
+                        <p className="text-yellow-200 text-sm mt-1">This advantage will apply to <strong>Episode {targetEp}</strong> (next week).</p>
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="mb-4 bg-green-900/30 border border-green-600 rounded-lg p-3">
+                        <p className="text-green-300 text-sm">✅ Will apply to <strong>Episode {targetEp}</strong> (this week)</p>
+                      </div>
+                    )}
 
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => { setAdvantageModal({ show: false, advantage: null, selectedWeek: null }); setAdvantageTarget(null); }}
-                      className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        const advDef = DEFAULT_ADVANTAGES.find(a => a.id === advantageModal.advantage.advantageId);
-                        if (!advantageModal.selectedWeek) {
-                          alert('Please select a week');
-                          return;
-                        }
-                        if (advDef?.needsTarget && !advantageTarget) {
-                          alert('Please select a target player');
-                          return;
-                        }
-                        queueAdvantageForWeek(advantageModal.advantage.id, advantageModal.selectedWeek, advantageTarget);
-                        setAdvantageModal({ show: false, advantage: null, selectedWeek: null });
-                        setAdvantageTarget(null);
-                      }}
-                      disabled={!advantageModal.selectedWeek || (DEFAULT_ADVANTAGES.find(a => a.id === advantageModal.advantage.advantageId)?.needsTarget && !advantageTarget)}
-                      className="flex-1 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Queue for Week {advantageModal.selectedWeek || '?'}
-                    </button>
+                    {/* Target Player Selection (if needed) */}
+                    {advDef?.needsTarget && (
+                      <div className="mb-4">
+                        <label className="block text-amber-300 mb-2">Select Target Player:</label>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {leaguePlayers.filter(p => p.id !== currentUser.id).map(player => (
+                            <button
+                              key={player.id}
+                              onClick={() => setAdvantageTarget(player.id)}
+                              className={`w-full p-3 rounded-lg border-2 transition ${
+                                advantageTarget === player.id
+                                  ? 'border-amber-500 bg-amber-900/40 text-white'
+                                  : 'border-gray-600 bg-gray-800/40 text-gray-300 hover:border-amber-600'
+                              }`}
+                            >
+                              {player.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => { setAdvantageModal({ show: false, advantage: null, selectedWeek: null }); setAdvantageTarget(null); }}
+                        className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (advDef?.needsTarget && !advantageTarget) { alert('Please select a target player'); return; }
+                          playAdvantageNow(advantageModal.advantage.id, advantageTarget);
+                          setAdvantageModal({ show: false, advantage: null, selectedWeek: null });
+                          setAdvantageTarget(null);
+                        }}
+                        disabled={advDef?.needsTarget && !advantageTarget}
+                        className="flex-1 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        ⚡ Play for Episode {targetEp}
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Steal Token Modal */}
             {stealModal.show && (
@@ -3611,10 +3578,10 @@ export default function SurvivorFantasyApp() {
               {(() => {
                 const myStealTokens    = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && a.advantageId === 'steal-token');
                 const myActiveAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && !a.queuedForWeek && a.advantageId !== 'steal-token');
-                const myQueuedAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && a.queuedForWeek);
+                const myPlayedAdvantages = playerAdvantages.filter(a => a.playerId === currentUser.id && !a.used && a.queuedForWeek);
                 const myUsedAdvs = playerAdvantages.filter(a => a.playerId === currentUser.id && a.used);
 
-                if (myStealTokens.length === 0 && myActiveAdvantages.length === 0 && myQueuedAdvantages.length === 0 && myUsedAdvs.length === 0) {
+                if (myStealTokens.length === 0 && myActiveAdvantages.length === 0 && myPlayedAdvantages.length === 0 && myUsedAdvs.length === 0) {
                   return (
                     <p className="text-amber-200 text-center py-8">
                       You haven't purchased any advantages yet. Browse the shop below!
@@ -3680,7 +3647,7 @@ export default function SurvivorFantasyApp() {
                                 className="w-full py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded font-semibold hover:from-green-500 hover:to-emerald-500 transition flex items-center justify-center gap-2"
                               >
                                 <Zap className="w-4 h-4" />
-                                Play for Week...
+                                {isAfterWednesdayCutoff() ? '⚡ Play for Next Episode' : '⚡ Play This Week'}
                               </button>
                             </div>
                           ))}
@@ -3688,19 +3655,19 @@ export default function SurvivorFantasyApp() {
                       </div>
                     )}
 
-                    {/* Queued for a Week */}
-                    {myQueuedAdvantages.length > 0 && (
+                    {/* Active This Week */}
+                    {myPlayedAdvantages.length > 0 && (
                       <div>
-                        <h3 className="text-lg text-cyan-400 font-semibold mb-3">Queued Advantages</h3>
+                        <h3 className="text-lg text-cyan-400 font-semibold mb-3">Active This Week</h3>
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {myQueuedAdvantages.map(adv => {
+                          {myPlayedAdvantages.map(adv => {
                             const targetPlayer = adv.targetPlayerId ? players.find(p => p.id === adv.targetPlayerId) : null;
                             return (
                               <div key={adv.id} className="bg-gradient-to-br from-cyan-900/40 to-blue-900/40 p-4 rounded-lg border-2 border-cyan-600">
                                 <h4 className="text-white font-bold text-lg">{adv.name}</h4>
                                 <p className="text-cyan-300 text-sm mb-2">{adv.description}</p>
                                 <p className="text-cyan-400 font-semibold mb-1">
-                                  📅 Queued for Week {adv.queuedForWeek}
+                                  ⚡ Played for Episode {adv.queuedForWeek}
                                 </p>
                                 {targetPlayer && (
                                   <p className="text-cyan-300 text-sm mb-2">
@@ -3709,14 +3676,14 @@ export default function SurvivorFantasyApp() {
                                 )}
                                 <button
                                   onClick={() => {
-                                    if (window.confirm('Cancel this queued advantage? It will return to your inventory.')) {
+                                    if (window.confirm('Cancel this advantage? It will return to your inventory.')) {
                                       cancelQueuedAdvantage(adv.id);
                                     }
                                   }}
                                   className="w-full py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition flex items-center justify-center gap-2"
                                 >
                                   <X className="w-4 h-4" />
-                                  Cancel Queue
+                                  Cancel
                                 </button>
                               </div>
                             );
@@ -4190,22 +4157,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       const targetName = adv.targetPlayerId ? players.find(p => p.id === adv.targetPlayerId)?.name : null;
 
       switch (adv.advantageId) {
-        case 'extra-vote': {
-          // Extra Vote: Already applied during QOTW voting
-          break;
-        }
-
-        case 'vote-steal': {
-          // Vote Steal: Already applied during QOTW voting
-          // Notify the victim only
-          await addNotification({
-            type: 'vote_stolen',
-            message: `${playerName} stole your QOTW vote for ${scoringQ.title}!`,
-            targetPlayerId: adv.targetPlayerId
-          });
-          break;
-        }
-
         case 'double-trouble': {
           // Double Trouble: Double ALL weekly points
           const baseScore = newScores[adv.playerId] || 0;
@@ -7561,8 +7512,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     };
 
     const ADVANTAGE_DEFS = [
-      { id: 'extra-vote',     name: 'Extra Vote',           cost: 3 },
-      { id: 'vote-steal',     name: 'Vote Steal',           cost: 5 },
       { id: 'double-trouble', name: 'Double Trouble',       cost: 8 },
       { id: 'point-steal',    name: 'Thief in the Shadows', cost: 10 },
     ];
@@ -8627,32 +8576,12 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
     .sort((a, b) => (b.episodeNumber || 0) - (a.episodeNumber || 0))  // Most recent first
     [0] || null : null;
 
-  // Check if current user's vote was stolen for the VOTING questionnaire (not active)
-  // In weekly system: check if someone has vote-steal queued for this episode targeting current user
-  const voteWasStolen = votingQuestionnaire && playerAdvantages?.some(
-    a => a.advantageId === 'vote-steal' &&
-         a.queuedForWeek === votingQuestionnaire.episodeNumber &&
-         !a.cancelled &&
-         a.targetPlayerId === currentUser.id
-  );
-
-  // Check if current user has an active Extra Vote for the VOTING questionnaire
-  // In weekly system: check if user has extra-vote queued for this episode
-  const hasExtraVote = votingQuestionnaire && playerAdvantages?.some(
-    a => a.advantageId === 'extra-vote' &&
-         a.queuedForWeek === votingQuestionnaire.episodeNumber &&
-         !a.cancelled &&
-         a.playerId === currentUser.id
-  );
-
   // Count how many votes the user has cast for the VOTING questionnaire
   const myVoteCount = votingQuestionnaire ? qotWVotes.filter(
     v => v.questionnaireId === votingQuestionnaire.id && v.voterId === currentUser.id
   ).length : 0;
 
-  // Can cast another vote? (1 normally, 2 with Extra Vote)
-  const maxVotes = hasExtraVote ? 2 : 1;
-  const canVoteAgain = myVoteCount < maxVotes;
+  const canVoteAgain = myVoteCount < 1;
 
   const handleSubmit = async () => {
     if (!activeQ || isSubmitting) return;
@@ -8750,16 +8679,8 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
       answerId: qotWAnswerId
     };
 
-    // If not using Extra Vote, replace existing vote. If Extra Vote, allow adding second vote.
-    const existingVotesForQ = qotWVotes.filter(v => v.questionnaireId === votingQuestionnaire.id && v.voterId === currentUser.id);
-    let updatedVotes;
-    if (hasExtraVote && existingVotesForQ.length < 2) {
-      // Extra Vote: allow up to 2 votes
-      updatedVotes = [...qotWVotes, newVote];
-    } else {
-      // Normal: replace existing vote
-      updatedVotes = [...qotWVotes.filter(v => !(v.questionnaireId === votingQuestionnaire.id && v.voterId === currentUser.id)), newVote];
-    }
+    // Replace any existing vote from this user for this questionnaire
+    const updatedVotes = [...qotWVotes.filter(v => !(v.questionnaireId === votingQuestionnaire.id && v.voterId === currentUser.id)), newVote];
     setQotWVotes(updatedVotes);
     await guestSafeLeagueSet('qotWVotes', JSON.stringify(updatedVotes));
     alert(isGuestMode() ? 'Vote submitted! (Demo mode - not saved)' : 'Vote submitted!');
@@ -8787,26 +8708,6 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
   // Voting view - now uses votingQuestionnaire (previous week)
   if (votingFor === 'qotw' && votingQuestionnaire) {
-    // Check if vote was stolen
-    if (voteWasStolen) {
-      return (
-        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-red-600">
-          <h2 className="text-2xl font-bold text-red-400 mb-4">⭐ Vote on Last Week's Question</h2>
-          <div className="bg-red-900/30 p-6 rounded-lg border border-red-600 text-center">
-            <p className="text-red-300 text-xl mb-4">🚫 Your Vote Was Stolen!</p>
-            <p className="text-red-200">Another player used the Vote Steal advantage on you. You cannot vote on Episode {votingQuestionnaire.episodeNumber}'s Question of the Week.</p>
-            <p className="text-red-400 text-sm mt-4">The stolen vote was automatically applied to the player who stole it.</p>
-          </div>
-          <button
-            onClick={() => setVotingFor(null)}
-            className="mt-6 px-6 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
-          >
-            Back to Questionnaire
-          </button>
-        </div>
-      );
-    }
-
     const allQotwSubmissions = submissions
       .filter(s => s.questionnaireId === votingQuestionnaire.id && s.answers[votingQotwQuestion.id])
       .map(s => ({
@@ -8821,14 +8722,6 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
     return (
       <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
         <h2 className="text-2xl font-bold text-purple-400 mb-4">⭐ Vote on Episode {votingQuestionnaire.episodeNumber}'s Question</h2>
-
-        {/* Extra Vote indicator */}
-        {hasExtraVote && (
-          <div className="bg-green-900/30 p-3 rounded-lg border border-green-600 mb-4">
-            <p className="text-green-300 font-semibold">🎯 Extra Vote Active! You can cast {maxVotes} votes.</p>
-            <p className="text-green-400 text-sm">Votes used: {myVoteCount}/{maxVotes}</p>
-          </div>
-        )}
 
         <div className="bg-purple-900/30 p-4 rounded-lg border border-purple-600 mb-6">
           <p className="text-purple-300 font-semibold mb-2">Question (Episode {votingQuestionnaire.episodeNumber}):</p>
@@ -8855,7 +8748,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
                 disabled={!canVoteAgain}
                 className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded font-semibold hover:from-purple-500 hover:to-pink-500 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {!canVoteAgain ? `✓ All Votes Used (${myVoteCount}/${maxVotes})` : 'Vote for This Answer'}
+                {!canVoteAgain ? '✓ Vote Cast' : 'Vote for This Answer'}
               </button>
             </div>
           ))}
@@ -9090,26 +8983,12 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
                 <div className="bg-gradient-to-r from-indigo-900/40 to-purple-900/40 p-4 rounded-lg border-2 border-indigo-600">
                   <p className="text-indigo-300 font-semibold mb-2">🗳️ Vote on Last Week's Question (Episode {votingQuestionnaire.episodeNumber})</p>
                   <p className="text-white text-sm mb-3">{votingQotwQuestion?.text}</p>
-                  {voteWasStolen ? (
-                    <button
-                      onClick={() => setVotingFor('qotw')}
-                      className="w-full py-2 bg-gradient-to-r from-red-800 to-red-900 text-red-200 rounded font-semibold cursor-pointer"
-                    >
-                      🚫 Your Vote Was Stolen
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setVotingFor('qotw')}
-                      className="w-full py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded font-semibold hover:from-indigo-500 hover:to-purple-500 transition"
-                    >
-                      {!canVoteAgain
-                        ? `✓ Voted (${myVoteCount}/${maxVotes})`
-                        : hasExtraVote
-                        ? `Vote Now (${myVoteCount}/${maxVotes} votes used)`
-                        : myVote ? '✓ Voted - Change Vote?' : 'Vote Now'
-                      }
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setVotingFor('qotw')}
+                    className="w-full py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded font-semibold hover:from-indigo-500 hover:to-purple-500 transition"
+                  >
+                    {!canVoteAgain ? '✓ Voted' : myVote ? '✓ Voted - Change Vote?' : 'Vote Now'}
+                  </button>
                 </div>
               )}
 
@@ -9140,26 +9019,15 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
           {/* Voting button shown after submission (for previous week's QotW) */}
           {mySubmission && votingQuestionnaire && (
-            voteWasStolen ? (
-              <button
-                onClick={() => setVotingFor('qotw')}
-                className="w-full mt-4 py-3 bg-gradient-to-r from-red-800 to-red-900 text-red-200 rounded-lg font-semibold cursor-pointer"
-              >
-                🚫 Your Vote Was Stolen (Episode {votingQuestionnaire.episodeNumber})
-              </button>
-            ) : (
-              <button
-                onClick={() => setVotingFor('qotw')}
-                className="w-full mt-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:from-indigo-500 hover:to-purple-500 transition"
-              >
-                {!canVoteAgain
-                  ? `✓ All Votes Used (${myVoteCount}/${maxVotes})`
-                  : hasExtraVote
-                  ? `Vote on Episode ${votingQuestionnaire.episodeNumber} QOTW (${myVoteCount}/${maxVotes} votes used)`
-                  : `Vote on Episode ${votingQuestionnaire.episodeNumber}'s Question of the Week`
-                }
-              </button>
-            )
+            <button
+              onClick={() => setVotingFor('qotw')}
+              className="w-full mt-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:from-indigo-500 hover:to-purple-500 transition"
+            >
+              {!canVoteAgain
+                ? `✓ Voted (Episode ${votingQuestionnaire.episodeNumber})`
+                : `Vote on Episode ${votingQuestionnaire.episodeNumber}'s Question of the Week`
+              }
+            </button>
           )}
         </div>
       )}
