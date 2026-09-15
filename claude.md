@@ -365,20 +365,19 @@ Compact status card at top of Admin Panel showing progress for current episode.
 
 **Scarcity Rule**: Only ONE of each advantage can exist in the game at a time. Once purchased, no one else can buy it. Once USED (resolved at score release), it returns to the shop for others to purchase.
 
-**Weekly Queue System**: All advantages work the same way:
-1. **Purchase**: Buy from the shop (costs points, atomic server-side operation prevents race conditions)
-2. **Queue for Week**: Select which episode/week to use the advantage
-3. **Resolution**: Effects automatically resolve when admin releases scores for that week
+**How Advantages Work (Season 51+)**:
+1. **Purchase**: Buy from the shop (atomic server-side operation prevents race conditions)
+2. **Play**: Click "Play This Week" — the system auto-detects the current episode number
+3. **Wednesday 8 PM cutoff**: If played after 8 PM Wednesday (episode night), a yellow warning shows and it applies to the *next* episode instead
+4. **Resolution**: Effects resolve automatically when admin releases scores for that episode
 
 **Available Advantages**:
 
 | Advantage | Cost | Effect | Needs Target |
 |-----------|------|--------|--------------|
-| Extra Vote | 3 pts | Your QOTW answer gets +1 bonus vote for the selected week | No |
-| Vote Steal | 5 pts | Block a target player from voting in QOTW and cast their vote yourself | Yes |
-| Double Trouble | 8 pts | Double your questionnaire score and QOTW bonus for the selected week | No |
-| Thief in the Shadows | 10 pts | Steal 5 points from a target player when the week's scores are released | Yes |
-| Steal an Advantage | Admin-granted | Immediately steal any advantage held by another player (including their steal tokens). Expires 3 days after granted. | Yes (chosen at use time) |
+| Double Trouble | 8 pts | Double your questionnaire score and QOTW bonus for this week | No |
+| Thief in the Shadows | 10 pts | Steal 5 points from a target player at score release | Yes |
+| Steal an Advantage | Admin-granted | Immediately steal any advantage held by another player | Yes (chosen at use) |
 
 **Shop UI States**:
 - **Available** (purple): Can purchase if you have enough points
@@ -386,27 +385,26 @@ Compact status card at top of Admin Panel showing progress for current episode.
 - **Someone Has Purchased This** (red): Another player owns it
 - **Insufficient Points** (gray): Not enough points to buy
 
-**Playing Advantages (Weekly Queue)**:
-- Owned advantages appear in "Your Advantages" section
-- Click "Queue for Week" to select which episode to use it
-- Target-requiring advantages (Vote Steal, Thief in the Shadows) prompt for target selection
-- Queued advantages show "Queued for Week X" with option to cancel
-- All effects resolve automatically when admin releases scores for that week
+**Playing Advantages**:
+- Owned advantages appear in "Your Advantages → Ready to Play" section
+- Click "Play This Week" (or "Play for Next Episode" if past cutoff)
+- Thief in the Shadows prompts for a target player
+- Active advantages show in "Active This Week" section with a Cancel button
+- All effects resolve automatically when admin releases scores
 
 **Resolution Order** (when admin releases scores):
-1. Extra Vote / Vote Steal effects applied to QOTW vote counts
-2. Double Trouble doubles the player's weekly points
-3. Thief in the Shadows transfers 5 points from target to player
-4. All queued advantages marked as used and return to shop
+1. Double Trouble doubles the player's weekly points
+2. Thief in the Shadows transfers 5 points from target to player
+3. All active advantages marked as used and return to shop
 
 **Notifications**:
 - Anonymous broadcast when any advantage is purchased
-- Anonymous broadcast when any advantage is resolved (returns to shop)
-- Targeted notification to victim (Vote Steal, Thief in the Shadows)
+- Anonymous broadcast when any advantage resolves (returns to shop)
+- Targeted notification to victim (Thief in the Shadows)
 
 **API Endpoint** (`/api/advantage`):
 - Atomic server-side operations prevent race conditions
-- Actions: `purchase`, `queueForWeek`, `cancelQueue`
+- Actions: `purchase`, `queueForWeek` (used internally by Play Now), `cancelQueue`, `grantStealToken`, `executeSteal`
 
 ### 13. PWA (Progressive Web App)
 The app is installable on mobile devices for an app-like experience.
