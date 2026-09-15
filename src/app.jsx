@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle, CalendarDays } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { motion, AnimatePresence } from 'framer-motion';
 import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi, refreshAccessToken, clearAccessToken, setAccessToken, authFetch } from './db.js';
 
 // Confetti celebration utility - respects reduced motion preference
@@ -2685,8 +2686,14 @@ export default function SurvivorFantasyApp() {
                     )}
                   </button>
 
+                  <AnimatePresence>
                   {showNotifications && (
-                    <div className="absolute right-0 top-10 sm:top-12 w-72 sm:w-80 bg-black/95 border-2 border-amber-600 rounded-lg shadow-xl z-50 max-h-80 sm:max-h-96 overflow-y-auto">
+                    <motion.div
+                      initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 top-10 sm:top-12 w-72 sm:w-80 bg-black/95 border-2 border-amber-600 rounded-lg shadow-xl z-50 max-h-80 sm:max-h-96 overflow-y-auto">
                       <div className="p-2 sm:p-3 border-b border-amber-600 flex items-center justify-between">
                         <h3 className="text-amber-400 font-semibold text-sm sm:text-base">Notifications</h3>
                         <div className="flex gap-2">
@@ -2744,8 +2751,9 @@ export default function SurvivorFantasyApp() {
                           </div>
                         )}
                       </div>
-                    </div>
+                    </motion.div>
                   )}
+                  </AnimatePresence>
                 </div>
 
                 {currentUser.isAdmin && (
@@ -2791,9 +2799,25 @@ export default function SurvivorFantasyApp() {
       )}
 
       {/* Settings Modal */}
+      <AnimatePresence>
       {showSettings && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-gray-900 to-black border-2 border-amber-600 rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 bg-black/80 z-40"
+            onClick={() => setShowSettings(false)}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 12 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none"
+          >
+          <div className="bg-gradient-to-br from-gray-900 to-black border-2 border-amber-600 rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto pointer-events-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-2xl font-bold text-amber-400 flex items-center gap-2">
@@ -2986,8 +3010,10 @@ export default function SurvivorFantasyApp() {
               </button>
             </div>
           </div>
-        </div>
+          </motion.div>
+        </>
       )}
+      </AnimatePresence>
 
       {/* Navigation */}
       <nav className="bg-black/40 backdrop-blur-sm border-b border-amber-600/50">
@@ -3031,6 +3057,14 @@ export default function SurvivorFantasyApp() {
 
       {/* Main Content */}
       <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
+        <AnimatePresence mode="wait">
+        <motion.div
+          key={currentView}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.15, ease: 'easeOut' }}
+        >
         {currentView === 'picks' && (
           <div className="space-y-6">
             {/* Info Banner */}
@@ -3432,7 +3466,12 @@ export default function SurvivorFantasyApp() {
                   const breakdown = getPointBreakdown(player.id);
 
                   return (
-                    <div key={player.id}>
+                    <motion.div
+                      key={player.id}
+                      initial={{ opacity: 0, x: -16 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.2, delay: index * 0.04 }}
+                    >
                       <div
                         onClick={() => setExpandedPlayer(isExpanded ? null : player.id)}
                         className={`p-4 rounded-lg border-2 transition cursor-pointer ${
@@ -3539,7 +3578,7 @@ export default function SurvivorFantasyApp() {
                           )}
                         </div>
                       )}
-                    </div>
+                    </motion.div>
                   );
                 });
               })()}
@@ -3861,7 +3900,15 @@ export default function SurvivorFantasyApp() {
                 )}
               </button>
 
+              <AnimatePresence>
               {castAccordionOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  style={{ overflow: 'hidden' }}
+                >
                 <div className="px-6 pb-6">
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {contestants.map(contestant => {
@@ -3894,7 +3941,9 @@ export default function SurvivorFantasyApp() {
                     })}
                   </div>
                 </div>
+                </motion.div>
               )}
+              </AnimatePresence>
             </div>
 
             {/* How to Play Accordion */}
@@ -3913,7 +3962,15 @@ export default function SurvivorFantasyApp() {
                   <ChevronDown className="w-6 h-6 text-amber-400" />
                 )}
               </button>
+              <AnimatePresence>
               {howToPlayOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  style={{ overflow: 'hidden' }}
+                >
                 <div className="px-6 pb-6">
                   <div className="space-y-4 text-amber-200">
                     <p>
@@ -3984,7 +4041,9 @@ export default function SurvivorFantasyApp() {
                     </div>
                   </div>
                 </div>
+                </motion.div>
               )}
+              </AnimatePresence>
             </div>
           </div>
         )}
@@ -4062,9 +4121,25 @@ export default function SurvivorFantasyApp() {
             })()}
 
             {/* Steal Token Modal */}
+            <AnimatePresence>
             {stealModal.show && (
-              <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-                <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-lg border-2 border-yellow-500 max-w-md w-full max-h-[80vh] overflow-y-auto">
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="fixed inset-0 bg-black/80 z-40"
+                  onClick={() => setStealModal({ show: false, tokenId: null, selectedAdvId: null })}
+                />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.94, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.94, y: 8 }}
+                  transition={{ duration: 0.18 }}
+                  className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none"
+                >
+                <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-lg border-2 border-yellow-500 max-w-md w-full max-h-[80vh] overflow-y-auto pointer-events-auto">
                   <h3 className="text-xl font-bold text-yellow-400 mb-2">🔮 Steal an Advantage</h3>
                   <p className="text-yellow-200 text-sm mb-4">Select an advantage to steal from another player. This executes immediately and cannot be undone.</p>
 
@@ -4122,8 +4197,10 @@ export default function SurvivorFantasyApp() {
                     </button>
                   </div>
                 </div>
-              </div>
+                </motion.div>
+              </>
             )}
+            </AnimatePresence>
 
             {/* Your Advantages */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
@@ -4384,6 +4461,8 @@ export default function SurvivorFantasyApp() {
             />
           </div>
         )}
+        </motion.div>
+        </AnimatePresence>
 
       </main>
 
@@ -5557,7 +5636,12 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             ))}
           </div>
 
-          <div className="bg-green-900/30 border border-green-600 p-4 rounded-lg mb-6">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+            className="bg-green-900/30 border border-green-600 p-4 rounded-lg mb-6"
+          >
             <h3 className="text-green-300 font-semibold mb-3">Score Preview</h3>
             <div className="space-y-2">
               {(() => {
@@ -5601,7 +5685,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 return rows;
               })()}
             </div>
-          </div>
+          </motion.div>
 
           <div className="flex gap-4">
             <button
@@ -9438,9 +9522,14 @@ function NotificationBanners({ notifications, currentUser, markNotificationSeen,
 
   return (
     <div className="space-y-3">
+      <AnimatePresence>
       {unseenNotifications.slice(0, 5).map((notif) => (
-        <div
+        <motion.div
           key={notif.id}
+          initial={{ opacity: 0, y: -20, height: 0 }}
+          animate={{ opacity: 1, y: 0, height: 'auto' }}
+          exit={{ opacity: 0, x: 60, height: 0 }}
+          transition={{ duration: 0.2 }}
           className={`notification-banner bg-gradient-to-r ${getNotificationStyle(notif.type)} p-4 rounded-lg border-2 shadow-lg flex items-center justify-between gap-4`}
         >
           <div className="flex items-center gap-3">
@@ -9459,8 +9548,9 @@ function NotificationBanners({ notifications, currentUser, markNotificationSeen,
           >
             <X className="w-5 h-5" />
           </button>
-        </div>
+        </motion.div>
       ))}
+      </AnimatePresence>
       {unseenNotifications.length > 5 && (
         <p className="text-amber-300 text-center text-sm">
           +{unseenNotifications.length - 5} more notifications (check the bell icon)
