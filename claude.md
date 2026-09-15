@@ -153,6 +153,8 @@ Layout from top to bottom:
 - **Vote on LAST week's QotW** - voting happens during next week's questionnaire
 - Late penalty: -5 points (flat rate for any late submission)
 - **Submit button shows "Submitting..." and disables during write** — prevents double-submit
+- **Answer toggle (deselect)**: Multiple-choice and true/false buttons deselect when clicked again; cast dropdowns have a blank "Select a contestant..." option for the same purpose
+- **View submitted answers**: After submitting, players can expand a "View My Submitted Answers" collapsible (collapsed by default) to review what they entered before scores are released; shows all regular questions + QotW answer; read-only, no edit capability, no correct answers revealed
 - **Safe concurrent submission**: re-reads the current submissions array from MongoDB immediately before writing, so concurrent submissions from other players are preserved rather than overwritten
 - **Write failure surfaced**: if the MongoDB write fails, player sees an explicit error and their form answers are preserved for retry (no silent data loss)
 
@@ -161,6 +163,7 @@ Layout from top to bottom:
 - Week 2: Players fill out Episode 2 questionnaire AND vote on Episode 1's QotW answers
 - Voting is available until admin clicks "Close Voting" in QOTW Management
 - Admin awards winner (+5 points) after closing voting
+- **Own answer visibility**: Players can see their own answer at the top of the voting list (amber/yellow card, labeled "Your Answer") so they can compare to others — but cannot vote for it. This applies even when the question is anonymous.
 
 **Scoring**:
 - Correct answer: +2
@@ -371,10 +374,11 @@ Compact status card at top of Admin Panel showing progress for current episode.
 
 | Advantage | Cost | Effect | Needs Target |
 |-----------|------|--------|--------------|
-| Extra Vote | 15 pts | Your QOTW answer gets +1 bonus vote for the selected week | No |
-| Vote Steal | 20 pts | Block a target player from voting in QOTW and cast their vote yourself | Yes |
-| Double Trouble | 25 pts | Double your questionnaire score and QOTW bonus for the selected week | No |
-| Thief in the Shadows | 30 pts | Steal 5 points from a target player when the week's scores are released | Yes |
+| Extra Vote | 3 pts | Your QOTW answer gets +1 bonus vote for the selected week | No |
+| Vote Steal | 5 pts | Block a target player from voting in QOTW and cast their vote yourself | Yes |
+| Double Trouble | 8 pts | Double your questionnaire score and QOTW bonus for the selected week | No |
+| Thief in the Shadows | 10 pts | Steal 5 points from a target player when the week's scores are released | Yes |
+| Steal an Advantage | Admin-granted | Immediately steal any advantage held by another player (including their steal tokens). Expires 3 days after granted. | Yes (chosen at use time) |
 
 **Shop UI States**:
 - **Available** (purple): Can purchase if you have enough points
@@ -690,18 +694,36 @@ npm run dev
 **Note**: Local dev server (Vite) does NOT serve Vercel serverless functions. API calls to `/api/*` will fail locally. For full testing with backend, deploy to production.
 
 ### Production Deployment
-**IMPORTANT**: Currently working directly on `main` branch for testing (backend required).
+Live at: `https://survivor-fantasy-app.vercel.app` — Vercel auto-deploys ~2 minutes after every push to `main`.
 
-1. Make changes on `main` branch
-2. Run `npm run build` to verify no errors
-3. Commit and push to `main`
-4. Vercel auto-deploys in ~2 minutes
-5. Live at: `https://survivor-fantasy-app.vercel.app`
+**IMPORTANT**: Local Vite dev server does NOT run Vercel serverless functions. All `/api/*` calls fail locally. Real testing only happens on production after deploying to `main`.
 
-**Standard workflow** (when not actively testing):
-1. Work on `dev` branch
-2. When ready, merge to `main` branch
-3. Vercel auto-deploys
+### Branching Strategy (Season 51+)
+
+```
+feature/* or chore/*  →  dev  →  main (auto-deploy)
+```
+
+**Rules:**
+1. All work branches off `dev`, never directly off `main`
+2. Branch naming: `feature/<name>`, `chore/<name>`, `fix/<name>`
+3. Before merging to `dev`: run `npm run build` locally — must pass with zero errors
+4. Merge `dev` → `main` only when ready for production — Joshua verifies on live site after each merge
+5. Keep PRs small and focused (one feature/fix per branch) — changes deploy immediately to production
+
+**Step-by-step for each change:**
+```bash
+git checkout dev && git pull
+git checkout -b feature/my-change
+# make changes
+npm run build          # must pass
+git add <specific files>
+git commit -m "..."
+git push origin feature/my-change
+# open PR: feature/my-change → dev
+# after review/merge to dev, open PR: dev → main
+# verify on https://survivor-fantasy-app.vercel.app
+```
 
 ## Current Players
 1. Joshua (Admin/Jeff)
@@ -884,7 +906,11 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] CORS restriction (API only accepts requests from allowed origins)
 - [x] Database connection health check (auto-reconnect on stale connections)
 - [x] Score release loading state (prevents double-click issues)
+- [x] Score release error handling — `releaseScores` wrapped in try/catch/finally; `finally` always resets the Releasing button so admin is never permanently locked; `catch` surfaces an explicit error alert with guidance to check the backup snapshot; eliminates the freeze-on-error bug where the button stayed gray indefinitely
 - [x] Safe concurrent questionnaire submission — re-reads submissions from MongoDB before writing (prevents one player's submission from overwriting another's); submit button shows "Submitting..." and disables during write; explicit error shown if write fails (form preserved for retry)
+- [x] Questionnaire answer deselect — multiple-choice and true/false use toggle buttons; clicking a selected answer clears it back to blank (radio inputs removed)
+- [x] View submitted answers — collapsible "View My Submitted Answers" section appears after submission; collapsed by default; shows all questions + QotW answer read-only; fills the gap between submission and score release
+- [x] QotW winner fix — `SeasonWinnersDisplay` and `finalize-season` view now read `q.qotwWinner` (array) instead of the nonexistent `q.qotwWinnerId`; end-of-season podium rankings and fun stats now correctly include QotW bonus points
 - [x] Season reset clears notifications
 - [x] Episode scoring confirmation dialog
 - [x] Edge caching for static data (players, contestants, leagues)
@@ -897,6 +923,8 @@ Season 50 has 24 contestants across 3 tribes (8 per tribe) - the largest cast in
 - [x] Auth endpoint security (setPassword requires auth, admin-only: resetToDefault, checkDefaultPasswords, clearRateLimit, checkRateLimit)
 - [x] Usage Analytics — opens count + time in app (total + this-week); Thursday-based weekly reset; tab visit counts; Visibility API pausing; heartbeat-based "Active Now" green dot (3-min window); admin dashboard with player overview table + tab breakdown table; flushed every 2 min + on logout; silently fails
 - [x] Picks Status tally in Phase Control — shows who has/hasn't made instinct & final picks with contestant name; X/9 counter turns green when all submitted; final picks section only appears when phase is final-picks or later
+- [x] Advantage prices reduced — Extra Vote 3pts, Vote Steal 5pts, Double Trouble 8pts, Thief in the Shadows 10pts (both `DEFAULT_ADVANTAGES` and admin `ADVANTAGE_DEFS` updated)
+- [x] Steal an Advantage token — admin-granted special power (not purchasable); granted via Advantage Inspector; player receives mysterious Tree Mail + token appears in gold "Special Power" section of Advantages tab; opens modal showing all owned advantages by other players with owner names; executes immediately and atomically via `/api/advantage` `executeSteal` action; cancels any existing queue on stolen advantage; 3-day expiry shown prominently; public broadcast + private victim notification on use; steal tokens themselves can also be stolen (Q1); usage logged in "Used Advantages" showing what was stolen and from whom
 
 ### Planned Features
 - [ ] Episode recap auto-generation (AI)
