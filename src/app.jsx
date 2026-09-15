@@ -1728,7 +1728,11 @@ export default function SurvivorFantasyApp() {
 
     if (!result.success) {
       if (result.error === 'ALREADY_PURCHASED') {
-        alert('This advantage was just purchased by another player!');
+        // Refresh advantages so UI immediately reflects the real state
+        const leagueStore = getLeagueStorage();
+        const freshAdv = await leagueStore.get('playerAdvantages');
+        if (freshAdv) setPlayerAdvantages(JSON.parse(freshAdv.value));
+        alert('This advantage was just purchased by another player — refreshing shop.');
       } else {
         alert(result.message || 'Failed to purchase advantage');
       }
