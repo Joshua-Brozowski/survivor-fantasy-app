@@ -44,64 +44,56 @@ const fireFireworks = () => {
 
 // Survivor 50 Default Cast (24 returning players)
 const DEFAULT_CAST = [
-  // PURPLE Tribe (8 players)
-  { id: 1, name: "Colby Donaldson", tribe: "Purple", image: "/cast/Colby Donaldson.jpg" },
-  { id: 2, name: "Kyle Fraser", tribe: "Purple", image: "/cast/Kyle Fraser.jpg" },
-  { id: 3, name: "Q Burdette", tribe: "Purple", image: "/cast/Q Burdette.jpg" },
-  { id: 4, name: "Rizo Velovic", tribe: "Purple", image: "/cast/Rizo Velovic.jpg" },
-  { id: 5, name: "Angelina Keeley", tribe: "Purple", image: "/cast/Angelina Keeley.jpg" },
-  { id: 6, name: "Aubry Bracco", tribe: "Purple", image: "/cast/Aubry Bracco.jpg" },
-  { id: 7, name: "Genevieve Mushaluk", tribe: "Purple", image: "/cast/Genevieve Mushaluk.jpg" },
-  { id: 8, name: "Stephenie LaGrossa", tribe: "Purple", image: "/cast/Stephenie LaGrossa.jpg" },
-  // ORANGE Tribe (8 players)
-  { id: 9, name: "Christian Hubicki", tribe: "Orange", image: "/cast/Christian Hubicki.jpg" },
-  { id: 10, name: "Joe Hunter", tribe: "Orange", image: "/cast/Joe Hunter.jpg" },
-  { id: 11, name: "Ozzy Lusth", tribe: "Orange", image: "/cast/Ozzy Lusth.jpg" },
-  { id: 12, name: "Rick Devens", tribe: "Orange", image: "/cast/Rick Devens.jpg" },
-  { id: 13, name: "Cirie Fields", tribe: "Orange", image: "/cast/Cirie Fields.jpg" },
-  { id: 14, name: "Emily Flippen", tribe: "Orange", image: "/cast/Emily Flippen.jpg" },
-  { id: 15, name: "Jenna Lewis", tribe: "Orange", image: "/cast/Jenna Lewis.jpg" },
-  { id: 16, name: "Savannah Louie", tribe: "Orange", image: "/cast/Savannah Louie.jpg" },
-  // TEAL Tribe (8 players)
-  { id: 17, name: "Charlie Davis", tribe: "Teal", image: "/cast/Charlie Davis.jpg" },
-  { id: 18, name: "Coach Wade", tribe: "Teal", image: "/cast/Coach Wade.jpg" },
-  { id: 19, name: "Jonathan Young", tribe: "Teal", image: "/cast/Jonathan Young.jpg" },
-  { id: 20, name: "Mike White", tribe: "Teal", image: "/cast/Mike White.jpg" },
-  { id: 21, name: "Chrissy Hofbeck", tribe: "Teal", image: "/cast/Chrissy Hofbeck.jpg" },
-  { id: 22, name: "Dee Valladares", tribe: "Teal", image: "/cast/Dee Valladares.jpg" },
-  { id: 23, name: "Kamilla Karthigesu", tribe: "Teal", image: "/cast/Kamilla Karthigesu.jpg" },
-  { id: 24, name: "Tiffany Ervin", tribe: "Teal", image: "/cast/Tiffany Ervin.jpg" }
+  // PURPLE Tribe (10 players)
+  { id: 1,  name: "Alexis Levine",       tribe: "Purple", image: "/cast/Alexis Levine.webp" },
+  { id: 2,  name: "Ana Sani",            tribe: "Purple", image: "/cast/Ana Sani.webp" },
+  { id: 3,  name: "Carter Krull",        tribe: "Purple", image: "/cast/Carter Krull.webp" },
+  { id: 4,  name: "Cristian Chavez",     tribe: "Purple", image: "/cast/Cristian Chavez.webp" },
+  { id: 5,  name: "Eric Macksoud",       tribe: "Purple", image: "/cast/Eric Macksoud.webp" },
+  { id: 6,  name: "Kristin Flickinger",  tribe: "Purple", image: "/cast/Kristin Flickinger.webp" },
+  { id: 7,  name: "Linnea Capobianco",   tribe: "Purple", image: "/cast/Linnea Capobianco.webp" },
+  { id: 8,  name: "Ori Jean-Charles",    tribe: "Purple", image: "/cast/Ori Jean-Charles.webp" },
+  { id: 9,  name: "Rob Antonson",        tribe: "Purple", image: "/cast/Rob Antonson.webp" },
+  { id: 10, name: "Sharonda Cox",        tribe: "Purple", image: "/cast/Sharonda Cox.webp" },
+  // YELLOW Tribe (11 players)
+  { id: 11, name: "Aaliyah Puglia",      tribe: "Yellow", image: "/cast/Aaliyah Puglia.webp" },
+  { id: 12, name: "Thien An Nguyen",     tribe: "Yellow", image: "/cast/Thien An Nguyen.webp" },
+  { id: 13, name: "Angelica Loblack",    tribe: "Yellow", image: "/cast/Angelica Loblack.webp" },
+  { id: 14, name: "Brady Booker",        tribe: "Yellow", image: "/cast/Brady Booker.webp" },
+  { id: 15, name: "Danny Kilby",         tribe: "Yellow", image: "/cast/Danny Kilby.webp" },
+  { id: 16, name: "Devin Way",           tribe: "Yellow", image: "/cast/Devin Way.webp" },
+  { id: 17, name: "Jenna Doore",         tribe: "Yellow", image: "/cast/Jenna Doore.webp" },
+  { id: 18, name: "Lewis Kelly",         tribe: "Yellow", image: "/cast/Lewis Kelly.webp" },
+  { id: 19, name: "Maggie Nestor",       tribe: "Yellow", image: "/cast/Maggie Nestor.webp" },
+  { id: 20, name: "Mike Pinsky",         tribe: "Yellow", image: "/cast/Mike Pinsky.webp" },
+  { id: 21, name: "Patt Cannaday",       tribe: "Yellow", image: "/cast/Patt Cannaday.webp" }
 ];
 
-// Contestant bios for Survivor 50
+// Contestant bios for Survivor 51: The Open Era
 const CONTESTANT_BIOS = {
   // PURPLE Tribe
-  1: "Colby Donaldson is a Survivor legend from The Australian Outback (Season 2), where he famously took Tina to the final two. He also competed in All-Stars and Heroes vs. Villains. This Texas cowboy returns for his fourth time to prove he can finally claim the title.",
-  2: "Kyle Fraser won Survivor 48, showcasing strategic prowess and social finesse throughout his winning game. The Brooklyn native returns to defend his title and prove his win was no fluke.",
-  3: "Quintavius 'Q' Burdette was a dominant force on Survivor 46, finishing in sixth place. Known for his bold gameplay and physical presence, Q is back to finish what he started.",
-  4: "Rizo Velovic was eliminated at the fire-making challenge on Survivor 49, just days before being asked to return for Season 50. He's ready to prove he can go all the way.",
-  5: "Angelina Keeley placed third on David vs. Goliath (Season 37) and is remembered for her infamous jacket negotiation and rice deal. The strategic player returns to climb even higher.",
-  6: "Aubry Bracco is a three-time player from Kaoh Rong, Game Changers, and Edge of Extinction. The fan favorite known for her emotional gameplay and strategic mind returns for her fourth shot at the title.",
-  7: "Genevieve Mushaluk finished fifth on Survivor 47 after lying low early then orchestrating major blindsides. Her penchant for big moves made her one of the biggest threats in her season.",
-  8: "Stephenie LaGrossa is a Survivor icon who competed in Palau, Guatemala, and Heroes vs. Villains. Famous for being the last member of Ulong tribe, she returns for her fourth attempt at becoming Sole Survivor.",
-  // ORANGE Tribe
-  9: "Christian Hubicki was a fan favorite on David vs. Goliath (Season 37). The robotics scientist charmed audiences with his quirky personality and surprising challenge performances.",
-  10: "Joe Hunter placed third on Survivor 48 after an emotional journey honoring his late sister. The fire captain's heart and determination made him a beloved player.",
-  11: "Ozzy Lusth is one of Survivor's greatest challenge competitors, having played in Cook Islands, Micronesia, South Pacific, and Game Changers. This will be his record-tying fifth appearance.",
-  12: "Rick Devens came in fourth on Edge of Extinction (Season 38) and received the Sia Award for his entertaining gameplay. The news anchor's idol plays and dramatic Tribal Councils made him a standout.",
-  13: "Cirie Fields is widely regarded as one of the greatest players to never win. After Panama, Micronesia, Heroes vs. Villains, and Game Changers, the 'woman who got off the couch' returns for her fifth time.",
-  14: "Emily Flippen competed on Survivor 45, where the financial analyst was known for her candid confessionals and strategic gameplay after a rocky start.",
-  15: "Jenna Lewis competed on the very first season of Survivor (Borneo) and returned for All-Stars. The original era player brings old-school Survivor knowledge to the game.",
-  16: "Savannah Louie won Survivor 49 and was asked to return for Season 50 just hours after becoming Sole Survivor. The back-to-back appearance is unprecedented in Survivor history.",
-  // TEAL Tribe
-  17: "Charlie Davis was the runner-up on Survivor 46, known for his strong social bonds and strategic positioning. The Boston native returns hoping to finish one spot higher.",
-  18: "Benjamin 'Coach' Wade is one of Survivor's most memorable characters from Tocantins, Heroes vs. Villains, and South Pacific. The 'Dragon Slayer' returns for his fourth adventure.",
-  19: "Jonathan Young was a standout physical competitor on Survivor 42, finishing fourth. The challenge beast from Alabama is ready to use his strength to dominate once again.",
-  20: "Mike White finished as runner-up on David vs. Goliath (Season 37) before creating the Emmy-winning series The White Lotus. The writer-actor returns to prove he can also win at Survivor.",
-  21: "Chrissy Hofbeck made it to the final three on Heroes vs. Healers vs. Hustlers (Season 35). The actuary's strategic gameplay and challenge wins made her a formidable competitor.",
-  22: "Dee Valladares won Survivor 45 with a dominant strategic and social game. The Miami native returns to prove she can do it all over again.",
-  23: "Kamilla Karthigesu finished fourth on Survivor 48 after forming a powerful duo with eventual winner Kyle Fraser. She was eliminated at fire-making and is back for redemption.",
-  24: "Tiffany Ervin competed on Survivor 46, finishing in eighth place. Known for her clashes with Q, she returns ready to write a different story this time around."
+  1:  "Alexis Levine is a 34-year-old criminal defense attorney from Atlanta, GA. She knows how to argue a case, read a room, and stay cool under pressure — skills that translate directly to Tribal Council.",
+  2:  "Ana Sani is a 34-year-old voice actress from Toronto, Canada. She's used to becoming different characters on command, which could make her the most adaptable player out there.",
+  3:  "Carter Krull is a 24-year-old livestock farmer and entrepreneur from Sioux Falls, SD. Don't let his age fool you — running a farm business has sharpened both his work ethic and his strategic instincts.",
+  4:  "Cristian Chavez is a 26-year-old Head of HR from Salt Lake City, UT. He spends his days managing people and navigating workplace politics — perfect training for Survivor alliances.",
+  5:  "Eric Macksoud is a 34-year-old mental health counselor. He's trained to listen deeply and connect with people, which could make him one of the most dangerous social players this season.",
+  6:  "Kristin Flickinger is a 49-year-old crisis management professional. She's built a career on staying calm when everything falls apart — exactly what you need when blindsides hit.",
+  7:  "Linnea Capobianco is an entrepreneur with a sharp business mind and an even sharper competitive drive. She's ready to outmaneuver every player on the island.",
+  8:  "Ori Jean-Charles is a 27-year-old personal trainer from the Caribbean. His physical fitness is obvious, but it's his discipline and mental toughness that could carry him to the end.",
+  9:  "Rob Antonson is a 40-year-old airline gate agent. He's spent years juggling chaos, de-escalating tense situations, and keeping people happy — a social game built into his day job.",
+  10: "Sharonda Cox is a 34-year-old resident OBGYN. She's calm under extreme pressure, detail-oriented, and understands how to build trust quickly — a lethal combination in this game.",
+  // YELLOW Tribe
+  11: "Aaliyah Puglia is a 24-year-old chef from Gloucester City, NJ. She knows how to perform under pressure and work in teams, and she's not afraid to take the lead when it counts.",
+  12: "Thien An Nguyen is a 24-year-old medical student from Fort Worth, TX. Juggling med school requires elite focus and endurance — two things that will serve her well on day 39.",
+  13: "Angelica 'Jelly' Loblack is a 29-year-old sociology professor from Garland, TX. She studies human behavior for a living, which makes her one of the most dangerous reads at Tribal.",
+  14: "Brady Booker is a 27-year-old professional wrestler from Knoxville, TN. He's used to performing for a crowd and knowing when to play the villain — a natural fit for Survivor's big moments.",
+  15: "Danny Kilby is a 30-year-old game designer from Mount Forest. He spends his career thinking several moves ahead and designing systems to outsmart people — sound familiar?",
+  16: "Devin Way is a 33-year-old actor from Lufkin, TX. He knows how to read a script, play a role, and command a scene — and on Survivor, every Tribal Council is a performance.",
+  17: "Jenna Doore is a 30-year-old wedding photographer. She's spent years capturing the most emotional moments in people's lives, giving her an unusually sharp read on human connection.",
+  18: "Lewis Kelly is a 28-year-old Irish farmer living in Puerto Rico. He's tough, resourceful, and used to working long days with few comforts — the elements of Fiji hold no fear for him.",
+  19: "Maggie Nestor is a farmer with grit, determination, and a no-nonsense approach to hard work. She's not here to make friends first — she's here to compete.",
+  20: "Mike Pinsky is a 32-year-old baseball operations executive. He's built a career on data, scouting, and finding value where others don't — and he'll apply that same eye to this cast.",
+  21: "Patt Cannaday is a 33-year-old federal prosecutor from the DOJ. She cross-examines witnesses for a living and knows exactly how to poke holes in a story — dangerous at Tribal Council."
 };
 
 const INITIAL_PLAYERS = [
@@ -2519,7 +2511,7 @@ export default function SurvivorFantasyApp() {
                 <div className="px-6 pb-6">
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {contestants.map(contestant => {
-                      const tribeColor = contestant.tribe === 'Purple' ? 'purple' : contestant.tribe === 'Orange' ? 'orange' : contestant.tribe === 'Teal' ? 'teal' : 'gray';
+                      const tribeColor = contestant.tribe === 'Purple' ? 'purple' : contestant.tribe === 'Yellow' ? 'yellow' : contestant.tribe === 'Teal' ? 'teal' : 'gray';
                       return (
                         <div
                           key={contestant.id}
@@ -3316,7 +3308,7 @@ export default function SurvivorFantasyApp() {
                 <div className="px-6 pb-6">
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {contestants.map(contestant => {
-                      const tribeColor = contestant.tribe === 'Purple' ? 'purple' : contestant.tribe === 'Orange' ? 'orange' : contestant.tribe === 'Teal' ? 'teal' : 'gray';
+                      const tribeColor = contestant.tribe === 'Purple' ? 'purple' : contestant.tribe === 'Yellow' ? 'yellow' : contestant.tribe === 'Teal' ? 'teal' : 'gray';
                       return (
                         <div
                           key={contestant.id}
