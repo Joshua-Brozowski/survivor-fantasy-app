@@ -18,7 +18,7 @@ async function connectToDatabase() {
   return { client, db };
 }
 
-const PRODUCTION_URL = 'https://survivor-fantasy-app.vercel.app';
+const PRODUCTION_URL = 'https://survivor-fantasy-app-gamma.vercel.app';
 const REDIRECT_URI = `${PRODUCTION_URL}/api/auth-google`;
 
 export default async function handler(req, res) {

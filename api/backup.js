@@ -85,7 +85,7 @@ const LEGACY_BACKUP_KEYS = [
 function setCorsHeaders(req, res) {
   const origin = req.headers.origin || '';
   const allowedOrigins = [
-    'https://survivor-fantasy-app.vercel.app',
+    'https://survivor-fantasy-app-gamma.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000'
   ];
@@ -94,7 +94,7 @@ function setCorsHeaders(req, res) {
   if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   } else {
-    res.setHeader('Access-Control-Allow-Origin', 'https://survivor-fantasy-app.vercel.app');
+    res.setHeader('Access-Control-Allow-Origin', 'https://survivor-fantasy-app-gamma.vercel.app');
   }
 
   res.setHeader('Access-Control-Allow-Credentials', true);
