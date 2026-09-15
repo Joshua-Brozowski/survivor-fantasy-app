@@ -608,7 +608,41 @@ export default function SurvivorFantasyApp() {
       setPicks(picksData ? JSON.parse(picksData.value) : []);
       setPicksLocked(picksLockedData ? JSON.parse(picksLockedData.value) : { instinct: false, final: false });
       setGamePhase(gamePhaseData ? gamePhaseData.value : 'instinct-picks');
-      setQuestionnaires(questionnairesData ? JSON.parse(questionnairesData.value) : []);
+
+      // Auto-activate any draft questionnaires whose scheduledFor date has passed
+      let loadedQuestionnaires = questionnairesData ? JSON.parse(questionnairesData.value) : [];
+      let effectiveNotificationsData = notificationsData;
+      const nowLoad = new Date();
+      const pastDueDrafts = loadedQuestionnaires.filter(
+        q => q.status === 'draft' && q.scheduledFor && new Date(q.scheduledFor) <= nowLoad
+      );
+      if (pastDueDrafts.length > 0) {
+        // Archive currently active questionnaire, then activate the earliest past-due draft
+        pastDueDrafts.sort((a, b) => new Date(a.scheduledFor) - new Date(b.scheduledFor));
+        const draftToActivate = pastDueDrafts[0];
+        loadedQuestionnaires = loadedQuestionnaires.map(q => {
+          if (q.id === draftToActivate.id) return { ...q, status: 'active' };
+          if (q.status === 'active') return { ...q, status: 'archived' };
+          return q;
+        });
+        await leagueStore.set('questionnaires', JSON.stringify(loadedQuestionnaires));
+        // Add a notification for the auto-activation
+        const activationNotif = {
+          id: Date.now(),
+          type: 'new_questionnaire',
+          message: `New questionnaire "${draftToActivate.title}" is now available!`,
+          targetPlayerId: null,
+          createdAt: nowLoad.toISOString(),
+          readBy: [],
+          seenBy: []
+        };
+        const existingNotifs = notificationsData ? JSON.parse(notificationsData.value) : [];
+        const notifsWithNew = [...existingNotifs, activationNotif];
+        await leagueStore.set('notifications', JSON.stringify(notifsWithNew));
+        effectiveNotificationsData = { value: JSON.stringify(notifsWithNew) };
+      }
+      setQuestionnaires(loadedQuestionnaires);
+
       setSubmissions(submissionsData ? JSON.parse(submissionsData.value) : []);
       setQotWVotes(qotWVotesData ? JSON.parse(qotWVotesData.value) : []);
       setLatePenalties(latePenaltiesData ? JSON.parse(latePenaltiesData.value) : {});
@@ -619,8 +653,9 @@ export default function SurvivorFantasyApp() {
       setPlayerScores(playerScoresData ? JSON.parse(playerScoresData.value) : {});
 
       // Load notifications and clean up ones older than 7 days
-      if (notificationsData) {
-        const allNotifications = JSON.parse(notificationsData.value);
+      // (effectiveNotificationsData may include auto-activation notifications added above)
+      if (effectiveNotificationsData) {
+        const allNotifications = JSON.parse(effectiveNotificationsData.value);
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         const recentNotifications = allNotifications.filter(n =>
@@ -3902,7 +3937,8 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     episodeNumber: episodes.length + 1,
     questions: [],
     hasQotw: true,
-    qotw: { id: 'qotw', text: '', anonymous: false }
+    qotw: { id: 'qotw', text: '', anonymous: false },
+    scheduledFor: ''
   });
   const [scoringQ, setScoringQ] = useState(null);
   const [correctAnswers, setCorrectAnswers] = useState({});
@@ -3955,11 +3991,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       return;
     }
 
-    const updatedQuestionnaires = questionnaires.map(q => ({
-      ...q,
-      status: q.status === 'active' ? 'archived' : q.status
-    }));
-
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + ((3 - deadline.getDay() + 7) % 7));
     deadline.setHours(19, 59, 0, 0);
@@ -3967,31 +3998,62 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     const lockedAt = new Date(deadline);
     lockedAt.setHours(21, 0, 0, 0);
 
-    const questionnaire = {
-      id: Date.now(),
-      ...newQ,
-      deadline: deadline.toISOString(),
-      lockedAt: lockedAt.toISOString(),
-      status: 'active',
-      createdAt: new Date().toISOString(),
-      scoresReleased: false,
-      correctAnswers: {}
-    };
+    const now = new Date();
+    const isScheduled = newQ.scheduledFor && new Date(newQ.scheduledFor) > now;
 
-    const updated = [...updatedQuestionnaires, questionnaire];
-    setQuestionnaires(updated);
-    const leagueStore = getLeagueStorage();
-    await leagueStore.set('questionnaires', JSON.stringify(updated));
+    if (isScheduled) {
+      // Create as draft — do NOT archive existing active questionnaire yet, do NOT notify
+      const questionnaire = {
+        id: Date.now(),
+        ...newQ,
+        deadline: deadline.toISOString(),
+        lockedAt: lockedAt.toISOString(),
+        status: 'draft',
+        createdAt: now.toISOString(),
+        scoresReleased: false,
+        correctAnswers: {}
+      };
 
-    await addNotification({
-      type: 'new_questionnaire',
-      message: `New questionnaire "${newQ.title}" is now available!`,
-      targetPlayerId: null
-    });
+      const updated = [...questionnaires, questionnaire];
+      setQuestionnaires(updated);
+      const leagueStore = getLeagueStorage();
+      await leagueStore.set('questionnaires', JSON.stringify(updated));
 
-    alert('Questionnaire created and sent to all players!');
+      alert(`Questionnaire scheduled! It will auto-activate on ${new Date(newQ.scheduledFor).toLocaleString()}.`);
+    } else {
+      // Publish immediately — archive current active and notify players
+      const updatedQuestionnaires = questionnaires.map(q => ({
+        ...q,
+        status: q.status === 'active' ? 'archived' : q.status
+      }));
+
+      const questionnaire = {
+        id: Date.now(),
+        ...newQ,
+        deadline: deadline.toISOString(),
+        lockedAt: lockedAt.toISOString(),
+        status: 'active',
+        createdAt: now.toISOString(),
+        scoresReleased: false,
+        correctAnswers: {}
+      };
+
+      const updated = [...updatedQuestionnaires, questionnaire];
+      setQuestionnaires(updated);
+      const leagueStore = getLeagueStorage();
+      await leagueStore.set('questionnaires', JSON.stringify(updated));
+
+      await addNotification({
+        type: 'new_questionnaire',
+        message: `New questionnaire "${newQ.title}" is now available!`,
+        targetPlayerId: null
+      });
+
+      alert('Questionnaire created and sent to all players!');
+    }
+
     setAdminView('main');
-    setNewQ({ title: '', episodeNumber: episodes.length + 1, questions: [], hasQotw: true, qotw: { id: 'qotw', text: '', anonymous: false } });
+    setNewQ({ title: '', episodeNumber: episodes.length + 1, questions: [], hasQotw: true, qotw: { id: 'qotw', text: '', anonymous: false }, scheduledFor: '' });
   };
 
   const addQuestion = (type) => {
@@ -4714,12 +4776,29 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               )}
             </div>
 
+            <div>
+              <label className="block text-gray-300 mb-2 font-semibold">
+                📅 Schedule for Later <span className="text-gray-400 font-normal text-sm">(optional — leave blank to publish now)</span>
+              </label>
+              <input
+                type="datetime-local"
+                value={newQ.scheduledFor}
+                onChange={(e) => setNewQ({...newQ, scheduledFor: e.target.value})}
+                className="w-full px-4 py-2 rounded bg-black/50 text-white border border-gray-600 focus:outline-none focus:border-gray-400"
+              />
+              {newQ.scheduledFor && new Date(newQ.scheduledFor) > new Date() && (
+                <p className="text-amber-400 text-sm mt-1">
+                  This questionnaire will be saved as a draft and auto-activate on {new Date(newQ.scheduledFor).toLocaleString()}.
+                </p>
+              )}
+            </div>
+
             <div className="flex gap-4">
               <button
                 onClick={createQuestionnaire}
-                className="flex-1 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg font-semibold hover:from-green-500 hover:to-emerald-500 transition"
+                className={`flex-1 py-3 text-white rounded-lg font-semibold transition bg-gradient-to-r ${newQ.scheduledFor && new Date(newQ.scheduledFor) > new Date() ? 'from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500' : 'from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500'}`}
               >
-                Create & Send Questionnaire
+                {newQ.scheduledFor && new Date(newQ.scheduledFor) > new Date() ? 'Save as Draft (Scheduled)' : 'Create & Send Questionnaire'}
               </button>
               <button
                 onClick={() => setAdminView('main')}
@@ -8157,32 +8236,70 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 const lockedAt = new Date(q.lockedAt);
                 const isPastDeadline = now > deadline;
                 const isLocked = now > lockedAt;
+                const isDraft = q.status === 'draft';
                 return (
-                  <div key={q.id} className="bg-yellow-900/20 border border-yellow-600 p-4 rounded-lg">
+                  <div key={q.id} className={`p-4 rounded-lg border ${isDraft ? 'bg-amber-900/20 border-amber-500' : 'bg-yellow-900/20 border-yellow-600'}`}>
                     <div className="flex flex-col gap-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <p className="text-white font-semibold">{q.title}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-white font-semibold">{q.title}</p>
+                            {isDraft && (
+                              <span className="px-2 py-0.5 bg-amber-500 text-black text-xs font-bold rounded">SCHEDULED</span>
+                            )}
+                          </div>
                           <p className="text-yellow-300 text-sm">
                             Episode {q.episodeNumber} • {qSubmissions.length}/{players.length} submitted
                           </p>
-                          <button
-                            onClick={() => setExpandedSubmissionsQ(expandedSubmissionsQ === q.id ? null : q.id)}
-                            className="text-yellow-400 hover:text-yellow-200 text-xs flex items-center gap-1 mt-0.5"
-                          >
-                            <Users size={12} />
-                            {expandedSubmissionsQ === q.id ? 'Hide' : 'See who'}
-                          </button>
-                          <p className={`text-sm ${isPastDeadline ? 'text-red-400' : 'text-green-400'}`}>
-                            Deadline: {deadline.toLocaleString()} {isPastDeadline ? '(PASSED)' : ''}
-                          </p>
+                          {!isDraft && (
+                            <button
+                              onClick={() => setExpandedSubmissionsQ(expandedSubmissionsQ === q.id ? null : q.id)}
+                              className="text-yellow-400 hover:text-yellow-200 text-xs flex items-center gap-1 mt-0.5"
+                            >
+                              <Users size={12} />
+                              {expandedSubmissionsQ === q.id ? 'Hide' : 'See who'}
+                            </button>
+                          )}
+                          {isDraft ? (
+                            <p className="text-amber-300 text-sm mt-1">
+                              Auto-activates: {q.scheduledFor ? new Date(q.scheduledFor).toLocaleString() : 'Unknown'}
+                            </p>
+                          ) : (
+                            <p className={`text-sm ${isPastDeadline ? 'text-red-400' : 'text-green-400'}`}>
+                              Deadline: {deadline.toLocaleString()} {isPastDeadline ? '(PASSED)' : ''}
+                            </p>
+                          )}
                           {q.scoresReleased && (
                             <span className="text-green-400 text-sm">✓ Scores Released</span>
                           )}
                         </div>
                         <div className="flex flex-wrap gap-2 justify-end">
-                          {/* Re-Open Button - show when past deadline or locked */}
-                          {(isPastDeadline || isLocked) && !q.scoresReleased && (
+                          {isDraft && (
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`Publish "${q.title}" now? This will archive the current active questionnaire and notify all players.`)) return;
+                                const updated = questionnaires.map(qst => {
+                                  if (qst.id === q.id) return { ...qst, status: 'active' };
+                                  if (qst.status === 'active') return { ...qst, status: 'archived' };
+                                  return qst;
+                                });
+                                setQuestionnaires(updated);
+                                const leagueStore = getLeagueStorage();
+                                await leagueStore.set('questionnaires', JSON.stringify(updated));
+                                await addNotification({
+                                  type: 'new_questionnaire',
+                                  message: `New questionnaire "${q.title}" is now available!`,
+                                  targetPlayerId: null
+                                });
+                                alert(`"${q.title}" is now live!`);
+                              }}
+                              className="px-4 py-2 bg-amber-500 text-black rounded font-semibold hover:bg-amber-400 transition"
+                            >
+                              Publish Now
+                            </button>
+                          )}
+                          {/* Re-Open Button - show when past deadline or locked (active only) */}
+                          {!isDraft && (isPastDeadline || isLocked) && !q.scoresReleased && (
                             <button
                               onClick={() => reopenQuestionnaire(q)}
                               className="px-4 py-2 bg-blue-600 text-white rounded font-semibold hover:bg-blue-500 transition flex items-center gap-1"
@@ -8191,7 +8308,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                               Re-Open
                             </button>
                           )}
-                          {!q.scoresReleased && (
+                          {!isDraft && !q.scoresReleased && (
                             <button
                               onClick={() => {
                                 setScoringQ(q);
@@ -8203,7 +8320,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                               Score
                             </button>
                           )}
-                          {q.scoresReleased && (
+                          {!isDraft && q.scoresReleased && (
                             <button
                               onClick={() => {
                                 setScoringQ({ ...q, isRescore: true });
