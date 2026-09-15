@@ -205,6 +205,7 @@ export default function SurvivorFantasyApp() {
   const [showPassword, setShowPassword] = useState(false);
   const [showNameHelp, setShowNameHelp] = useState(false);
   const [googleAuthError, setGoogleAuthError] = useState('');
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
 
   // Game state
   const [players, setPlayers] = useState([]);
@@ -2138,96 +2139,14 @@ export default function SurvivorFantasyApp() {
 
           {loginView === 'login' ? (
             <div className="space-y-4">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <label className="text-amber-200">Player Name</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowNameHelp(!showNameHelp)}
-                    className="text-amber-400 hover:text-amber-300 transition"
-                  >
-                    <HelpCircle className="w-4 h-4" />
-                  </button>
-                </div>
-                {showNameHelp && (
-                  <div className="mb-2 p-3 bg-blue-900/50 border border-blue-500/50 rounded-lg text-sm text-blue-200">
-                    Your name might be slightly different than you expect. Try variations like nicknames (e.g., "Charles" → "Charlie") or check with the game admin if you're unsure.
-                  </div>
-                )}
-                <input
-                  type="text"
-                  value={loginForm.name}
-                  onChange={(e) => setLoginForm({...loginForm, name: e.target.value})}
-                  onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                  className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
-                  placeholder="Enter your name"
-                />
-              </div>
-              <div>
-                <label className="block text-amber-200 mb-2">Password</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={loginForm.password}
-                    onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
-                    onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-                    className="w-full px-4 py-2 pr-10 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
-                    placeholder="Enter password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-amber-400 hover:text-amber-300 transition"
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
-              <label className="flex items-center gap-2 text-amber-200 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={loginForm.rememberMe}
-                  onChange={(e) => setLoginForm({...loginForm, rememberMe: e.target.checked})}
-                  className="w-4 h-4 rounded border-amber-600 text-amber-600 focus:ring-amber-500"
-                />
-                Stay logged in
-              </label>
-              <button
-                onClick={handleLogin}
-                type="button"
-                disabled={!isDataLoaded}
-                className={`w-full py-3 rounded font-semibold transition ${
-                  isDataLoaded
-                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-500 hover:to-orange-500'
-                    : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                {isDataLoaded ? 'Enter the Game' : 'Loading...'}
-              </button>
-              <button
-                onClick={() => setLoginView('forgot')}
-                type="button"
-                className="w-full text-amber-300 text-sm hover:text-amber-200 transition"
-              >
-                Forgot Password?
-              </button>
-
-              {/* Google OAuth Login */}
-              <div className="relative my-2">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-amber-800/50" />
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="px-2 bg-black/60 text-amber-500/70">or</span>
-                </div>
-              </div>
-
+              {/* Google error */}
               {googleAuthError && (
                 <div className="p-3 bg-red-900/40 border border-red-500 rounded text-red-300 text-sm">
                   {googleAuthError}
                 </div>
               )}
 
+              {/* Primary: Sign in with Google */}
               <a
                 href="/api/auth-google?action=redirect"
                 className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white text-gray-800 rounded font-semibold hover:bg-gray-100 transition"
@@ -2241,9 +2160,114 @@ export default function SurvivorFantasyApp() {
                 Sign in with Google
               </a>
 
-              <p className="text-amber-400/60 text-xs text-center mt-2">
-                First time? Default password: password123
-              </p>
+              {/* Divider */}
+              <div className="relative my-1">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-amber-800/50" />
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="px-2 bg-black/60 text-amber-500/70">or</span>
+                </div>
+              </div>
+
+              {/* Secondary: Use Password toggle */}
+              {!showPasswordForm ? (
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordForm(true)}
+                  className="w-full py-2.5 rounded font-semibold transition border border-amber-600 text-amber-300 hover:bg-amber-900/30 text-sm"
+                >
+                  Use Password
+                </button>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <label className="text-amber-200">Player Name</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowNameHelp(!showNameHelp)}
+                        className="text-amber-400 hover:text-amber-300 transition"
+                      >
+                        <HelpCircle className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {showNameHelp && (
+                      <div className="mb-2 p-3 bg-blue-900/50 border border-blue-500/50 rounded-lg text-sm text-blue-200">
+                        Your name might be slightly different than you expect. Try variations like nicknames (e.g., "Charles" → "Charlie") or check with the game admin if you're unsure.
+                      </div>
+                    )}
+                    <input
+                      type="text"
+                      value={loginForm.name}
+                      onChange={(e) => setLoginForm({...loginForm, name: e.target.value})}
+                      onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                      className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                      placeholder="Enter your name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-amber-200 mb-2">Password</label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={loginForm.password}
+                        onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                        onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                        className="w-full px-4 py-2 pr-10 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                        placeholder="Enter password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-amber-400 hover:text-amber-300 transition"
+                      >
+                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-amber-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={loginForm.rememberMe}
+                      onChange={(e) => setLoginForm({...loginForm, rememberMe: e.target.checked})}
+                      className="w-4 h-4 rounded border-amber-600 text-amber-600 focus:ring-amber-500"
+                    />
+                    Stay logged in
+                  </label>
+                  <button
+                    onClick={handleLogin}
+                    type="button"
+                    disabled={!isDataLoaded}
+                    className={`w-full py-3 rounded font-semibold transition ${
+                      isDataLoaded
+                        ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-500 hover:to-orange-500'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {isDataLoaded ? 'Enter the Game' : 'Loading...'}
+                  </button>
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setLoginView('forgot')}
+                      type="button"
+                      className="text-amber-300 text-sm hover:text-amber-200 transition"
+                    >
+                      Forgot Password?
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordForm(false)}
+                      className="text-amber-500/60 text-sm hover:text-amber-400 transition"
+                    >
+                      ← Back
+                    </button>
+                  </div>
+                  <p className="text-amber-400/60 text-xs text-center">
+                    First time? Default password: password123
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
