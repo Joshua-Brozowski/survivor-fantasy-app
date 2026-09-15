@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle } from 'lucide-react';
+import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle, CalendarDays } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi, refreshAccessToken, clearAccessToken } from './db.js';
 
@@ -129,6 +129,24 @@ const SURVIVOR_WORDS = [
   'ALPHA', 'LOYAL', 'POWER', 'SNAKE', 'STORM', 'SWAMP'
 ];
 
+// Pre-scheduled Wordle words for Season 51
+// Releases Thursday, closes following Wednesday
+const DEFAULT_WORDLE_SCHEDULE = [
+  { id: 1, word: 'TRIBE', releaseDate: '2026-09-25', closeDate: '2026-10-01', status: 'pending', challengeId: null },
+  { id: 2, word: 'MERGE', releaseDate: '2026-10-02', closeDate: '2026-10-08', status: 'pending', challengeId: null },
+  { id: 3, word: 'TORCH', releaseDate: '2026-10-09', closeDate: '2026-10-15', status: 'pending', challengeId: null },
+  { id: 4, word: 'VOTES', releaseDate: '2026-10-16', closeDate: '2026-10-22', status: 'pending', challengeId: null },
+  { id: 5, word: 'IDOLS', releaseDate: '2026-10-23', closeDate: '2026-10-29', status: 'pending', challengeId: null },
+  { id: 6, word: 'EXILE', releaseDate: '2026-10-30', closeDate: '2026-11-05', status: 'pending', challengeId: null },
+  { id: 7, word: 'FLAME', releaseDate: '2026-11-06', closeDate: '2026-11-12', status: 'pending', challengeId: null },
+  { id: 8, word: 'BLIND', releaseDate: '2026-11-13', closeDate: '2026-11-19', status: 'pending', challengeId: null },
+  { id: 9, word: 'TRUST', releaseDate: '2026-11-20', closeDate: '2026-11-26', status: 'pending', challengeId: null },
+  { id: 10, word: 'FEAST', releaseDate: '2026-11-27', closeDate: '2026-12-03', status: 'pending', challengeId: null },
+  { id: 11, word: 'FINAL', releaseDate: '2026-12-04', closeDate: '2026-12-10', status: 'pending', challengeId: null },
+  { id: 12, word: 'BUFFS', releaseDate: '2026-12-11', closeDate: '2026-12-17', status: 'pending', challengeId: null },
+  { id: 13, word: 'SNUFF', releaseDate: '2026-12-18', closeDate: '2026-12-24', status: 'pending', challengeId: null },
+];
+
 // Default Advantages Available for Purchase
 // SCARCITY RULE: Only ONE of each advantage can exist in the game at a time
 // Once purchased, no one else can buy it. Once PLAYED, it returns to the shop.
@@ -220,6 +238,8 @@ export default function SurvivorFantasyApp() {
   // Wordle Challenge state
   const [challenges, setChallenges] = useState([]);
   const [challengeAttempts, setChallengeAttempts] = useState([]);
+  const [wordleSchedule, setWordleSchedule] = useState([]);
+  const [wordleAuditLog, setWordleAuditLog] = useState([]);
 
   // Backup snapshots state
   const [snapshots, setSnapshots] = useState([]);
@@ -403,7 +423,35 @@ export default function SurvivorFantasyApp() {
     loadGameData();
   }, []);
 
-  // Wordle challenges are now fully admin-controlled (no auto-create or auto-end)
+  // Auto-release scheduled Wordle words: runs when any player loads the app
+  // If today is on or after a pending entry's releaseDate, create the challenge automatically
+  useEffect(() => {
+    if (!currentUser || !wordleSchedule.length) return;
+    const now = new Date();
+    const toRelease = wordleSchedule.filter(e =>
+      e.status === 'pending' && new Date(e.releaseDate) <= now
+    );
+    if (toRelease.length === 0) return;
+    (async () => {
+      for (const entry of toRelease) {
+        await autoReleaseWordle(entry);
+      }
+    })();
+  }, [currentUser, wordleSchedule.length, challenges.length]);
+
+  // Auto-close active Wordle challenge: admin-only, runs when admin loads the app
+  // If today is on or after the closeDate for the active challenge, finalize automatically
+  useEffect(() => {
+    if (!currentUser?.isAdmin || !wordleSchedule.length) return;
+    const now = new Date();
+    const activeChallenge = challenges.find(c => c.status === 'active');
+    if (!activeChallenge) return;
+    const schedEntry = wordleSchedule.find(e => e.challengeId === activeChallenge.id);
+    if (!schedEntry) return;
+    if (new Date(schedEntry.closeDate) <= now) {
+      autoCloseWordle(activeChallenge.id, schedEntry.id);
+    }
+  }, [currentUser, challenges.length, wordleSchedule.length]);
 
   // Check if current user has security question
   useEffect(() => {
@@ -667,6 +715,18 @@ export default function SurvivorFantasyApp() {
           await storage.set(`password_${player.id}`, DEFAULT_PASSWORD);
         }
       }
+
+      // Load wordleSchedule (global key — shared across leagues)
+      const wordleScheduleData = await storage.get('wordleSchedule');
+      const parsedWordleSchedule = wordleScheduleData ? JSON.parse(wordleScheduleData.value) : DEFAULT_WORDLE_SCHEDULE;
+      setWordleSchedule(parsedWordleSchedule);
+      if (!wordleScheduleData) {
+        await storage.set('wordleSchedule', JSON.stringify(DEFAULT_WORDLE_SCHEDULE));
+      }
+
+      // Load wordleAuditLog (league-specific)
+      const wordleAuditData = await leagueStore.get('wordleAuditLog');
+      setWordleAuditLog(wordleAuditData ? JSON.parse(wordleAuditData.value) : []);
 
       setIsDataLoaded(true);
     } catch (error) {
@@ -1184,6 +1244,9 @@ export default function SurvivorFantasyApp() {
     await leagueStore.set('challenges', JSON.stringify([]));
     await leagueStore.set('challengeAttempts', JSON.stringify([]));
     await leagueStore.set('notifications', JSON.stringify([]));
+    // Reset Wordle audit log for new season (schedule stays global, audit is per-league)
+    setWordleAuditLog([]);
+    await leagueStore.set('wordleAuditLog', JSON.stringify([]));
     // Contestants is global (shared across leagues)
     await storage.set('contestants', JSON.stringify(defaultCast));
 
@@ -1862,6 +1925,102 @@ export default function SurvivorFantasyApp() {
   // Admin: end challenge early
   const adminEndChallenge = async (challengeId) => {
     await finalizeChallenge(challengeId);
+  };
+
+  // Append an entry to the league-specific Wordle audit log
+  const appendWordleAuditLog = async (entry) => {
+    const newEntry = {
+      id: Date.now(),
+      ...entry,
+      timestamp: new Date().toISOString(),
+      triggeredByPlayerId: entry.triggeredByPlayerId ?? currentUser?.id
+    };
+    const updated = [...wordleAuditLog, newEntry];
+    setWordleAuditLog(updated);
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('wordleAuditLog', JSON.stringify(updated));
+  };
+
+  // Auto-release a scheduled Wordle entry: create challenge, mark as released, log it
+  const autoReleaseWordle = async (scheduleEntry) => {
+    const newChallenge = await adminCreateChallenge(scheduleEntry.word);
+    const updatedSchedule = wordleSchedule.map(e =>
+      e.id === scheduleEntry.id ? { ...e, status: 'released', challengeId: newChallenge.id } : e
+    );
+    setWordleSchedule(updatedSchedule);
+    await storage.set('wordleSchedule', JSON.stringify(updatedSchedule));
+    await appendWordleAuditLog({
+      action: 'auto-released',
+      challengeId: newChallenge.id,
+      scheduleId: scheduleEntry.id,
+      word: scheduleEntry.word,
+      note: `Auto-released on schedule (${scheduleEntry.releaseDate})`
+    });
+  };
+
+  // Auto-close an active scheduled challenge: finalize, mark as completed, log it
+  const autoCloseWordle = async (challengeId, scheduleId) => {
+    await finalizeChallenge(challengeId);
+    const updatedSchedule = wordleSchedule.map(e =>
+      e.id === scheduleId ? { ...e, status: 'completed' } : e
+    );
+    setWordleSchedule(updatedSchedule);
+    await storage.set('wordleSchedule', JSON.stringify(updatedSchedule));
+    await appendWordleAuditLog({
+      action: 'auto-closed',
+      challengeId,
+      scheduleId,
+      note: `Auto-closed on schedule`
+    });
+  };
+
+  // Rollback a completed Wordle challenge: reverse winner's +3, reset to active
+  const rollbackWordleChallenge = async (challengeId) => {
+    const challenge = challenges.find(c => c.id === challengeId);
+    if (!challenge || challenge.status !== 'completed') return;
+
+    // Reverse +3 point award from winner
+    if (challenge.winnerId) {
+      const currentScores = { ...playerScores };
+      const winnerBreakdown = currentScores[challenge.winnerId]?.breakdown;
+      if (winnerBreakdown) {
+        const idx = [...winnerBreakdown].reverse().findIndex(
+          e => e.description === 'Wordle Challenge Winner' && e.type === 'challenge'
+        );
+        if (idx !== -1) {
+          const realIdx = winnerBreakdown.length - 1 - idx;
+          winnerBreakdown.splice(realIdx, 1);
+          currentScores[challenge.winnerId] = {
+            ...currentScores[challenge.winnerId],
+            totalPoints: winnerBreakdown.reduce((s, e) => s + e.points, 0)
+          };
+          setPlayerScores({ ...currentScores });
+          const leagueStore = getLeagueStorage();
+          await leagueStore.set('playerScores', JSON.stringify(currentScores));
+        }
+      }
+    }
+
+    // Reset challenge to active so admin can re-finalize
+    const updatedChallenges = challenges.map(c =>
+      c.id === challengeId ? { ...c, status: 'active', winnerId: null, winnerData: null } : c
+    );
+    setChallenges(updatedChallenges);
+    const leagueStore = getLeagueStorage();
+    await leagueStore.set('challenges', JSON.stringify(updatedChallenges));
+
+    // Reset schedule entry to released
+    const updatedSchedule = wordleSchedule.map(e =>
+      e.challengeId === challengeId ? { ...e, status: 'released' } : e
+    );
+    setWordleSchedule(updatedSchedule);
+    await storage.set('wordleSchedule', JSON.stringify(updatedSchedule));
+
+    await appendWordleAuditLog({
+      action: 'rollback',
+      challengeId,
+      note: `Rolled back by admin. Winner score reversed. Challenge reset to active.`
+    });
   };
 
   // League Selector Modal (shown when user is in multiple leagues)
@@ -3159,6 +3318,12 @@ export default function SurvivorFantasyApp() {
             setPasswordStatus={setPasswordStatus}
             loadingPasswordStatus={loadingPasswordStatus}
             setLoadingPasswordStatus={setLoadingPasswordStatus}
+            wordleSchedule={wordleSchedule}
+            setWordleSchedule={setWordleSchedule}
+            wordleAuditLog={wordleAuditLog}
+            rollbackWordleChallenge={rollbackWordleChallenge}
+            autoCloseWordle={autoCloseWordle}
+            appendWordleAuditLog={appendWordleAuditLog}
           />
         )}
 
@@ -3873,7 +4038,7 @@ export default function SurvivorFantasyApp() {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, playerScores, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus }) {
+function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, playerScores, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus, wordleSchedule, setWordleSchedule, wordleAuditLog, rollbackWordleChallenge, autoCloseWordle, appendWordleAuditLog }) {
   const [adminView, setAdminView] = useState('main');
   const [releasingScores, setReleasingScores] = useState(false);
   const [grantTarget, setGrantTarget] = useState('');
@@ -7201,10 +7366,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     return (
       <div className="space-y-6">
         <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-cyan-600">
-          <h2 className="text-2xl font-bold text-cyan-400 mb-6 flex items-center gap-2">
-            <Zap className="w-6 h-6" />
-            Wordle Challenge Management
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-cyan-400 flex items-center gap-2">
+              <Zap className="w-6 h-6" />
+              Wordle Challenge Management
+            </h2>
+            <button
+              onClick={() => setAdminView('wordle-schedule')}
+              className="flex items-center gap-1 text-purple-400 hover:text-purple-300 text-sm font-medium transition"
+            >
+              <CalendarDays className="w-4 h-4" />
+              Manage Word Schedule →
+            </button>
+          </div>
 
           {/* Current Status */}
           <div className="mb-6 p-4 bg-cyan-900/30 rounded-lg border border-cyan-600">
@@ -7313,6 +7487,284 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     );
   }
 
+
+  if (adminView === 'wordle-schedule') {
+    // Local state for inline editing and form
+    const [editingScheduleId, setEditingScheduleId] = React.useState(null);
+    const [editingWord, setEditingWord] = React.useState('');
+    const [newWeekForm, setNewWeekForm] = React.useState({ word: '', releaseDate: '', closeDate: '' });
+    const [auditExpanded, setAuditExpanded] = React.useState(false);
+
+    const statusBadge = (status) => {
+      if (status === 'pending') return <span className="px-2 py-0.5 rounded text-xs font-bold bg-gray-700 text-gray-300">PENDING</span>;
+      if (status === 'released') return <span className="px-2 py-0.5 rounded text-xs font-bold bg-blue-700 text-blue-200">ACTIVE</span>;
+      if (status === 'completed') return <span className="px-2 py-0.5 rounded text-xs font-bold bg-green-700 text-green-200">DONE</span>;
+      return <span className="px-2 py-0.5 rounded text-xs font-bold bg-gray-600 text-gray-400">{status}</span>;
+    };
+
+    const saveEditWord = async (entry) => {
+      const word = editingWord.trim().toUpperCase();
+      if (word.length !== 5 || !/^[A-Z]+$/.test(word)) {
+        alert('Word must be exactly 5 uppercase letters');
+        return;
+      }
+      const updated = wordleSchedule.map(e => e.id === entry.id ? { ...e, word } : e);
+      setWordleSchedule(updated);
+      await storage.set('wordleSchedule', JSON.stringify(updated));
+      setEditingScheduleId(null);
+    };
+
+    const deleteEntry = async (entry) => {
+      if (!window.confirm(`Delete "${entry.word}" (${entry.releaseDate})? This cannot be undone.`)) return;
+      const updated = wordleSchedule.filter(e => e.id !== entry.id);
+      setWordleSchedule(updated);
+      await storage.set('wordleSchedule', JSON.stringify(updated));
+    };
+
+    const addWeek = async () => {
+      const word = newWeekForm.word.trim().toUpperCase();
+      if (word.length !== 5 || !/^[A-Z]+$/.test(word)) {
+        alert('Word must be exactly 5 uppercase letters');
+        return;
+      }
+      if (!newWeekForm.releaseDate || !newWeekForm.closeDate) {
+        alert('Please enter both release and close dates');
+        return;
+      }
+      const newEntry = {
+        id: Date.now(),
+        word,
+        releaseDate: newWeekForm.releaseDate,
+        closeDate: newWeekForm.closeDate,
+        status: 'pending',
+        challengeId: null
+      };
+      const updated = [...wordleSchedule, newEntry].sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
+      setWordleSchedule(updated);
+      await storage.set('wordleSchedule', JSON.stringify(updated));
+      setNewWeekForm({ word: '', releaseDate: '', closeDate: '' });
+    };
+
+    const manualEndChallenge = async (entry) => {
+      if (!window.confirm(`End the active challenge for "${entry.word}" now?`)) return;
+      await autoCloseWordle(entry.challengeId, entry.id);
+      alert('Challenge ended and winner awarded!');
+    };
+
+    const doRollback = async (entry) => {
+      if (!window.confirm(`Rollback "${entry.word}"? This will reverse the winner's +3 pts and reset the challenge to active.`)) return;
+      await rollbackWordleChallenge(entry.challengeId);
+      alert('Rollback complete. Challenge is now active again.');
+    };
+
+    const sortedLog = [...wordleAuditLog].reverse();
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
+          <h2 className="text-2xl font-bold text-purple-400 mb-6 flex items-center gap-2">
+            <CalendarDays className="w-6 h-6" />
+            Wordle Schedule
+          </h2>
+
+          {/* Section 1: Master Schedule Table */}
+          <div className="mb-8">
+            <h3 className="text-purple-300 font-semibold mb-3">Master Word Schedule</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-purple-700 text-purple-400">
+                    <th className="text-left py-2 pr-3">Wk</th>
+                    <th className="text-left py-2 pr-3">Word</th>
+                    <th className="text-left py-2 pr-3">Release</th>
+                    <th className="text-left py-2 pr-3">Close</th>
+                    <th className="text-left py-2 pr-3">Status</th>
+                    <th className="text-left py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {wordleSchedule.map((entry, idx) => (
+                    <tr key={entry.id} className="border-b border-purple-900/50 hover:bg-purple-900/10">
+                      <td className="py-2 pr-3 text-gray-400">{idx + 1}</td>
+                      <td className="py-2 pr-3">
+                        {editingScheduleId === entry.id ? (
+                          <div className="flex gap-1">
+                            <input
+                              type="text"
+                              value={editingWord}
+                              maxLength={5}
+                              onChange={e => setEditingWord(e.target.value.toUpperCase())}
+                              className="w-20 px-2 py-0.5 rounded bg-black/60 text-white border border-purple-500 font-mono text-sm uppercase"
+                              autoFocus
+                            />
+                            <button onClick={() => saveEditWord(entry)} className="px-2 py-0.5 bg-green-700 text-white rounded text-xs hover:bg-green-600">✓</button>
+                            <button onClick={() => setEditingScheduleId(null)} className="px-2 py-0.5 bg-gray-700 text-white rounded text-xs hover:bg-gray-600">✕</button>
+                          </div>
+                        ) : (
+                          <span className="font-mono tracking-widest text-white">
+                            {entry.status === 'pending' ? '•••••' : entry.word}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-gray-300 text-xs">{entry.releaseDate}</td>
+                      <td className="py-2 pr-3 text-gray-300 text-xs">{entry.closeDate}</td>
+                      <td className="py-2 pr-3">{statusBadge(entry.status)}</td>
+                      <td className="py-2">
+                        <div className="flex gap-1 flex-wrap">
+                          {entry.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => { setEditingScheduleId(entry.id); setEditingWord(entry.word); }}
+                                className="px-2 py-0.5 bg-purple-700 text-white rounded text-xs hover:bg-purple-600"
+                                title="Edit word"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => deleteEntry(entry)}
+                                className="px-2 py-0.5 bg-red-800 text-white rounded text-xs hover:bg-red-700"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </>
+                          )}
+                          {entry.status === 'released' && (
+                            <button
+                              onClick={() => manualEndChallenge(entry)}
+                              className="px-2 py-0.5 bg-red-700 text-white rounded text-xs hover:bg-red-600"
+                            >
+                              End Now
+                            </button>
+                          )}
+                          {entry.status === 'completed' && (
+                            <button
+                              onClick={() => doRollback(entry)}
+                              className="px-2 py-0.5 bg-red-900 text-red-200 rounded text-xs hover:bg-red-800 border border-red-700"
+                            >
+                              Rollback
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {wordleSchedule.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-4 text-center text-gray-500">No scheduled words yet</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Section 2: Add New Week */}
+          <div className="mb-8 p-4 bg-purple-900/20 rounded-lg border border-purple-700">
+            <h3 className="text-purple-300 font-semibold mb-3">Add New Week</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="text-purple-400 text-xs block mb-1">Word (5 letters)</label>
+                <input
+                  type="text"
+                  value={newWeekForm.word}
+                  maxLength={5}
+                  onChange={e => setNewWeekForm(f => ({ ...f, word: e.target.value.toUpperCase() }))}
+                  placeholder="TRIBE"
+                  className="w-full px-3 py-2 rounded bg-black/50 text-white border border-purple-600 font-mono uppercase text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-purple-400 text-xs block mb-1">Release Date</label>
+                <input
+                  type="date"
+                  value={newWeekForm.releaseDate}
+                  onChange={e => setNewWeekForm(f => ({ ...f, releaseDate: e.target.value }))}
+                  className="w-full px-3 py-2 rounded bg-black/50 text-white border border-purple-600 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-purple-400 text-xs block mb-1">Close Date</label>
+                <input
+                  type="date"
+                  value={newWeekForm.closeDate}
+                  onChange={e => setNewWeekForm(f => ({ ...f, closeDate: e.target.value }))}
+                  className="w-full px-3 py-2 rounded bg-black/50 text-white border border-purple-600 text-sm"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  onClick={addWeek}
+                  className="w-full px-4 py-2 bg-purple-600 text-white rounded font-semibold hover:bg-purple-500 transition text-sm"
+                >
+                  <Plus className="w-4 h-4 inline mr-1" />
+                  Add Week
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Audit Log */}
+          <div>
+            <button
+              onClick={() => setAuditExpanded(a => !a)}
+              className="flex items-center gap-2 text-purple-300 hover:text-purple-200 font-semibold text-sm mb-3 transition"
+            >
+              {auditExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              Audit Log ({wordleAuditLog.length} entries)
+            </button>
+            {auditExpanded && (
+              <div className="bg-black/40 rounded-lg border border-purple-800 overflow-x-auto max-h-80 overflow-y-auto">
+                {sortedLog.length === 0 ? (
+                  <p className="p-4 text-gray-500 text-sm">No audit entries yet</p>
+                ) : (
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-black/80">
+                      <tr className="border-b border-purple-800 text-purple-400">
+                        <th className="text-left p-2">Timestamp</th>
+                        <th className="text-left p-2">Action</th>
+                        <th className="text-left p-2">Word</th>
+                        <th className="text-left p-2">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedLog.map(entry => (
+                        <tr key={entry.id} className="border-b border-purple-900/40 hover:bg-purple-900/10">
+                          <td className="p-2 text-gray-400 whitespace-nowrap">
+                            {new Date(entry.timestamp).toLocaleString()}
+                          </td>
+                          <td className="p-2">
+                            <span className={`font-mono font-bold ${
+                              entry.action === 'auto-released' ? 'text-blue-400' :
+                              entry.action === 'auto-closed' ? 'text-green-400' :
+                              entry.action === 'manual-ended' ? 'text-yellow-400' :
+                              entry.action === 'rollback' ? 'text-red-400' :
+                              'text-gray-400'
+                            }`}>
+                              {entry.action}
+                            </span>
+                          </td>
+                          <td className="p-2 font-mono text-white">{entry.word || '—'}</td>
+                          <td className="p-2 text-gray-300">{entry.note}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <button
+          onClick={() => setAdminView('main')}
+          className="w-full py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+        >
+          Back to Controls
+        </button>
+      </div>
+    );
+  }
 
   if (adminView === 'submission-audit-log') {
     const loadAuditLog = async () => {
@@ -8088,6 +8540,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               <div className="flex items-center gap-2">
                 <Zap className="w-5 h-5" />
                 <span>Wordle Challenge</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('wordle-schedule')}
+            className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-4 px-6 rounded-lg font-semibold hover:from-purple-500 hover:to-indigo-500 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-5 h-5" />
+                <span>Wordle Schedule</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
