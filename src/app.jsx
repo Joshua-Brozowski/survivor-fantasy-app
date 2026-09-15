@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle, CalendarDays } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi, refreshAccessToken, clearAccessToken, setAccessToken, authFetch } from './db.js';
@@ -4402,7 +4402,7 @@ function GoogleEmailMapping({ storage, players }) {
 
   React.useEffect(() => {
     storage.get('google_email_mapping').then(data => {
-      if (data) setMapping(JSON.parse(data));
+      if (data?.value) setMapping(JSON.parse(data.value));
     });
   }, []);
 
@@ -4471,7 +4471,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [correctAnswers, setCorrectAnswers] = useState({});
   const [episodeScoring, setEpisodeScoring] = useState({
     episodeNumber: episodes.length + 1,
-    pickScoresData: {}
+    contestantScores: {} // { [contestantId]: { survived, immunity, reward, ... } }
   });
   const [qotwManageQ, setQotwManageQ] = useState(null);
   const [editingContestant, setEditingContestant] = useState(null);
@@ -4986,58 +4986,64 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     alert(`Game phase set to: ${newPhase.replace('-', ' ')}`);
   };
 
-  const submitEpisodeScoring = async () => {
-    // Count how many picks have scores
-    const scoredPicks = Object.values(episodeScoring.pickScoresData).filter(
-      data => data.survived || data.foundIdol || data.journey || data.immunity ||
-              data.reward || data.votesReceived || data.playedIdol || data.incorrectVote ||
-              data.votedOutWithIdol || data.madeMerge ||
-              data.final5 || data.final3 || data.soleSurvivor
-    ).length;
+  // Calculate points for a single pick given contestant score data
+  const calcPickPoints = (scoreData, isInstinct) => {
+    let pts = 0;
+    if (isInstinct && scoreData.survived) pts += 1;
+    if (isInstinct && scoreData.madeMerge) pts += 5;
+    if (scoreData.immunity) pts += 2;
+    if (scoreData.reward) pts += 1;
+    if (scoreData.journey) pts += 1;
+    if (scoreData.foundIdol) pts += 2;
+    if (scoreData.playedIdol) pts += 1;
+    if (scoreData.votesReceived) pts += Number(scoreData.votesReceived) || 0;
+    if (scoreData.incorrectVote) pts -= 1;
+    if (scoreData.votedOutWithIdol) pts -= 2;
+    if (scoreData.final5) pts += 10;
+    if (scoreData.final3) pts += 15;
+    if (scoreData.soleSurvivor) pts += 20;
+    return pts;
+  };
 
-    if (!window.confirm(`Submit Episode ${episodeScoring.episodeNumber} scores?\n\n${scoredPicks} pick(s) will receive points.\n\nThis action will notify all players.`)) {
+  const submitEpisodeScoring = async () => {
+    // Fan out contestant scores to affected picks for preview/confirmation
+    const affectedPicks = [];
+    Object.entries(episodeScoring.contestantScores).forEach(([cid, scoreData]) => {
+      const contestantPicks = picks.filter(p => p.contestantId === parseInt(cid));
+      contestantPicks.forEach(pick => {
+        const pts = calcPickPoints(scoreData, pick.type === 'instinct');
+        if (pts !== 0) affectedPicks.push({ pick, pts, scoreData });
+      });
+    });
+
+    if (!window.confirm(`Submit Episode ${episodeScoring.episodeNumber} scores?\n\n${affectedPicks.length} pick(s) will receive points.\n\nThis action will notify all players.`)) {
       return;
     }
 
-    // Create backup before episode scoring
     await backup.createSnapshot('before-episode-scoring');
 
     const newScores = [];
+    let idOffset = 0;
+    Object.entries(episodeScoring.contestantScores).forEach(([cid, scoreData]) => {
+      const contestant = contestants.find(c => c.id === parseInt(cid));
+      const contestantPicks = picks.filter(p => p.contestantId === parseInt(cid));
 
-    Object.entries(episodeScoring.pickScoresData).forEach(([pickId, scoreData]) => {
-      let points = 0;
-      if (scoreData.survived) points += 1;
-      if (scoreData.madeMerge) points += 5;
-      if (scoreData.foundIdol) points += 2;
-      if (scoreData.journey) points += 1;
-      if (scoreData.immunity) points += 2;
-      if (scoreData.reward) points += 1;
-      if (scoreData.votesReceived) points += scoreData.votesReceived;
-      if (scoreData.playedIdol) points += 1;
-      if (scoreData.incorrectVote) points -= 1;
-      if (scoreData.votedOutWithIdol) points -= 2;
-      // Finale bonuses
-      if (scoreData.final5) points += 10;
-      if (scoreData.final3) points += 15;
-      if (scoreData.soleSurvivor) points += 20;
-
-      if (points !== 0 || scoreData.survived) {
-        // Find the pick and contestant to include in description
-        const pick = picks.find(p => p.id === parseInt(pickId));
-        const contestant = pick ? contestants.find(c => c.id === pick.contestantId) : null;
-        const pickType = pick?.type === 'instinct' ? 'Instinct' : 'Final';
-        const contestantName = contestant?.name || 'Unknown';
-
-        newScores.push({
-          id: Date.now() + parseInt(pickId),
-          pickId: parseInt(pickId),
-          episode: episodeScoring.episodeNumber,
-          points,
-          description: `Ep ${episodeScoring.episodeNumber} - ${pickType} Pick (${contestantName})`,
-          date: new Date().toISOString(),
-          breakdown: scoreData
-        });
-      }
+      contestantPicks.forEach(pick => {
+        const isInstinct = pick.type === 'instinct';
+        const points = calcPickPoints(scoreData, isInstinct);
+        if (points !== 0) {
+          const pickType = isInstinct ? 'Instinct' : 'Final';
+          newScores.push({
+            id: Date.now() + (idOffset++),
+            pickId: pick.id,
+            episode: episodeScoring.episodeNumber,
+            points,
+            description: `Ep ${episodeScoring.episodeNumber} - ${pickType} Pick (${contestant?.name || 'Unknown'})`,
+            date: new Date().toISOString(),
+            breakdown: { ...scoreData, isInstinct }
+          });
+        }
+      });
     });
 
     const updated = [...pickScores, ...newScores];
@@ -5064,7 +5070,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     setAdminView('main');
     setEpisodeScoring({
       episodeNumber: updatedEpisodes.length + 1,
-      pickScoresData: {}
+      contestantScores: {}
     });
   };
 
@@ -5670,17 +5676,74 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
   // Episode Scoring View
   if (adminView === 'episode-scoring') {
-    // Get all league players with picks
-    const playersWithPicks = leaguePlayers.filter(player => {
-      const hasInstinct = picks.some(p => p.playerId === player.id && p.type === 'instinct');
-      const hasFinal = picks.some(p => p.playerId === player.id && p.type === 'final');
-      return hasInstinct || hasFinal;
-    });
+    // Only show contestants that at least one player has picked
+    const scorableContestants = contestants.filter(c =>
+      !c.eliminated && picks.some(p => p.contestantId === c.id)
+    );
+
+    // Helper: who picked this contestant (and with what type)
+    const pickersOf = (contestantId) =>
+      leaguePlayers
+        .map(player => {
+          const ip = picks.find(p => p.playerId === player.id && p.contestantId === contestantId && p.type === 'instinct');
+          const fp = picks.find(p => p.playerId === player.id && p.contestantId === contestantId && p.type === 'final');
+          if (!ip && !fp) return null;
+          const labels = [];
+          if (ip) labels.push(`${player.name} (instinct)`);
+          if (fp) labels.push(`${player.name} (final)`);
+          return labels.join(', ');
+        })
+        .filter(Boolean);
+
+    // Live score preview
+    const scorePreview = leaguePlayers.map(player => {
+      let totalPts = 0;
+      const lines = [];
+      Object.entries(episodeScoring.contestantScores).forEach(([cid, scoreData]) => {
+        const playerPicks = picks.filter(p => p.playerId === player.id && p.contestantId === parseInt(cid));
+        playerPicks.forEach(pick => {
+          const pts = calcPickPoints(scoreData, pick.type === 'instinct');
+          if (pts !== 0) {
+            const c = contestants.find(x => x.id === parseInt(cid));
+            lines.push(`${c?.name || '?'} (${pick.type}): ${pts > 0 ? '+' : ''}${pts}`);
+            totalPts += pts;
+          }
+        });
+      });
+      return { player, totalPts, lines };
+    }).filter(p => p.totalPts !== 0 || p.lines.length > 0);
+
+    // Helper to update a single contestant's score field
+    const setCS = (contestantId, field, value) => {
+      const current = episodeScoring.contestantScores[contestantId] || {};
+      setEpisodeScoring({
+        ...episodeScoring,
+        contestantScores: {
+          ...episodeScoring.contestantScores,
+          [contestantId]: { ...current, [field]: value }
+        }
+      });
+    };
+    const getCS = (contestantId, field, def = false) =>
+      episodeScoring.contestantScores[contestantId]?.[field] ?? def;
+
+    const SCORE_EVENTS = [
+      { key: 'survived',        label: 'Survived (+1)',         instinctOnly: true },
+      { key: 'madeMerge',       label: 'Made Merge (+5)',        instinctOnly: true },
+      { key: 'immunity',        label: 'Won Immunity (+2)',      instinctOnly: false },
+      { key: 'reward',          label: 'Won Reward (+1)',        instinctOnly: false },
+      { key: 'journey',         label: 'Went on Journey (+1)',   instinctOnly: false },
+      { key: 'foundIdol',       label: 'Found Idol/Adv (+2)',    instinctOnly: false },
+      { key: 'playedIdol',      label: 'Played Idol/Adv (+1)',   instinctOnly: false },
+      { key: 'incorrectVote',   label: 'Incorrect Vote (-1)',    instinctOnly: false },
+      { key: 'votedOutWithIdol',label: 'Voted Out w/ Idol (-2)', instinctOnly: false },
+    ];
 
     return (
       <div className="space-y-6">
         <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-blue-600">
-          <h2 className="text-2xl font-bold text-blue-400 mb-6">Episode Scoring</h2>
+          <h2 className="text-2xl font-bold text-blue-400 mb-2">Episode Scoring</h2>
+          <p className="text-blue-300/70 text-sm mb-6">Score by contestant — affects all players who picked them automatically.</p>
 
           <div className="mb-6">
             <label className="block text-blue-300 mb-2">Episode Number</label>
@@ -5692,271 +5755,120 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             />
           </div>
 
+          {scorableContestants.length === 0 ? (
+            <p className="text-gray-400 italic">No active contestants with picks found.</p>
+          ) : (
           <div className="space-y-4">
-            <h3 className="text-blue-300 font-semibold">Score Each Player's Picks</h3>
-
-            {playersWithPicks.map(player => {
-              const instinctPick = picks.find(p => p.playerId === player.id && p.type === 'instinct');
-              const finalPick = picks.find(p => p.playerId === player.id && p.type === 'final');
-
+            {scorableContestants.map(contestant => {
+              const pickers = pickersOf(contestant.id);
+              if (pickers.length === 0) return null;
               return (
-                <div key={player.id} className="bg-blue-900/20 border border-blue-600 p-4 rounded-lg">
-                  <h4 className="text-white font-bold mb-3">{player.name}</h4>
+                <div key={contestant.id} className="bg-blue-900/20 border border-blue-600 p-4 rounded-lg">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h4 className="text-white font-bold">{contestant.name}</h4>
+                      <p className="text-blue-300/70 text-xs mt-0.5">Picked by: {pickers.join(' · ')}</p>
+                    </div>
+                  </div>
 
-                  {instinctPick && (() => {
-                    const instinctContestant = contestants.find(c => c.id === instinctPick.contestantId);
-                    const isEliminated = instinctContestant?.eliminated;
-                    return (
-                      <div className={`mb-4 p-3 rounded-lg border ${isEliminated ? 'bg-gray-900/40 border-gray-600 opacity-60' : 'bg-amber-900/20 border-amber-600'}`}>
-                        <p className={`font-semibold mb-2 flex items-center gap-2 ${isEliminated ? 'text-gray-400' : 'text-amber-300'}`}>
-                          Instinct Pick: {instinctContestant?.name}
-                          {isEliminated && <span className="text-red-400 text-xs bg-red-900/50 px-2 py-0.5 rounded">ELIMINATED</span>}
-                        </p>
-                        {isEliminated ? (
-                          <p className="text-gray-400 text-sm italic">This contestant has been eliminated - no more points can be scored.</p>
-                        ) : (
-                          <>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                              {[
-                                { key: 'survived', label: 'Survived (+1)' },
-                                { key: 'immunity', label: 'Won Immunity (+2)' },
-                                { key: 'reward', label: 'Won Reward (+1)' },
-                                { key: 'journey', label: 'Went on Journey (+1)' },
-                                { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
-                                { key: 'playedIdol', label: 'Played Idol (+1)' },
-                                { key: 'madeMerge', label: 'Made Merge (+5)' },
-                                { key: 'incorrectVote', label: 'Incorrect Vote (-1)' },
-                                { key: 'votedOutWithIdol', label: 'Voted Out w/ Idol (-2)' }
-                              ].map(({ key, label }) => (
-                                <label key={key} className="flex items-center gap-2 text-white text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={episodeScoring.pickScoresData[instinctPick.id]?.[key] || false}
-                                    onChange={(e) => {
-                                      const current = episodeScoring.pickScoresData[instinctPick.id] || {};
-                                      setEpisodeScoring({
-                                        ...episodeScoring,
-                                        pickScoresData: {
-                                          ...episodeScoring.pickScoresData,
-                                          [instinctPick.id]: { ...current, [key]: e.target.checked }
-                                        }
-                                      });
-                                    }}
-                                    className="w-4 h-4"
-                                  />
-                                  {label}
-                                </label>
-                              ))}
-                            </div>
-                            {/* Votes Received number input */}
-                            <div className="flex items-center gap-3 mb-3">
-                              <label className="text-white text-sm whitespace-nowrap">Votes Against (survived):</label>
-                              <input
-                                type="number"
-                                min="0"
-                                max="20"
-                                value={episodeScoring.pickScoresData[instinctPick.id]?.votesReceived || ''}
-                                onChange={(e) => {
-                                  const current = episodeScoring.pickScoresData[instinctPick.id] || {};
-                                  setEpisodeScoring({
-                                    ...episodeScoring,
-                                    pickScoresData: {
-                                      ...episodeScoring.pickScoresData,
-                                      [instinctPick.id]: { ...current, votesReceived: parseInt(e.target.value) || 0 }
-                                    }
-                                  });
-                                }}
-                                className="w-16 px-2 py-1 rounded bg-black/50 text-white border border-gray-600 focus:outline-none focus:border-blue-400"
-                              />
-                              <span className="text-green-400 text-xs">+1 per vote</span>
-                            </div>
-                            {/* Final Placement Bonuses - Gold styling, mutually exclusive (radio buttons) */}
-                            <div className="mt-2 pt-2 border-t border-yellow-600/50">
-                              <p className="text-yellow-400 text-xs font-semibold mb-2">⭐ FINALE BONUS - select ONE (use only at end of season!):</p>
-                              <div className="grid grid-cols-4 gap-2">
-                                {/* None option to clear selection */}
-                                <label className="flex items-center gap-2 text-gray-400 text-sm bg-gray-800/50 px-2 py-1 rounded border border-gray-600/50">
-                                  <input
-                                    type="radio"
-                                    name={`finale-instinct-${instinctPick.id}`}
-                                    checked={!episodeScoring.pickScoresData[instinctPick.id]?.final5 && !episodeScoring.pickScoresData[instinctPick.id]?.final3 && !episodeScoring.pickScoresData[instinctPick.id]?.soleSurvivor}
-                                    onChange={() => {
-                                      const current = episodeScoring.pickScoresData[instinctPick.id] || {};
-                                      setEpisodeScoring({
-                                        ...episodeScoring,
-                                        pickScoresData: {
-                                          ...episodeScoring.pickScoresData,
-                                          [instinctPick.id]: { ...current, final5: false, final3: false, soleSurvivor: false }
-                                        }
-                                      });
-                                    }}
-                                    className="w-4 h-4 accent-gray-500"
-                                  />
-                                  None
-                                </label>
-                                {[
-                                  { key: 'final5', label: 'Final 5 (+10)' },
-                                  { key: 'final3', label: 'Final 3 (+15)' },
-                                  { key: 'soleSurvivor', label: 'Sole Survivor (+20)' }
-                                ].map(({ key, label }) => (
-                                  <label key={key} className="flex items-center gap-2 text-yellow-300 text-sm bg-yellow-900/30 px-2 py-1 rounded border border-yellow-600/50">
-                                    <input
-                                      type="radio"
-                                      name={`finale-instinct-${instinctPick.id}`}
-                                      checked={episodeScoring.pickScoresData[instinctPick.id]?.[key] || false}
-                                      onChange={() => {
-                                        const current = episodeScoring.pickScoresData[instinctPick.id] || {};
-                                        setEpisodeScoring({
-                                          ...episodeScoring,
-                                          pickScoresData: {
-                                            ...episodeScoring.pickScoresData,
-                                            [instinctPick.id]: { ...current, final5: false, final3: false, soleSurvivor: false, [key]: true }
-                                          }
-                                        });
-                                      }}
-                                      className="w-4 h-4 accent-yellow-500"
-                                    />
-                                    {label}
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+                    {SCORE_EVENTS.map(({ key, label, instinctOnly }) => (
+                      <label key={key} className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={getCS(contestant.id, key)}
+                          onChange={e => setCS(contestant.id, key, e.target.checked)}
+                          className="w-4 h-4 flex-shrink-0"
+                        />
+                        <span className={instinctOnly ? 'text-amber-300' : 'text-white'}>
+                          {label}
+                          {instinctOnly && <span className="text-amber-500/70 text-xs ml-1">(instinct)</span>}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
 
-                  {finalPick && (() => {
-                    const finalContestant = contestants.find(c => c.id === finalPick.contestantId);
-                    const isEliminated = finalContestant?.eliminated;
-                    return (
-                      <div className={`p-3 rounded-lg border ${isEliminated ? 'bg-gray-900/40 border-gray-600 opacity-60' : 'bg-purple-900/20 border-purple-600'}`}>
-                        <p className={`font-semibold mb-2 flex items-center gap-2 ${isEliminated ? 'text-gray-400' : 'text-purple-300'}`}>
-                          Final Pick: {finalContestant?.name}
-                          {isEliminated && <span className="text-red-400 text-xs bg-red-900/50 px-2 py-0.5 rounded">ELIMINATED</span>}
-                        </p>
-                        {isEliminated ? (
-                          <p className="text-gray-400 text-sm italic">This contestant has been eliminated - no more points can be scored.</p>
-                        ) : (
-                          <>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                              {[
-                                { key: 'immunity', label: 'Won Immunity (+2)' },
-                                { key: 'reward', label: 'Won Reward (+1)' },
-                                { key: 'journey', label: 'Went on Journey (+1)' },
-                                { key: 'foundIdol', label: 'Found Idol/Adv (+2)' },
-                                { key: 'playedIdol', label: 'Played Idol (+1)' },
-                                { key: 'incorrectVote', label: 'Incorrect Vote (-1)' },
-                                { key: 'votedOutWithIdol', label: 'Voted Out w/ Idol (-2)' }
-                              ].map(({ key, label }) => (
-                                <label key={key} className="flex items-center gap-2 text-white text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={episodeScoring.pickScoresData[finalPick.id]?.[key] || false}
-                                    onChange={(e) => {
-                                      const current = episodeScoring.pickScoresData[finalPick.id] || {};
-                                      setEpisodeScoring({
-                                        ...episodeScoring,
-                                        pickScoresData: {
-                                          ...episodeScoring.pickScoresData,
-                                          [finalPick.id]: { ...current, [key]: e.target.checked }
-                                        }
-                                      });
-                                    }}
-                                    className="w-4 h-4"
-                                  />
-                                  {label}
-                                </label>
-                              ))}
-                            </div>
-                            {/* Votes Received number input */}
-                            <div className="flex items-center gap-3 mb-3">
-                              <label className="text-white text-sm whitespace-nowrap">Votes Against (survived):</label>
-                              <input
-                                type="number"
-                                min="0"
-                                max="20"
-                                value={episodeScoring.pickScoresData[finalPick.id]?.votesReceived || ''}
-                                onChange={(e) => {
-                                  const current = episodeScoring.pickScoresData[finalPick.id] || {};
-                                  setEpisodeScoring({
-                                    ...episodeScoring,
-                                    pickScoresData: {
-                                      ...episodeScoring.pickScoresData,
-                                      [finalPick.id]: { ...current, votesReceived: parseInt(e.target.value) || 0 }
-                                    }
-                                  });
-                                }}
-                                className="w-16 px-2 py-1 rounded bg-black/50 text-white border border-gray-600 focus:outline-none focus:border-blue-400"
-                              />
-                              <span className="text-green-400 text-xs">+1 per vote</span>
-                            </div>
-                            {/* Final Placement Bonuses - Gold styling, mutually exclusive (radio buttons) */}
-                            <div className="mt-2 pt-2 border-t border-yellow-600/50">
-                              <p className="text-yellow-400 text-xs font-semibold mb-2">⭐ FINALE BONUS - select ONE (use only at end of season!):</p>
-                              <div className="grid grid-cols-4 gap-2">
-                                {/* None option to clear selection */}
-                                <label className="flex items-center gap-2 text-gray-400 text-sm bg-gray-800/50 px-2 py-1 rounded border border-gray-600/50">
-                                  <input
-                                    type="radio"
-                                    name={`finale-final-${finalPick.id}`}
-                                    checked={!episodeScoring.pickScoresData[finalPick.id]?.final5 && !episodeScoring.pickScoresData[finalPick.id]?.final3 && !episodeScoring.pickScoresData[finalPick.id]?.soleSurvivor}
-                                    onChange={() => {
-                                      const current = episodeScoring.pickScoresData[finalPick.id] || {};
-                                      setEpisodeScoring({
-                                        ...episodeScoring,
-                                        pickScoresData: {
-                                          ...episodeScoring.pickScoresData,
-                                          [finalPick.id]: { ...current, final5: false, final3: false, soleSurvivor: false }
-                                        }
-                                      });
-                                    }}
-                                    className="w-4 h-4 accent-gray-500"
-                                  />
-                                  None
-                                </label>
-                                {[
-                                  { key: 'final5', label: 'Final 5 (+10)' },
-                                  { key: 'final3', label: 'Final 3 (+15)' },
-                                  { key: 'soleSurvivor', label: 'Sole Survivor (+20)' }
-                                ].map(({ key, label }) => (
-                                  <label key={key} className="flex items-center gap-2 text-yellow-300 text-sm bg-yellow-900/30 px-2 py-1 rounded border border-yellow-600/50">
-                                    <input
-                                      type="radio"
-                                      name={`finale-final-${finalPick.id}`}
-                                      checked={episodeScoring.pickScoresData[finalPick.id]?.[key] || false}
-                                      onChange={() => {
-                                        const current = episodeScoring.pickScoresData[finalPick.id] || {};
-                                        setEpisodeScoring({
-                                          ...episodeScoring,
-                                          pickScoresData: {
-                                            ...episodeScoring.pickScoresData,
-                                            [finalPick.id]: { ...current, final5: false, final3: false, soleSurvivor: false, [key]: true }
-                                          }
-                                        });
-                                      }}
-                                      className="w-4 h-4 accent-yellow-500"
-                                    />
-                                    {label}
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  <div className="flex items-center gap-3 mb-3">
+                    <label className="text-white text-sm whitespace-nowrap">Votes received (survived):</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="20"
+                      value={getCS(contestant.id, 'votesReceived', '')}
+                      onChange={e => setCS(contestant.id, 'votesReceived', parseInt(e.target.value) || 0)}
+                      className="w-16 px-2 py-1 rounded bg-black/50 text-white border border-gray-600 focus:outline-none focus:border-blue-400"
+                    />
+                    <span className="text-green-400 text-xs">+1 each</span>
+                  </div>
+
+                  <div className="pt-2 border-t border-yellow-600/30">
+                    <p className="text-yellow-400 text-xs font-semibold mb-2">FINALE BONUS — pick one (end of season only):</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { key: 'none',        label: 'None',            pts: 0 },
+                        { key: 'final5',      label: 'Final 5 (+10)',   pts: 10 },
+                        { key: 'final3',      label: 'Final 3 (+15)',   pts: 15 },
+                        { key: 'soleSurvivor',label: 'Sole Survivor (+20)', pts: 20 },
+                      ].map(({ key, label }) => {
+                        const isNone = key === 'none';
+                        const checked = isNone
+                          ? !getCS(contestant.id, 'final5') && !getCS(contestant.id, 'final3') && !getCS(contestant.id, 'soleSurvivor')
+                          : getCS(contestant.id, key);
+                        return (
+                          <label key={key} className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer border ${checked ? 'border-yellow-500 bg-yellow-900/40 text-yellow-300' : 'border-gray-600 text-gray-400'}`}>
+                            <input
+                              type="radio"
+                              name={`finale-${contestant.id}`}
+                              checked={checked}
+                              onChange={() => setCS(contestant.id, '__finale', key)}
+                              className="hidden"
+                              onClick={() => {
+                                const current = episodeScoring.contestantScores[contestant.id] || {};
+                                setEpisodeScoring({
+                                  ...episodeScoring,
+                                  contestantScores: {
+                                    ...episodeScoring.contestantScores,
+                                    [contestant.id]: { ...current, final5: key === 'final5', final3: key === 'final3', soleSurvivor: key === 'soleSurvivor' }
+                                  }
+                                });
+                              }}
+                            />
+                            {label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               );
             })}
           </div>
+          )}
 
-          <div className="flex gap-4 mt-6">
+          {/* Score Preview */}
+          {scorePreview.length > 0 && (
+            <div className="mt-6 p-4 bg-green-900/20 border border-green-600/50 rounded-lg">
+              <h3 className="text-green-400 font-semibold mb-3">Score Preview</h3>
+              <div className="space-y-2">
+                {scorePreview.map(({ player, totalPts, lines }) => (
+                  <div key={player.id} className="flex items-start justify-between text-sm">
+                    <div>
+                      <span className="text-white font-medium">{player.name}</span>
+                      <span className="text-gray-400 text-xs ml-2">{lines.join(', ')}</span>
+                    </div>
+                    <span className={`font-bold ml-4 ${totalPts > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {totalPts > 0 ? '+' : ''}{totalPts} pts
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 flex gap-4">
             <button
               onClick={submitEpisodeScoring}
-              className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold hover:from-blue-500 hover:to-indigo-500 transition"
+              className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-500 transition"
             >
               Submit Episode Scores
             </button>
@@ -5975,7 +5887,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   // QOTW Management View
   if (adminView === 'qotw-management') {
     const gradedQuestionnaires = questionnaires.filter(q => q.scoresReleased && !q.qotwAwarded);
-
     return (
       <div className="space-y-6">
         <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
