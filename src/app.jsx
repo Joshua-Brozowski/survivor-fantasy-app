@@ -206,6 +206,12 @@ export default function SurvivorFantasyApp() {
   const [showNameHelp, setShowNameHelp] = useState(false);
   const [googleAuthError, setGoogleAuthError] = useState('');
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [googleLinkToken, setGoogleLinkToken] = useState('');
+  const [googleLinkEmail, setGoogleLinkEmail] = useState('');
+  const [googleLinkForm, setGoogleLinkForm] = useState({ name: '', password: '' });
+  const [googleLinkError, setGoogleLinkError] = useState('');
+  const [googleLinkLoading, setGoogleLinkLoading] = useState(false);
+  const [showGoogleLinkPassword, setShowGoogleLinkPassword] = useState(false);
 
   // Game state
   const [players, setPlayers] = useState([]);
@@ -423,11 +429,24 @@ export default function SurvivorFantasyApp() {
         google_denied: 'Google sign-in was cancelled.',
         token_failed: 'Google login failed. Please try again.',
         no_email: 'Could not get your email from Google. Please try again.',
-        email_not_linked: `Your Google account isn't linked to a player yet. Ask Joshua to add your email in Admin Panel → Player Management.`,
+        email_not_linked: `Your Google account isn't linked yet. Try signing in with Google again to set it up.`,
         player_not_found: 'Player account not found. Contact Joshua.',
         server_error: 'Something went wrong. Please try the regular login.',
       };
       setGoogleAuthError(messages[authError] || 'Google login failed. Try again.');
+      window.history.replaceState({}, '', '/');
+    }
+
+    const linkToken = params.get('google_link_token');
+    if (linkToken) {
+      try {
+        const payload = JSON.parse(atob(linkToken.split('.')[1]));
+        setGoogleLinkToken(linkToken);
+        setGoogleLinkEmail(payload.email || '');
+        setLoginView('google-link');
+      } catch (e) {
+        setGoogleAuthError('Invalid link token. Please try signing in with Google again.');
+      }
       window.history.replaceState({}, '', '/');
     }
   }, [players]);
@@ -884,6 +903,56 @@ export default function SurvivorFantasyApp() {
     } else {
       // Don't reveal whether username exists - same error message
       alert('Invalid username or password');
+    }
+  };
+
+  const handleGoogleLink = async () => {
+    if (!googleLinkForm.name.trim() || !googleLinkForm.password) {
+      setGoogleLinkError('Please enter your player name and password.');
+      return;
+    }
+    setGoogleLinkLoading(true);
+    setGoogleLinkError('');
+    try {
+      const res = await fetch('/api/auth-google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'link',
+          linkToken: googleLinkToken,
+          name: googleLinkForm.name.trim(),
+          password: googleLinkForm.password
+        }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setGoogleLinkError(data.error || 'Could not link account. Please try again.');
+        return;
+      }
+      setAccessToken(data.accessToken);
+      const player = players.find(p => p.id === data.player.id) || data.player;
+      const playerLeagueIds = leagueMemberships.filter(m => m.playerId === player.id).map(m => m.leagueId);
+      const playerLeagues = leagues.filter(l => playerLeagueIds.includes(l.id));
+      if (playerLeagues.length <= 1) {
+        const leagueId = playerLeagues[0]?.id || 1;
+        setCurrentUser(player);
+        if (leagueId !== currentLeagueId) await switchLeague(leagueId);
+        else localStorage.setItem('survivorFantasyLeagueId', leagueId.toString());
+        localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: player.id, name: player.name }));
+        setCurrentView('home');
+      } else {
+        setPendingLoginUser(player);
+        setShowLeagueSelector(true);
+      }
+      setGoogleLinkToken('');
+      setGoogleLinkEmail('');
+      setGoogleLinkForm({ name: '', password: '' });
+      setLoginView('login');
+    } catch (e) {
+      setGoogleLinkError('Network error. Please try again.');
+    } finally {
+      setGoogleLinkLoading(false);
     }
   };
 
@@ -2268,6 +2337,85 @@ export default function SurvivorFantasyApp() {
                   </p>
                 </div>
               )}
+            </div>
+          ) : loginView === 'google-link' ? (
+            <div className="space-y-4">
+              <div className="text-center">
+                <h2 className="text-xl font-semibold text-amber-300 mb-1">Link Your Google Account</h2>
+                <p className="text-amber-200/70 text-sm">
+                  Signing in as <strong className="text-amber-300 break-all">{googleLinkEmail}</strong>
+                </p>
+                <p className="text-amber-200/50 text-xs mt-1">
+                  Prove it's you — one time only.
+                </p>
+              </div>
+
+              {googleLinkError && (
+                <div className="p-3 bg-red-900/40 border border-red-500 rounded text-red-300 text-sm">
+                  {googleLinkError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-amber-200 mb-2">Player Name</label>
+                <input
+                  type="text"
+                  value={googleLinkForm.name}
+                  onChange={(e) => setGoogleLinkForm({...googleLinkForm, name: e.target.value})}
+                  onKeyPress={(e) => e.key === 'Enter' && handleGoogleLink()}
+                  className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                  placeholder="Enter your player name"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-amber-200 mb-2">Password</label>
+                <div className="relative">
+                  <input
+                    type={showGoogleLinkPassword ? 'text' : 'password'}
+                    value={googleLinkForm.password}
+                    onChange={(e) => setGoogleLinkForm({...googleLinkForm, password: e.target.value})}
+                    onKeyPress={(e) => e.key === 'Enter' && handleGoogleLink()}
+                    className="w-full px-4 py-2 pr-10 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                    placeholder="Enter your password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowGoogleLinkPassword(!showGoogleLinkPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-amber-400 hover:text-amber-300 transition"
+                  >
+                    {showGoogleLinkPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={handleGoogleLink}
+                type="button"
+                disabled={googleLinkLoading}
+                className={`w-full py-3 rounded font-semibold transition ${
+                  googleLinkLoading
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-500 hover:to-indigo-500'
+                }`}
+              >
+                {googleLinkLoading ? 'Linking...' : 'Link Account & Sign In'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginView('login');
+                  setGoogleLinkToken('');
+                  setGoogleLinkEmail('');
+                  setGoogleLinkForm({ name: '', password: '' });
+                  setGoogleLinkError('');
+                }}
+                className="w-full text-amber-500/60 text-sm hover:text-amber-400 transition text-center py-1"
+              >
+                ← Cancel
+              </button>
             </div>
           ) : (
             <div className="space-y-4">
