@@ -203,6 +203,7 @@ export default function SurvivorFantasyApp() {
   const [recoveryStep, setRecoveryStep] = useState('name'); // 'name', 'answer', 'reset'
   const [recoveryPlayer, setRecoveryPlayer] = useState(null);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+  const [dataLoadError, setDataLoadError] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showNameHelp, setShowNameHelp] = useState(false);
   const [googleAuthError, setGoogleAuthError] = useState('');
@@ -836,7 +837,17 @@ export default function SurvivorFantasyApp() {
       setIsDataLoaded(true);
     } catch (error) {
       console.error('Error loading data:', error);
-      // First time setup - initialize with defaults
+
+      // If a user has logged in before, this is a real connection/DB error — don't wipe their data.
+      // Show an error screen with a retry button instead.
+      const hadPriorSession = !!localStorage.getItem('survivorFantasyUser');
+      if (hadPriorSession) {
+        setDataLoadError('Could not connect to the database. Check your internet connection and try again.');
+        setIsDataLoaded(true);
+        return;
+      }
+
+      // No prior session → treat as fresh install and initialize with defaults
       setPlayers(INITIAL_PLAYERS);
       setContestants(DEFAULT_CAST);
       setLeagues([{ id: 1, name: 'Main League', createdAt: new Date().toISOString(), createdBy: 1, isDefault: true }]);
@@ -2272,6 +2283,25 @@ export default function SurvivorFantasyApp() {
     );
   }
 
+  // Data load failure screen
+  if (dataLoadError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900 flex items-center justify-center p-4">
+        <div className="bg-black/60 backdrop-blur-sm p-8 rounded-lg shadow-2xl max-w-sm w-full border-2 border-red-500 text-center">
+          <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" aria-hidden="true" />
+          <h2 className="text-xl font-bold text-white mb-2">Connection Error</h2>
+          <p className="text-red-200/80 text-sm mb-6">{dataLoadError}</p>
+          <button
+            onClick={() => { setDataLoadError(null); setIsDataLoaded(false); loadGameData(); }}
+            className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded transition"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Login Screen
   if (!currentUser) {
     return (
@@ -2328,13 +2358,14 @@ export default function SurvivorFantasyApp() {
                 <div className="space-y-4">
                   <div>
                     <div className="flex items-center gap-2 mb-2">
-                      <label className="text-amber-200">Player Name</label>
+                      <label htmlFor="login-name" className="text-amber-200">Player Name</label>
                       <button
                         type="button"
                         onClick={() => setShowNameHelp(!showNameHelp)}
                         className="text-amber-400 hover:text-amber-300 transition"
+                        aria-label="Help with player name"
                       >
-                        <HelpCircle className="w-4 h-4" />
+                        <HelpCircle className="w-4 h-4" aria-hidden="true" />
                       </button>
                     </div>
                     {showNameHelp && (
@@ -2343,7 +2374,9 @@ export default function SurvivorFantasyApp() {
                       </div>
                     )}
                     <input
+                      id="login-name"
                       type="text"
+                      autoComplete="username"
                       value={loginForm.name}
                       onChange={(e) => setLoginForm({...loginForm, name: e.target.value})}
                       onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
@@ -2352,10 +2385,12 @@ export default function SurvivorFantasyApp() {
                     />
                   </div>
                   <div>
-                    <label className="block text-amber-200 mb-2">Password</label>
+                    <label htmlFor="login-password" className="block text-amber-200 mb-2">Password</label>
                     <div className="relative">
                       <input
+                        id="login-password"
                         type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
                         value={loginForm.password}
                         onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
                         onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
@@ -2366,8 +2401,9 @@ export default function SurvivorFantasyApp() {
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-amber-400 hover:text-amber-300 transition"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
                       >
-                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        {showPassword ? <EyeOff className="w-5 h-5" aria-hidden="true" /> : <Eye className="w-5 h-5" aria-hidden="true" />}
                       </button>
                     </div>
                   </div>
@@ -2695,10 +2731,16 @@ export default function SurvivorFantasyApp() {
                   <button
                     onClick={() => setShowNotifications(!showNotifications)}
                     className="p-1.5 sm:p-2 hover:bg-white/10 rounded-full transition relative"
+                    aria-label={`Notifications${unreadNotifications.length > 0 ? `, ${unreadNotifications.length} unread` : ''}`}
+                    aria-expanded={showNotifications}
+                    aria-haspopup="true"
                   >
-                    <Bell className="w-5 h-5 sm:w-6 sm:h-6 text-amber-300" />
+                    <Bell className="w-5 h-5 sm:w-6 sm:h-6 text-amber-300" aria-hidden="true" />
                     {unreadNotifications.length > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center text-[10px] sm:text-xs">
+                      <span
+                        className="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center text-[10px] sm:text-xs"
+                        aria-hidden="true"
+                      >
                         {unreadNotifications.length}
                       </span>
                     )}
@@ -2780,16 +2822,16 @@ export default function SurvivorFantasyApp() {
                 <button
                   onClick={() => setShowSettings(true)}
                   className="p-1.5 sm:p-2 hover:bg-white/10 rounded-full transition"
-                  title="Settings"
+                  aria-label="Open settings"
                 >
-                  <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+                  <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" aria-hidden="true" />
                 </button>
                 <button
                   onClick={handleLogout}
                   className="p-1.5 sm:p-2 hover:bg-white/10 rounded-full transition"
-                  title="Logout"
+                  aria-label="Log out"
                 >
-                  <LogOut className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+                  <LogOut className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -2835,18 +2877,24 @@ export default function SurvivorFantasyApp() {
             transition={{ duration: 0.18 }}
             className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none"
           >
-          <div className="bg-gradient-to-br from-gray-900 to-black border-2 border-amber-600 rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto pointer-events-auto">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-dialog-title"
+            className="bg-gradient-to-br from-gray-900 to-black border-2 border-amber-600 rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto pointer-events-auto"
+          >
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-amber-400 flex items-center gap-2">
-                  <Settings className="w-6 h-6" />
+                <h2 id="settings-dialog-title" className="text-2xl font-bold text-amber-400 flex items-center gap-2">
+                  <Settings className="w-6 h-6" aria-hidden="true" />
                   Account Settings
                 </h2>
                 <button
                   onClick={() => setShowSettings(false)}
                   className="p-2 hover:bg-white/10 rounded-full transition"
+                  aria-label="Close settings"
                 >
-                  <X className="w-5 h-5 text-amber-300" />
+                  <X className="w-5 h-5 text-amber-300" aria-hidden="true" />
                 </button>
               </div>
 
@@ -3048,24 +3096,26 @@ export default function SurvivorFantasyApp() {
               <button
                 key={id}
                 onClick={() => { setCurrentView(id); setShowNotifications(false); }}
+                aria-current={currentView === id ? 'page' : undefined}
                 className={`px-2 sm:px-3 py-2.5 sm:py-3 transition whitespace-nowrap flex items-center gap-1 sm:gap-1.5 ${
                   currentView === id ? activeClass : inactiveClass
                 }`}
               >
-                <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
                 <span className="picks-text text-xs sm:text-sm font-bold">{label}</span>
               </button>
             ))}
             {currentUser.isAdmin && (
               <button
                 onClick={() => { setCurrentView('admin'); setShowNotifications(false); }}
+                aria-current={currentView === 'admin' ? 'page' : undefined}
                 className={`px-2 sm:px-3 py-2.5 sm:py-3 transition whitespace-nowrap flex items-center gap-1 sm:gap-1.5 ${
                   currentView === 'admin'
                     ? 'text-yellow-400 border-b-2 border-yellow-400'
                     : 'text-yellow-300 hover:text-yellow-200'
                 }`}
               >
-                <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                <Crown className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
                 <span className="picks-text text-xs sm:text-sm font-bold">JEFF</span>
               </button>
             )}
@@ -3097,21 +3147,23 @@ export default function SurvivorFantasyApp() {
             <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
               <button
                 onClick={() => setPicksCastAccordionOpen(!picksCastAccordionOpen)}
+                aria-expanded={picksCastAccordionOpen}
+                aria-controls="picks-cast-accordion"
                 className="w-full p-6 flex items-center justify-between hover:bg-amber-900/20 transition"
               >
                 <h3 className="text-xl font-bold text-amber-400 flex items-center gap-2">
-                  <Users className="w-5 h-5" />
+                  <Users className="w-5 h-5" aria-hidden="true" />
                   Check Out This Season's Cast
                 </h3>
                 {picksCastAccordionOpen ? (
-                  <ChevronUp className="w-6 h-6 text-amber-400" />
+                  <ChevronUp className="w-6 h-6 text-amber-400" aria-hidden="true" />
                 ) : (
-                  <ChevronDown className="w-6 h-6 text-amber-400" />
+                  <ChevronDown className="w-6 h-6 text-amber-400" aria-hidden="true" />
                 )}
               </button>
 
               {picksCastAccordionOpen && (
-                <div className="px-6 pb-6">
+                <div id="picks-cast-accordion" className="px-6 pb-6">
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {contestants.map(contestant => {
                       const tribeColor = contestant.tribe === 'Purple' ? 'purple' : contestant.tribe === 'Yellow' ? 'yellow' : contestant.tribe === 'Teal' ? 'teal' : 'gray';
@@ -3910,16 +3962,18 @@ export default function SurvivorFantasyApp() {
             <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
               <button
                 onClick={() => setCastAccordionOpen(!castAccordionOpen)}
+                aria-expanded={castAccordionOpen}
+                aria-controls="home-cast-accordion"
                 className="w-full p-6 flex items-center justify-between hover:bg-amber-900/20 transition"
               >
                 <h3 className="text-xl font-bold text-amber-400 flex items-center gap-2">
-                  <Users className="w-5 h-5" />
+                  <Users className="w-5 h-5" aria-hidden="true" />
                   Check Out This Season's Cast
                 </h3>
                 {castAccordionOpen ? (
-                  <ChevronUp className="w-6 h-6 text-amber-400" />
+                  <ChevronUp className="w-6 h-6 text-amber-400" aria-hidden="true" />
                 ) : (
-                  <ChevronDown className="w-6 h-6 text-amber-400" />
+                  <ChevronDown className="w-6 h-6 text-amber-400" aria-hidden="true" />
                 )}
               </button>
 
@@ -3931,6 +3985,7 @@ export default function SurvivorFantasyApp() {
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   style={{ overflow: 'hidden' }}
+                  id="home-cast-accordion"
                 >
                 <div className="px-6 pb-6">
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -3973,16 +4028,18 @@ export default function SurvivorFantasyApp() {
             <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
               <button
                 onClick={() => setHowToPlayOpen(!howToPlayOpen)}
+                aria-expanded={howToPlayOpen}
+                aria-controls="how-to-play-accordion"
                 className="w-full p-6 flex items-center justify-between hover:bg-amber-900/20 transition"
               >
                 <h3 className="text-xl font-bold text-amber-400 flex items-center gap-2">
-                  <Star className="w-5 h-5" />
+                  <Star className="w-5 h-5" aria-hidden="true" />
                   How to Play
                 </h3>
                 {howToPlayOpen ? (
-                  <ChevronUp className="w-6 h-6 text-amber-400" />
+                  <ChevronUp className="w-6 h-6 text-amber-400" aria-hidden="true" />
                 ) : (
-                  <ChevronDown className="w-6 h-6 text-amber-400" />
+                  <ChevronDown className="w-6 h-6 text-amber-400" aria-hidden="true" />
                 )}
               </button>
               <AnimatePresence>
@@ -3993,6 +4050,7 @@ export default function SurvivorFantasyApp() {
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
                   style={{ overflow: 'hidden' }}
+                  id="how-to-play-accordion"
                 >
                 <div className="px-6 pb-6">
                   <div className="space-y-4 text-amber-200">
@@ -4162,8 +4220,13 @@ export default function SurvivorFantasyApp() {
                   transition={{ duration: 0.18 }}
                   className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none"
                 >
-                <div className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-lg border-2 border-yellow-500 max-w-md w-full max-h-[80vh] overflow-y-auto pointer-events-auto">
-                  <h3 className="text-xl font-bold text-yellow-400 mb-2">🔮 Steal an Advantage</h3>
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="steal-modal-title"
+                  className="bg-gradient-to-br from-gray-900 to-gray-800 p-6 rounded-lg border-2 border-yellow-500 max-w-md w-full max-h-[80vh] overflow-y-auto pointer-events-auto"
+                >
+                  <h3 id="steal-modal-title" className="text-xl font-bold text-yellow-400 mb-2">🔮 Steal an Advantage</h3>
                   <p className="text-yellow-200 text-sm mb-4">Select an advantage to steal from another player. This executes immediately and cannot be undone.</p>
 
                   {(() => {
@@ -4207,6 +4270,7 @@ export default function SurvivorFantasyApp() {
                   <div className="flex gap-3">
                     <button
                       onClick={() => setStealModal({ show: false, tokenId: null, selectedAdvId: null })}
+                      aria-label="Cancel steal"
                       className="flex-1 py-2 bg-gray-600 text-white rounded font-semibold hover:bg-gray-500 transition"
                     >
                       Cancel
