@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb';
-import { generateAccessToken, generateRefreshToken, setRefreshTokenCookie } from './lib/jwt.js';
+import bcrypt from 'bcryptjs';
+import { generateAccessToken, generateRefreshToken, setRefreshTokenCookie, generateGoogleLinkToken, verifyGoogleLinkToken } from './lib/jwt.js';
 
 const uri = process.env.MONGODB_URI;
 let cachedClient = null;
@@ -96,7 +97,9 @@ export default async function handler(req, res) {
       );
 
       if (!playerId) {
-        res.setHeader('Location', `${PRODUCTION_URL}?auth_error=email_not_linked&hint=${encodeURIComponent(email)}`);
+        // Email not yet mapped — send player to the self-link flow instead of an error
+        const linkToken = generateGoogleLinkToken(email);
+        res.setHeader('Location', `${PRODUCTION_URL}/?google_link_token=${encodeURIComponent(linkToken)}`);
         return res.status(302).end();
       }
 
@@ -125,6 +128,95 @@ export default async function handler(req, res) {
       console.error('Google OAuth error:', err);
       res.setHeader('Location', `${PRODUCTION_URL}?auth_error=server_error`);
       return res.status(302).end();
+    }
+  }
+
+  // POST: link a Google email to a player account (self-service)
+  if (req.method === 'POST') {
+    const { action: postAction, linkToken, name, password } = req.body || {};
+
+    if (postAction !== 'link') {
+      return res.status(400).json({ error: 'Invalid action' });
+    }
+
+    if (!linkToken || !name || !password) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Verify the signed link token
+    const decoded = verifyGoogleLinkToken(linkToken);
+    if (!decoded) {
+      return res.status(400).json({ error: 'Link token is invalid or expired. Please sign in with Google again.' });
+    }
+    const email = decoded.email;
+
+    try {
+      const { db } = await connectToDatabase();
+      const collection = db.collection('game_data');
+
+      // Find player by name (case-insensitive)
+      const playersDoc = await collection.findOne({ key: 'players' });
+      const players = playersDoc ? JSON.parse(playersDoc.value) : [];
+      const player = players.find(p => p.name.toLowerCase() === name.trim().toLowerCase());
+
+      if (!player) {
+        return res.status(401).json({ error: 'Player not found. Check your name and try again.' });
+      }
+
+      // Verify password
+      const passwordKey = `password_${player.id}`;
+      const passwordDoc = await collection.findOne({ key: passwordKey });
+
+      let passwordValid = false;
+      if (!passwordDoc) {
+        // No password stored — accept default password
+        passwordValid = password === 'password123';
+      } else {
+        const storedPassword = passwordDoc.value;
+        if (storedPassword.startsWith('$2')) {
+          passwordValid = await bcrypt.compare(password, storedPassword);
+        } else {
+          // Legacy plaintext
+          passwordValid = password === storedPassword;
+        }
+      }
+
+      if (!passwordValid) {
+        return res.status(401).json({ error: 'Incorrect password.' });
+      }
+
+      // Check the email isn't already linked to a different player
+      const mappingDoc = await collection.findOne({ key: 'google_email_mapping' });
+      const mapping = mappingDoc ? JSON.parse(mappingDoc.value) : {};
+      const takenByOther = Object.entries(mapping).find(
+        ([pid, em]) => em?.toLowerCase() === email && String(pid) !== String(player.id)
+      );
+      if (takenByOther) {
+        return res.status(409).json({ error: 'That Google account is already linked to another player.' });
+      }
+
+      // Save the mapping
+      mapping[player.id] = email;
+      await collection.updateOne(
+        { key: 'google_email_mapping' },
+        { $set: { key: 'google_email_mapping', value: JSON.stringify(mapping), updatedAt: new Date() } },
+        { upsert: true }
+      );
+
+      // Issue JWT tokens so the player is immediately logged in
+      const accessToken = generateAccessToken(player);
+      const refreshToken = generateRefreshToken(player, 0);
+      setRefreshTokenCookie(res, refreshToken);
+
+      return res.status(200).json({
+        success: true,
+        accessToken,
+        player: { id: player.id, name: player.name, isAdmin: player.isAdmin || false }
+      });
+
+    } catch (err) {
+      console.error('Google link error:', err);
+      return res.status(500).json({ error: 'Server error. Please try again.' });
     }
   }
 

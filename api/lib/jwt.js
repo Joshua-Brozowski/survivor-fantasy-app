@@ -102,3 +102,28 @@ export function clearRefreshTokenCookie(res) {
     'refreshToken=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'
   );
 }
+
+/**
+ * Generate a short-lived token for Google account self-linking
+ * Contains the verified Google email, signed so it can't be tampered with
+ */
+export function generateGoogleLinkToken(email) {
+  return jwt.sign(
+    { email, type: 'google-link' },
+    JWT_SECRET,
+    { expiresIn: '10m' }
+  );
+}
+
+/**
+ * Verify a Google link token — returns { email } or null
+ */
+export function verifyGoogleLinkToken(token) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.type !== 'google-link') return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
