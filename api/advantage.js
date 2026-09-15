@@ -160,6 +160,12 @@ export default async function handler(req, res) {
         }
 
         const advantage = advantages[advantageIndex];
+
+        if (!canModifyPlayer(user, advantage.playerId)) {
+          res.status(403).json({ error: 'Cannot queue an advantage that belongs to another player' });
+          return;
+        }
+
         if (advantage.used) {
           res.status(400).json({ error: 'Advantage already used' });
           return;
@@ -211,6 +217,12 @@ export default async function handler(req, res) {
         }
 
         const advantage = advantages[advantageIndex];
+
+        if (!canModifyPlayer(user, advantage.playerId)) {
+          res.status(403).json({ error: 'Cannot cancel an advantage that belongs to another player' });
+          return;
+        }
+
         if (advantage.used) {
           res.status(400).json({ error: 'Cannot cancel - advantage already used' });
           return;

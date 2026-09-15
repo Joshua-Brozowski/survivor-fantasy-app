@@ -130,7 +130,7 @@ function setCorsHeaders(req, res) {
 
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
 export default async function handler(req, res) {
@@ -431,7 +431,7 @@ export default async function handler(req, res) {
       }
 
       case 'clearRateLimit': {
-        // Clear rate limit for a player (use when locked out) - admin only
+        // Clear ALL rate limits for a player across all IPs - admin only
         const authUser = authenticateRequest(req);
         if (!authUser) {
           res.status(401).json({ error: 'Authentication required' });
@@ -442,10 +442,11 @@ export default async function handler(req, res) {
           return;
         }
 
-        const clientIP = getClientIP(req);
-        const key = `ratelimit_${clientIP}_${playerId}`;
-        await collection.deleteOne({ key });
-        res.status(200).json({ success: true, message: 'Rate limit cleared' });
+        // Delete all ratelimit entries for this player regardless of IP
+        const deleteResult = await collection.deleteMany({
+          key: { $regex: `^ratelimit_.*_${playerId}$` }
+        });
+        res.status(200).json({ success: true, message: `Rate limit cleared (${deleteResult.deletedCount} entries removed)` });
         break;
       }
 
@@ -461,14 +462,23 @@ export default async function handler(req, res) {
           return;
         }
 
-        const clientIP = getClientIP(req);
-        const rateLimitStatus = await isRateLimited(collection, clientIP, playerId);
+        // Return all rate limit entries for this player
+        const rateDocs = await collection.find({
+          key: { $regex: `^ratelimit_.*_${playerId}$` }
+        }).toArray();
+
+        const entries = rateDocs.map(d => ({
+          key: d.key,
+          attempts: d.value?.attempts,
+          lockedUntil: d.value?.lockedUntil,
+          lastAttempt: d.value?.lastAttempt
+        }));
+
+        const anyLocked = entries.some(e => e.lockedUntil && new Date(e.lockedUntil) > new Date());
         res.status(200).json({
           success: true,
-          limited: rateLimitStatus.limited,
-          remainingMinutes: rateLimitStatus.remainingMinutes,
-          attemptsLeft: rateLimitStatus.attemptsLeft,
-          ip: clientIP
+          limited: anyLocked,
+          entries,
         });
         break;
       }

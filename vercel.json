@@ -3,6 +3,22 @@
     "api/storage/[key].js": {
       "memory": 1024,
       "maxDuration": 10
+    },
+    "api/auth.js": {
+      "memory": 512,
+      "maxDuration": 10
+    },
+    "api/auth-google.js": {
+      "memory": 512,
+      "maxDuration": 10
+    },
+    "api/advantage.js": {
+      "memory": 512,
+      "maxDuration": 10
+    },
+    "api/backup.js": {
+      "memory": 1024,
+      "maxDuration": 30
     }
   }
 }

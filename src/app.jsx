@@ -212,6 +212,7 @@ export default function SurvivorFantasyApp() {
   const [googleLinkError, setGoogleLinkError] = useState('');
   const [googleLinkLoading, setGoogleLinkLoading] = useState(false);
   const [showGoogleLinkPassword, setShowGoogleLinkPassword] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [linkedGoogleEmail, setLinkedGoogleEmail] = useState(null); // null = not yet loaded
   const [linkingGoogle, setLinkingGoogle] = useState(false);
   const [googleLinkedSuccess, setGoogleLinkedSuccess] = useState(false);
@@ -881,6 +882,8 @@ export default function SurvivorFantasyApp() {
       return;
     }
 
+    setLoginLoading(true);
+    try {
     const player = players.find(p =>
       p.name.toLowerCase() === loginForm.name.toLowerCase()
     );
@@ -930,6 +933,11 @@ export default function SurvivorFantasyApp() {
     } else {
       // Don't reveal whether username exists - same error message
       alert('Invalid username or password');
+    }
+    } catch (err) {
+      alert('Login failed. Please try again.');
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -2356,14 +2364,14 @@ export default function SurvivorFantasyApp() {
                   <button
                     onClick={handleLogin}
                     type="button"
-                    disabled={!isDataLoaded}
+                    disabled={!isDataLoaded || loginLoading}
                     className={`w-full py-3 rounded font-semibold transition ${
-                      isDataLoaded
+                      isDataLoaded && !loginLoading
                         ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-500 hover:to-orange-500'
                         : 'bg-gray-600 text-gray-400 cursor-not-allowed'
                     }`}
                   >
-                    {isDataLoaded ? 'Enter the Game' : 'Loading...'}
+                    {!isDataLoaded ? 'Loading...' : loginLoading ? 'Signing in...' : 'Enter the Game'}
                   </button>
                   <div className="flex items-center justify-between">
                     <button
