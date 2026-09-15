@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Users, Trophy, Flame, Mail, User, LogOut, Settings, ChevronRight, ChevronLeft, Crown, Target, FileText, Zap, Gift, Bell, Check, X, Clock, Award, TrendingUp, Star, ChevronDown, ChevronUp, Home, AlertCircle, Edit3, Plus, Trash2, Upload, RefreshCw, Archive, Image, Eye, EyeOff, Key, Download, Database, RotateCcw, HelpCircle, CalendarDays } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi, refreshAccessToken, clearAccessToken, setAccessToken } from './db.js';
+import { storage, auth, backup, createLeagueStorage, LEAGUE_SPECIFIC_KEYS, advantageApi, refreshAccessToken, clearAccessToken, setAccessToken, authFetch } from './db.js';
 
 // Confetti celebration utility - respects reduced motion preference
 const fireConfetti = () => {
@@ -212,6 +212,9 @@ export default function SurvivorFantasyApp() {
   const [googleLinkError, setGoogleLinkError] = useState('');
   const [googleLinkLoading, setGoogleLinkLoading] = useState(false);
   const [showGoogleLinkPassword, setShowGoogleLinkPassword] = useState(false);
+  const [linkedGoogleEmail, setLinkedGoogleEmail] = useState(null); // null = not yet loaded
+  const [linkingGoogle, setLinkingGoogle] = useState(false);
+  const [googleLinkedSuccess, setGoogleLinkedSuccess] = useState(false);
 
   // Game state
   const [players, setPlayers] = useState([]);
@@ -422,6 +425,13 @@ export default function SurvivorFantasyApp() {
       }
     }
 
+    const googleLinked = params.get('google_linked');
+    if (googleLinked === 'success') {
+      setGoogleLinkedSuccess(true);
+      setTimeout(() => setGoogleLinkedSuccess(false), 6000);
+      window.history.replaceState({}, '', '/');
+    }
+
     const authError = params.get('auth_error');
     if (authError) {
       const messages = {
@@ -432,6 +442,8 @@ export default function SurvivorFantasyApp() {
         email_not_linked: `Your Google account isn't linked yet. Try signing in with Google again to set it up.`,
         player_not_found: 'Player account not found. Contact Joshua.',
         server_error: 'Something went wrong. Please try the regular login.',
+        link_token_expired: 'The linking session expired. Please try again from Settings.',
+        email_taken: 'That Google account is already linked to another player.',
       };
       setGoogleAuthError(messages[authError] || 'Google login failed. Try again.');
       window.history.replaceState({}, '', '/');
@@ -524,6 +536,21 @@ export default function SurvivorFantasyApp() {
     };
     checkSecurityQuestion();
   }, [currentUser]);
+
+  // Load the current user's linked Google email whenever Settings opens
+  useEffect(() => {
+    if (!showSettings || !currentUser) return;
+    setLinkedGoogleEmail(null);
+    (async () => {
+      try {
+        const data = await storage.get('google_email_mapping');
+        const mapping = data ? JSON.parse(data.value) : {};
+        setLinkedGoogleEmail(mapping[currentUser.id] || '');
+      } catch {
+        setLinkedGoogleEmail('');
+      }
+    })();
+  }, [showSettings]);
 
   // Mark banner notifications as seen when leaving Home tab
   useEffect(() => {
@@ -953,6 +980,28 @@ export default function SurvivorFantasyApp() {
       setGoogleLinkError('Network error. Please try again.');
     } finally {
       setGoogleLinkLoading(false);
+    }
+  };
+
+  // Initiate Google account linking from Settings (player is already logged in)
+  const handleLinkFromSettings = async () => {
+    setLinkingGoogle(true);
+    try {
+      const res = await authFetch('/api/auth-google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'createLinkToken' }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (!res.ok || !data.linkToken) {
+        alert('Could not start Google linking. Please try again.');
+        return;
+      }
+      window.location.href = `/api/auth-google?action=redirect&link_token=${encodeURIComponent(data.linkToken)}`;
+    } catch (e) {
+      alert('Network error. Please try again.');
+      setLinkingGoogle(false);
     }
   };
 
@@ -2720,6 +2769,19 @@ export default function SurvivorFantasyApp() {
         </div>
       </header>
 
+      {/* Google link success toast */}
+      {googleLinkedSuccess && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 bg-green-900 border border-green-500 rounded-lg shadow-xl text-green-200 text-sm max-w-xs">
+          <svg className="w-5 h-5 flex-shrink-0 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span>Google account linked! You can now sign in with Google.</span>
+          <button onClick={() => setGoogleLinkedSuccess(false)} className="ml-auto text-green-400 hover:text-green-300">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
@@ -2736,6 +2798,58 @@ export default function SurvivorFantasyApp() {
                 >
                   <X className="w-5 h-5 text-amber-300" />
                 </button>
+              </div>
+
+              {/* Google Account */}
+              <div className="mb-6 p-4 bg-blue-900/20 border border-blue-600/40 rounded-lg">
+                <h3 className="text-lg font-semibold text-blue-300 mb-3 flex items-center gap-2">
+                  <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                  </svg>
+                  Google Account
+                </h3>
+                {linkedGoogleEmail === null ? (
+                  <p className="text-gray-500 text-sm">Loading...</p>
+                ) : linkedGoogleEmail ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
+                      <p className="text-white text-sm break-all">{linkedGoogleEmail}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleLinkFromSettings}
+                      disabled={linkingGoogle}
+                      className="text-blue-400 text-xs hover:text-blue-300 transition disabled:opacity-50"
+                    >
+                      {linkingGoogle ? 'Redirecting to Google...' : 'Change linked account →'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-gray-400 text-sm">No Google account linked yet.</p>
+                    <button
+                      type="button"
+                      onClick={handleLinkFromSettings}
+                      disabled={linkingGoogle}
+                      className={`w-full flex items-center justify-center gap-2 py-2 px-4 rounded font-semibold transition ${
+                        linkingGoogle ? 'bg-gray-600 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-800 hover:bg-gray-100'
+                      }`}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6-4.53z" fill="#EA4335"/>
+                      </svg>
+                      {linkingGoogle ? 'Redirecting to Google...' : 'Link Google Account'}
+                    </button>
+                    <p className="text-gray-500 text-xs text-center">Link once — sign in with Google instead of your password.</p>
+                  </div>
+                )}
               </div>
 
               {/* Security Question Setup */}
