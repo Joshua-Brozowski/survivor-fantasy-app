@@ -4717,6 +4717,8 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [showAllWeeks, setShowAllWeeks] = useState(false);
   const [auditLog, setAuditLog] = useState(null);
   const [loadingAudit, setLoadingAudit] = useState(false);
+  const [actionLog, setActionLog] = useState([]);
+  const [loadingActionLog, setLoadingActionLog] = useState(false);
   const [penaltyWaivers, setPenaltyWaivers] = useState(new Set()); // Player IDs waived from -5 penalty for current scoring session
 
   // Auto-increment episode number when admin opens create-questionnaire view
@@ -4725,6 +4727,24 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       const nextEp = Math.max(0, ...questionnaires.map(q => q.episode || q.episodeNumber || 0)) + 1;
       setNewQ(prev => ({ ...prev, episodeNumber: nextEp }));
     }
+  }, [adminView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadActionLog = async () => {
+    setLoadingActionLog(true);
+    try {
+      const leagueStore = getLeagueStorage();
+      const data = await leagueStore.get('adminActionLog');
+      const log = data?.value ? JSON.parse(data.value) : [];
+      setActionLog([...log].reverse()); // newest first
+    } catch (e) {
+      setActionLog([]);
+    } finally {
+      setLoadingActionLog(false);
+    }
+  };
+
+  useEffect(() => {
+    if (adminView === 'action-log') loadActionLog();
   }, [adminView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Helper function to convert image file to Base64
@@ -8337,6 +8357,64 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     );
   }
 
+  if (adminView === 'action-log') {
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-amber-400">Admin Action Log</h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadActionLog}
+                className="px-3 py-1.5 bg-gray-700 text-gray-300 rounded text-sm hover:bg-gray-600 transition flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Refresh
+              </button>
+              <button onClick={() => setAdminView('main')}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition text-sm">
+                ← Back
+              </button>
+            </div>
+          </div>
+          <p className="text-amber-200/70 text-sm mb-4">
+            Record of privileged admin actions (password resets, etc.) for accountability.
+          </p>
+          {loadingActionLog && <p className="text-amber-300 text-center py-8">Loading...</p>}
+          {!loadingActionLog && actionLog.length === 0 && (
+            <p className="text-gray-400 text-center py-8">No actions logged yet.</p>
+          )}
+          {!loadingActionLog && actionLog.length > 0 && (
+            <div className="space-y-1 max-h-[60vh] overflow-y-auto">
+              {actionLog.map((entry, i) => (
+                <div key={i} className="bg-gray-800 rounded px-4 py-2.5 flex items-start gap-3 text-sm">
+                  <span className="text-gray-500 text-xs mt-0.5 whitespace-nowrap">
+                    {entry.at ? new Date(entry.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-amber-200 font-medium capitalize">
+                      {entry.action?.replace(/([A-Z])/g, ' $1').trim() || 'Unknown'}
+                    </span>
+                    {entry.targetPlayerId && (
+                      <span className="text-gray-400 ml-2">
+                        → {players.find(p => p.id === entry.targetPlayerId)?.name || `Player ${entry.targetPlayerId}`}
+                      </span>
+                    )}
+                    {entry.by && (
+                      <span className="text-gray-500 ml-2 text-xs">
+                        by {players.find(p => p.id === entry.by)?.name || `Admin`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (adminView === 'submission-audit-log') {
     const loadAuditLog = async () => {
       setLoadingAudit(true);
@@ -9163,6 +9241,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               <div className="flex items-center gap-2">
                 <Clock className="w-5 h-5" />
                 <span>Submission Log</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => { setActionLog([]); setAdminView('action-log'); }}
+            className="bg-gradient-to-r from-amber-700 to-yellow-700 text-white py-4 px-6 rounded-lg font-semibold hover:from-amber-600 hover:to-yellow-600 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                <span>Action Log</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
