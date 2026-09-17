@@ -132,7 +132,9 @@ export const LEAGUE_SPECIFIC_KEYS = [
   'currentSeason',
   'seasonHistory',
   'seasonFinalized',
-  'submissionAuditLog'
+  'submissionAuditLog',
+  'episodeScoringHistory',
+  'episodeRecaps'
 ];
 
 // Keys that are global (shared across all leagues)

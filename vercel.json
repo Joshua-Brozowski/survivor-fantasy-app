@@ -19,6 +19,16 @@
     "api/backup.js": {
       "memory": 1024,
       "maxDuration": 30
+    },
+    "api/gemini-episode.js": {
+      "memory": 512,
+      "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/gemini-episode",
+      "schedule": "0 14 * * 0"
+    }
+  ]
 }
