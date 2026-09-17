@@ -5892,20 +5892,57 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                   </select>
                 )}
 
-                <div className="mt-3">
-                  <p className="text-amber-300 text-sm mb-2">Player Responses:</p>
-                  <div className="bg-black/30 p-3 rounded max-h-40 overflow-y-auto">
-                    {qSubmissions.map(sub => {
-                      const player = players.find(p => p.id === sub.playerId);
-                      const answer = sub.answers[q.id];
-                      return (
-                        <div key={sub.playerId} className="text-white text-sm mb-1">
-                          <span className="text-amber-400">{player?.name}:</span> {answer || '(no answer)'}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                {/* Player answers for this question */}
+                {(() => {
+                  const answers = qSubmissions
+                    .map(sub => {
+                      const player = leaguePlayers.find(p => p.id === sub.playerId);
+                      const raw = sub.answers?.[q.id];
+                      if (!player || raw == null || raw === '') return null;
+                      // For cast-dropdown: raw is a contestant ID, look up name
+                      let display = raw;
+                      if (q.type === 'cast-dropdown') {
+                        const c = contestants.find(c => String(c.id) === String(raw));
+                        display = c ? c.name : raw;
+                      }
+                      return { player, display };
+                    })
+                    .filter(Boolean);
+
+                  if (answers.length === 0) return null;
+
+                  // Tally unique answers for quick visual scan
+                  const tally = {};
+                  answers.forEach(({ display }) => {
+                    tally[display] = (tally[display] || 0) + 1;
+                  });
+                  const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+
+                  return (
+                    <div className="mb-3 bg-black/30 rounded p-3">
+                      <p className="text-gray-400 text-xs font-semibold uppercase tracking-wide mb-2">
+                        Player Answers ({answers.length}/{leaguePlayers.length} submitted)
+                      </p>
+                      {/* Answer tally */}
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {sorted.map(([ans, count]) => (
+                          <span key={ans} className="bg-gray-700 text-gray-200 text-xs px-2 py-0.5 rounded">
+                            {ans} <span className="text-amber-400 font-bold">×{count}</span>
+                          </span>
+                        ))}
+                      </div>
+                      {/* Per-player list */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                        {answers.map(({ player, display }) => (
+                          <div key={player.id} className="flex items-center gap-1.5 text-xs">
+                            <span className="text-gray-400 truncate">{player.name}:</span>
+                            <span className="text-white truncate font-medium">{display}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </div>
