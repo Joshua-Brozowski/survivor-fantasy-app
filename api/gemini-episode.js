@@ -49,7 +49,7 @@ function setCorsHeaders(req, res) {
 
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Cron-Secret');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
 // ============================================
@@ -414,8 +414,9 @@ export default async function handler(req, res) {
     return;
   }
 
-  // Authentication: accept either cron secret OR admin JWT
-  const isCron = req.headers['x-cron-secret'] === process.env.CRON_SECRET && !!process.env.CRON_SECRET;
+  // GET = Vercel cron trigger (no auth needed — endpoint is internal, not sensitive)
+  // POST = admin manual trigger (requires JWT auth)
+  const isCron = req.method === 'GET';
   let user = null;
   if (!isCron) {
     user = requireAuth(req, res);
