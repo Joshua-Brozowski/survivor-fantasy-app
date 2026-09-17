@@ -5337,7 +5337,29 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       });
     });
 
-    if (!window.confirm(`Submit Episode ${episodeScoring.episodeNumber} scores?\n\n${affectedPicks.length} pick(s) will receive points.\n\nThis action will notify all players.`)) {
+    // Build per-player breakdown for confirmation message
+    const playerTotals = {};
+    affectedPicks.forEach(({ pick, pts }) => {
+      const player = leaguePlayers.find(p => p.id === pick.playerId);
+      if (!player) return;
+      if (!playerTotals[player.id]) playerTotals[player.id] = { name: player.name, total: 0 };
+      playerTotals[player.id].total += pts;
+    });
+
+    const breakdown = Object.values(playerTotals)
+      .sort((a, b) => b.total - a.total)
+      .map(p => `  ${p.total > 0 ? '+' : ''}${p.total}  ${p.name}`)
+      .join('\n');
+
+    const confirmMsg = [
+      `Submit Episode ${episodeScoring.episodeNumber} scores?`,
+      '',
+      breakdown || '  (no picks affected)',
+      '',
+      `${affectedPicks.length} pick event(s) total. This cannot be undone.`
+    ].join('\n');
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
 
@@ -6165,6 +6187,58 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                       })}
                     </div>
                   </div>
+
+                  {/* Past Episodes scoring history */}
+                  {(() => {
+                    const contestantPickIds = picks
+                      .filter(p => p.contestantId === contestant.id)
+                      .map(p => p.id);
+                    const pastScores = pickScores
+                      .filter(ps => contestantPickIds.includes(ps.pickId))
+                      .sort((a, b) => (b.episode || 0) - (a.episode || 0));
+
+                    if (pastScores.length === 0) return null;
+
+                    // Group by episode
+                    const byEpisode = {};
+                    pastScores.forEach(ps => {
+                      const ep = ps.episode || '?';
+                      if (!byEpisode[ep]) byEpisode[ep] = { episode: ep, totalPts: 0, tags: new Set() };
+                      byEpisode[ep].totalPts += ps.points || 0;
+                      if (ps.breakdown) {
+                        if (ps.breakdown.survived) byEpisode[ep].tags.add('Survived');
+                        if (ps.breakdown.madeMerge) byEpisode[ep].tags.add('Merged');
+                        if (ps.breakdown.immunity) byEpisode[ep].tags.add('Immunity');
+                        if (ps.breakdown.reward) byEpisode[ep].tags.add('Reward');
+                        if (ps.breakdown.journey) byEpisode[ep].tags.add('Journey');
+                        if (ps.breakdown.foundIdol) byEpisode[ep].tags.add('Found Idol');
+                        if (ps.breakdown.playedIdol) byEpisode[ep].tags.add('Played Idol');
+                        if (ps.breakdown.votesReceived) byEpisode[ep].tags.add(`${ps.breakdown.votesReceived} vote(s)`);
+                        if (ps.breakdown.incorrectVote) byEpisode[ep].tags.add('Wrong vote');
+                        if (ps.breakdown.votedOutWithIdol) byEpisode[ep].tags.add('Idol pocketed');
+                        if (ps.breakdown.final5) byEpisode[ep].tags.add('Final 5');
+                        if (ps.breakdown.final3) byEpisode[ep].tags.add('Final 3');
+                        if (ps.breakdown.soleSurvivor) byEpisode[ep].tags.add('Sole Survivor');
+                      }
+                    });
+
+                    return (
+                      <div className="mt-3 pt-3 border-t border-blue-600/30">
+                        <p className="text-blue-400/70 text-xs font-semibold uppercase tracking-wide mb-2">Past Episodes</p>
+                        <div className="space-y-1">
+                          {Object.values(byEpisode).map(ep => (
+                            <div key={ep.episode} className="flex items-start gap-2 text-xs">
+                              <span className="text-blue-300/60 whitespace-nowrap">Ep {ep.episode}</span>
+                              <span className={`font-bold ${ep.totalPts > 0 ? 'text-green-400' : ep.totalPts < 0 ? 'text-red-400' : 'text-gray-400'}`}>
+                                {ep.totalPts > 0 ? '+' : ''}{ep.totalPts}
+                              </span>
+                              <span className="text-gray-400">{[...ep.tags].join(', ') || '—'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
