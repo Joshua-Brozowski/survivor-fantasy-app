@@ -5486,6 +5486,38 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               />
             </div>
 
+            {questionnaires.length > 0 && (() => {
+              const lastQ = [...questionnaires].sort((a, b) => (b.episodeNumber || 0) - (a.episodeNumber || 0))[0];
+              return (
+                <div className="bg-yellow-900/20 border border-yellow-600/50 rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-yellow-300 text-sm font-semibold">Start from last week?</p>
+                    <p className="text-yellow-200/60 text-xs mt-0.5">
+                      Copy questions from Ep {lastQ.episodeNumber} — "{lastQ.title}"
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const copiedQuestions = (lastQ.questions || []).map(q => ({
+                        ...q,
+                        id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+                      }));
+                      setNewQ(prev => ({
+                        ...prev,
+                        questions: copiedQuestions,
+                        hasQotw: lastQ.hasQotw ?? true,
+                        qotw: lastQ.qotw ? { ...lastQ.qotw } : { text: '', anonymous: false }
+                      }));
+                    }}
+                    className="px-4 py-2 bg-yellow-700 hover:bg-yellow-600 text-white text-sm rounded font-semibold transition whitespace-nowrap"
+                  >
+                    Copy Questions
+                  </button>
+                </div>
+              );
+            })()}
+
             <div>
               <label className="block text-yellow-300 mb-2">Questions</label>
               <div className="space-y-3">
