@@ -3989,6 +3989,72 @@ export default function SurvivorFantasyApp() {
               </div>
             </div>
 
+            {/* Pick Performance */}
+            {(() => {
+              const instinctPick = picks.find(p => p.playerId === currentUser.id && p.type === 'instinct');
+              const finalPick = picks.find(p => p.playerId === currentUser.id && p.type === 'final');
+              const showFinalPick = ['final-picks', 'mid-season', 'finale'].includes(gamePhase);
+
+              const getPickStats = (pick) => {
+                if (!pick) return null;
+                const contestant = contestants.find(c => c.id === pick.contestantId);
+                if (!contestant) return null;
+                const events = pickScores.filter(ps => ps.playerId === currentUser.id && ps.contestantId === pick.contestantId);
+                const totalPts = events.reduce((sum, e) => sum + (e.points || 0), 0);
+                return { contestant, events, totalPts };
+              };
+
+              const instinctStats = getPickStats(instinctPick);
+              const finalStats = getPickStats(finalPick);
+
+              if (!instinctStats && (!showFinalPick || !finalStats)) return null;
+
+              return (
+                <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
+                  <h3 className="text-lg font-bold text-amber-400 mb-4 flex items-center gap-2">
+                    <Target className="w-5 h-5" />
+                    Pick Performance
+                  </h3>
+                  <div className={`grid gap-4 ${showFinalPick && finalStats ? 'sm:grid-cols-2' : ''}`}>
+                    {instinctStats && (
+                      <div className="bg-black/40 rounded-lg p-4 border border-amber-600/30">
+                        <p className="text-amber-300 text-xs font-semibold uppercase tracking-wide mb-1">Instinct Pick</p>
+                        <p className="text-white font-bold text-lg">{instinctStats.contestant.name}</p>
+                        <p className={`text-sm mt-0.5 ${instinctStats.contestant.eliminated ? 'text-red-400' : 'text-green-400'}`}>
+                          {instinctStats.contestant.eliminated
+                            ? `Eliminated Ep. ${instinctStats.contestant.eliminatedEpisode || '?'}`
+                            : 'Still in the game'}
+                        </p>
+                        <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between">
+                          <span className="text-gray-400 text-sm">Points earned</span>
+                          <span className={`font-bold text-lg ${instinctStats.totalPts >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {instinctStats.totalPts > 0 ? '+' : ''}{instinctStats.totalPts}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {showFinalPick && finalStats && (
+                      <div className="bg-black/40 rounded-lg p-4 border border-amber-600/30">
+                        <p className="text-amber-300 text-xs font-semibold uppercase tracking-wide mb-1">Final Pick</p>
+                        <p className="text-white font-bold text-lg">{finalStats.contestant.name}</p>
+                        <p className={`text-sm mt-0.5 ${finalStats.contestant.eliminated ? 'text-red-400' : 'text-green-400'}`}>
+                          {finalStats.contestant.eliminated
+                            ? `Eliminated Ep. ${finalStats.contestant.eliminatedEpisode || '?'}`
+                            : 'Still in the game'}
+                        </p>
+                        <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between">
+                          <span className="text-gray-400 text-sm">Points earned</span>
+                          <span className={`font-bold text-lg ${finalStats.totalPts >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {finalStats.totalPts > 0 ? '+' : ''}{finalStats.totalPts}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Cast Accordion */}
             <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
               <button
