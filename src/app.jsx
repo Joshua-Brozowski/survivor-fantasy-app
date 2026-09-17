@@ -5196,6 +5196,14 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       }
       setPlayerScores(updatedScores);
       await leagueStore.set('playerScores', JSON.stringify(updatedScores));
+      // Notify each non-submitter individually
+      for (const player of nonSubmitters) {
+        await addNotification({
+          type: 'no_submission_penalty',
+          message: `You didn't submit ${scoringQ.title} and received a -5 point penalty. Submit before Wednesday 9 PM next week to avoid this!`,
+          targetPlayerId: player.id
+        });
+      }
     }
     setPenaltyWaivers(new Set());
 
