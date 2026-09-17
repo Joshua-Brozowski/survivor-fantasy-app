@@ -3842,6 +3842,7 @@ export default function SurvivorFantasyApp() {
             setPlayerAdvantages={setPlayerAdvantages}
             updatePlayerScore={updatePlayerScore}
             playerScores={playerScores}
+            setPlayerScores={setPlayerScores}
             loadingBackup={loadingBackup}
             setLoadingBackup={setLoadingBackup}
             snapshots={snapshots}
@@ -4734,7 +4735,7 @@ function GoogleEmailMapping({ storage, players }) {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, playerScores, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus, wordleSchedule, setWordleSchedule, wordleAuditLog, rollbackWordleChallenge, autoCloseWordle, appendWordleAuditLog }) {
+function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, playerScores, setPlayerScores, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus, wordleSchedule, setWordleSchedule, wordleAuditLog, rollbackWordleChallenge, autoCloseWordle, appendWordleAuditLog }) {
   const [adminView, setAdminView] = useState('main');
   const [releasingScores, setReleasingScores] = useState(false);
   const [grantTarget, setGrantTarget] = useState('');
@@ -4786,6 +4787,32 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [actionLog, setActionLog] = useState([]);
   const [loadingActionLog, setLoadingActionLog] = useState(false);
   const [penaltyWaivers, setPenaltyWaivers] = useState(new Set()); // Player IDs waived from -5 penalty for current scoring session
+
+  // Score Adjustments view state
+  const [scoreAdjPlayer, setScoreAdjPlayer] = useState(null);
+  const [scoreAdjEditing, setScoreAdjEditing] = useState(null); // { type, id, field, value }
+  const [scoreAdjNewEntry, setScoreAdjNewEntry] = useState({ points: '', description: '' });
+  const [scoreAdjSaving, setScoreAdjSaving] = useState(false);
+
+  // Migration: ensure breakdown entries have unique IDs
+  useEffect(() => {
+    if (!playerScores || Object.keys(playerScores).length === 0) return;
+    let needsMigration = false;
+    const migrated = {};
+    Object.entries(playerScores).forEach(([pid, data]) => {
+      if (!data?.breakdown) { migrated[pid] = data; return; }
+      const updatedBreakdown = data.breakdown.map((entry, i) => {
+        if (!entry.id) { needsMigration = true; return { ...entry, id: Date.now() + i }; }
+        return entry;
+      });
+      migrated[pid] = { ...data, breakdown: updatedBreakdown };
+    });
+    if (needsMigration) {
+      setPlayerScores(migrated);
+      const leagueStore = getLeagueStorage();
+      leagueStore.set('playerScores', JSON.stringify(migrated)).catch(() => {});
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-increment episode number when admin opens create-questionnaire view
   useEffect(() => {
@@ -9102,6 +9129,504 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     );
   }
 
+  if (adminView === 'score-adjustments') {
+    // Helper: log an edit to adminActionLog
+    const logScoreAdjustment = async (action, details) => {
+      try {
+        const leagueStore = getLeagueStorage();
+        const existing = await leagueStore.get('adminActionLog');
+        const log = existing?.value ? JSON.parse(existing.value) : [];
+        log.push({
+          action,
+          ...details,
+          timestamp: new Date().toISOString(),
+          adminId: currentUser.id,
+          adminName: currentUser.name
+        });
+        await leagueStore.set('adminActionLog', JSON.stringify(log));
+      } catch (e) {
+        // Silently fail — logging should never block an edit
+      }
+    };
+
+    // Live total points for the selected player (same logic as calculateTotalPoints)
+    const calcLiveTotal = (pid) => {
+      if (!pid) return 0;
+      let total = 0;
+      const playerPickScores = pickScores.filter(ps => {
+        const pick = picks.find(p => p.id === ps.pickId);
+        return pick && pick.playerId === pid;
+      });
+      total += playerPickScores.reduce((sum, ps) => sum + ps.points, 0);
+      const playerSubs = submissions.filter(s => s.playerId === pid && s.score !== undefined);
+      total += playerSubs.reduce((sum, s) => sum + s.score, 0);
+      const qotwWins = questionnaires.filter(q => {
+        if (!q.qotwWinner) return false;
+        const winners = Array.isArray(q.qotwWinner) ? q.qotwWinner : [q.qotwWinner];
+        return winners.includes(pid);
+      });
+      total += qotwWins.length * 5;
+      if (playerScores[pid]?.breakdown) {
+        total += playerScores[pid].breakdown.reduce((sum, e) => sum + e.points, 0);
+      }
+      return total;
+    };
+
+    // Edit a questionnaire submission score inline
+    const editQuestionnaireScore = async (submission, newScore) => {
+      if (!requireRealUser('Edit questionnaire score')) return;
+      setScoreAdjSaving(true);
+      try {
+        const parsed = parseFloat(newScore);
+        if (isNaN(parsed)) { alert('Invalid score — enter a number.'); return; }
+        const oldScore = submission.score;
+        const updatedSubmissions = submissions.map(s =>
+          s.playerId === submission.playerId && s.questionnaireId === submission.questionnaireId
+            ? { ...s, score: parsed }
+            : s
+        );
+        setSubmissions(updatedSubmissions);
+        const leagueStore = getLeagueStorage();
+        await leagueStore.set('submissions', JSON.stringify(updatedSubmissions));
+        const q = questionnaires.find(qu => qu.id === submission.questionnaireId);
+        await logScoreAdjustment('edit_questionnaire_score', {
+          playerId: submission.playerId,
+          playerName: leaguePlayers.find(p => p.id === submission.playerId)?.name,
+          questionnaireId: submission.questionnaireId,
+          questionnaireTitle: q?.title,
+          oldScore,
+          newScore: parsed
+        });
+        setScoreAdjEditing(null);
+      } catch (e) {
+        alert('Failed to save: ' + e.message);
+      } finally {
+        setScoreAdjSaving(false);
+      }
+    };
+
+    // Edit an existing breakdown entry
+    const editBreakdownEntry = async (pid, entryId, newPoints, newDescription) => {
+      if (!requireRealUser('Edit score breakdown')) return;
+      setScoreAdjSaving(true);
+      try {
+        const pts = parseFloat(newPoints);
+        if (isNaN(pts)) { alert('Invalid points value.'); return; }
+        const current = playerScores[pid] || { totalPoints: 0, breakdown: [] };
+        const oldEntry = (current.breakdown || []).find(e => e.id === entryId);
+        const updatedBreakdown = (current.breakdown || []).map(e =>
+          e.id === entryId ? { ...e, points: pts, description: newDescription } : e
+        );
+        const updatedPlayerScores = {
+          ...playerScores,
+          [pid]: { ...current, breakdown: updatedBreakdown }
+        };
+        setPlayerScores(updatedPlayerScores);
+        const leagueStore = getLeagueStorage();
+        await leagueStore.set('playerScores', JSON.stringify(updatedPlayerScores));
+        await logScoreAdjustment('edit_breakdown_entry', {
+          playerId: pid,
+          playerName: leaguePlayers.find(p => p.id === pid)?.name,
+          entryId,
+          oldPoints: oldEntry?.points,
+          newPoints: pts,
+          oldDescription: oldEntry?.description,
+          newDescription
+        });
+        setScoreAdjEditing(null);
+      } catch (e) {
+        alert('Failed to save: ' + e.message);
+      } finally {
+        setScoreAdjSaving(false);
+      }
+    };
+
+    // Delete a breakdown entry
+    const deleteBreakdownEntry = async (pid, entryId) => {
+      if (!requireRealUser('Delete score breakdown entry')) return;
+      if (!window.confirm('Delete this score entry? This cannot be undone.')) return;
+      setScoreAdjSaving(true);
+      try {
+        const current = playerScores[pid] || { totalPoints: 0, breakdown: [] };
+        const oldEntry = (current.breakdown || []).find(e => e.id === entryId);
+        const updatedBreakdown = (current.breakdown || []).filter(e => e.id !== entryId);
+        const updatedPlayerScores = {
+          ...playerScores,
+          [pid]: { ...current, breakdown: updatedBreakdown }
+        };
+        setPlayerScores(updatedPlayerScores);
+        const leagueStore = getLeagueStorage();
+        await leagueStore.set('playerScores', JSON.stringify(updatedPlayerScores));
+        await logScoreAdjustment('delete_breakdown_entry', {
+          playerId: pid,
+          playerName: leaguePlayers.find(p => p.id === pid)?.name,
+          entryId,
+          deletedPoints: oldEntry?.points,
+          deletedDescription: oldEntry?.description
+        });
+      } catch (e) {
+        alert('Failed to delete: ' + e.message);
+      } finally {
+        setScoreAdjSaving(false);
+      }
+    };
+
+    // Add a manual adjustment entry
+    const addManualAdjustment = async () => {
+      if (!requireRealUser('Add manual score adjustment')) return;
+      const pts = parseFloat(scoreAdjNewEntry.points);
+      if (isNaN(pts) || !scoreAdjNewEntry.description.trim()) {
+        alert('Please enter a description and a valid points value.');
+        return;
+      }
+      setScoreAdjSaving(true);
+      try {
+        const pid = scoreAdjPlayer;
+        const current = playerScores[pid] || { totalPoints: 0, breakdown: [] };
+        const newEntry = {
+          id: Date.now(),
+          description: scoreAdjNewEntry.description.trim(),
+          points: pts,
+          date: new Date().toISOString(),
+          type: 'manual'
+        };
+        const updatedBreakdown = [...(current.breakdown || []), newEntry];
+        const updatedPlayerScores = {
+          ...playerScores,
+          [pid]: { ...current, breakdown: updatedBreakdown }
+        };
+        setPlayerScores(updatedPlayerScores);
+        const leagueStore = getLeagueStorage();
+        await leagueStore.set('playerScores', JSON.stringify(updatedPlayerScores));
+        await logScoreAdjustment('add_manual_adjustment', {
+          playerId: pid,
+          playerName: leaguePlayers.find(p => p.id === pid)?.name,
+          description: newEntry.description,
+          points: pts
+        });
+        setScoreAdjNewEntry({ points: '', description: '' });
+      } catch (e) {
+        alert('Failed to add adjustment: ' + e.message);
+      } finally {
+        setScoreAdjSaving(false);
+      }
+    };
+
+    const selectedPlayerObj = leaguePlayers.find(p => p.id === scoreAdjPlayer);
+    const liveTotal = calcLiveTotal(scoreAdjPlayer);
+
+    // Data for the selected player
+    const playerPickScoreRows = scoreAdjPlayer ? (() => {
+      const playerPicks = picks.filter(pk => pk.playerId === scoreAdjPlayer);
+      const rows = [];
+      playerPicks.forEach(pk => {
+        pickScores.filter(ps => ps.pickId === pk.id).forEach(ps => {
+          rows.push({ ...ps, pickType: pk.type });
+        });
+      });
+      return rows.sort((a, b) => (a.episode || 0) - (b.episode || 0));
+    })() : [];
+
+    const playerSubRows = scoreAdjPlayer
+      ? submissions.filter(s => s.playerId === scoreAdjPlayer && s.score !== undefined)
+      : [];
+
+    const playerQotwWins = scoreAdjPlayer
+      ? questionnaires.filter(q => {
+          if (!q.qotwWinner) return false;
+          const winners = Array.isArray(q.qotwWinner) ? q.qotwWinner : [q.qotwWinner];
+          return winners.includes(scoreAdjPlayer);
+        })
+      : [];
+
+    const playerBreakdown = scoreAdjPlayer
+      ? (playerScores[scoreAdjPlayer]?.breakdown || [])
+      : [];
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
+          <div className="flex items-center gap-3 mb-2">
+            <Edit3 className="w-6 h-6 text-purple-400" />
+            <h2 className="text-2xl font-bold text-purple-300">Score Adjustments</h2>
+          </div>
+          <p className="text-gray-400 text-sm">Edit or add point entries for any player. All edits are logged to the Action Log.</p>
+        </div>
+
+        {/* Player Selector */}
+        <div className="bg-black/60 backdrop-blur-sm p-4 rounded-lg border border-purple-700">
+          <label className="block text-purple-300 font-semibold mb-2">Select Player</label>
+          <select
+            className="w-full px-3 py-2 rounded bg-black/70 text-white border border-purple-500 focus:outline-none focus:border-purple-300"
+            value={scoreAdjPlayer || ''}
+            onChange={e => { setScoreAdjPlayer(e.target.value ? parseInt(e.target.value) : null); setScoreAdjEditing(null); }}
+          >
+            <option value="">— choose a player —</option>
+            {leaguePlayers.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Player detail sections */}
+        {scoreAdjPlayer && (
+          <>
+            {/* Total points banner */}
+            <div className="bg-black/60 backdrop-blur-sm px-6 py-4 rounded-lg border border-purple-700 flex items-center justify-between">
+              <span className="text-white font-bold text-lg">{selectedPlayerObj?.name}</span>
+              <span className={`text-2xl font-bold ${liveTotal >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {liveTotal >= 0 ? '+' : ''}{liveTotal} pts total
+              </span>
+            </div>
+
+            {/* Section 1: Pick Scores (read-only) */}
+            <div className="bg-black/60 backdrop-blur-sm p-5 rounded-lg border border-gray-700 opacity-80">
+              <h3 className="text-lg font-bold text-gray-400 mb-3 flex items-center gap-2">
+                <Award className="w-5 h-5" />
+                Pick Scores <span className="text-xs font-normal text-gray-500 ml-2">(read-only — edit via Episode Scoring)</span>
+              </h3>
+              {playerPickScoreRows.length === 0 ? (
+                <p className="text-gray-600 text-sm">No pick scores yet.</p>
+              ) : (
+                <div className="space-y-1">
+                  {playerPickScoreRows.map((ps, i) => (
+                    <div key={i} className="flex items-center justify-between py-1 border-b border-gray-800 text-sm">
+                      <span className="text-gray-300">
+                        {ps.episode ? `Ep ${ps.episode}` : '—'}{ps.description ? ` — ${ps.description}` : ''}
+                        {ps.pickType ? <span className="ml-2 text-xs text-gray-500">({ps.pickType})</span> : null}
+                      </span>
+                      <span className={`font-semibold ml-4 ${ps.points >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {ps.points >= 0 ? '+' : ''}{ps.points}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex justify-end pt-1 text-sm font-semibold text-gray-400">
+                    Subtotal: {playerPickScoreRows.reduce((s, ps) => s + ps.points, 0)} pts
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Section 2: Questionnaire Scores (editable) */}
+            <div className="bg-black/60 backdrop-blur-sm p-5 rounded-lg border border-purple-700">
+              <h3 className="text-lg font-bold text-purple-400 mb-3 flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Questionnaire Scores
+              </h3>
+              {playerSubRows.length === 0 ? (
+                <p className="text-gray-500 text-sm">No scored submissions yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {playerSubRows.map((sub, i) => {
+                    const q = questionnaires.find(qu => qu.id === sub.questionnaireId);
+                    const isEditing = scoreAdjEditing?.type === 'questionnaire' && scoreAdjEditing?.id === sub.questionnaireId;
+                    return (
+                      <div key={i} className="flex items-center justify-between py-2 border-b border-gray-800 text-sm gap-3">
+                        <span className="text-gray-200 flex-1">{q?.title || `Questionnaire ${sub.questionnaireId}`}</span>
+                        {isEditing ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              className="px-3 py-1 rounded bg-black/50 text-white border border-purple-500 focus:outline-none focus:border-purple-300 w-24"
+                              value={scoreAdjEditing.value}
+                              onChange={e => setScoreAdjEditing(prev => ({ ...prev, value: e.target.value }))}
+                              disabled={scoreAdjSaving}
+                            />
+                            <button
+                              onClick={() => editQuestionnaireScore(sub, scoreAdjEditing.value)}
+                              disabled={scoreAdjSaving}
+                              className="px-3 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-xs font-semibold disabled:opacity-50"
+                            >
+                              {scoreAdjSaving ? 'Saving…' : 'Save'}
+                            </button>
+                            <button
+                              onClick={() => setScoreAdjEditing(null)}
+                              disabled={scoreAdjSaving}
+                              className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            <span className={`font-semibold w-12 text-right ${sub.score >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                              {sub.score >= 0 ? '+' : ''}{sub.score}
+                            </span>
+                            <button
+                              onClick={() => setScoreAdjEditing({ type: 'questionnaire', id: sub.questionnaireId, value: String(sub.score) })}
+                              className="px-2 py-1 bg-purple-800 hover:bg-purple-700 text-white rounded text-xs"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div className="flex justify-end pt-1 text-sm font-semibold text-gray-400">
+                    Subtotal: {playerSubRows.reduce((s, sub) => s + sub.score, 0)} pts
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Section 3: QotW Wins (read-only) */}
+            <div className="bg-black/60 backdrop-blur-sm p-5 rounded-lg border border-gray-700 opacity-80">
+              <h3 className="text-lg font-bold text-gray-400 mb-3 flex items-center gap-2">
+                <Star className="w-5 h-5" />
+                QotW Wins <span className="text-xs font-normal text-gray-500 ml-2">(read-only — manage via QOTW Management)</span>
+              </h3>
+              {playerQotwWins.length === 0 ? (
+                <p className="text-gray-600 text-sm">No QotW wins yet.</p>
+              ) : (
+                <div className="space-y-1">
+                  {playerQotwWins.map((q, i) => (
+                    <div key={i} className="flex items-center justify-between py-1 border-b border-gray-800 text-sm">
+                      <span className="text-gray-300">{q.title}</span>
+                      <span className="text-green-400 font-semibold">+5</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-end pt-1 text-sm font-semibold text-gray-400">
+                    Subtotal: +{playerQotwWins.length * 5} pts
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Section 4: Advantage & Penalty Adjustments (editable) */}
+            <div className="bg-black/60 backdrop-blur-sm p-5 rounded-lg border border-purple-700">
+              <h3 className="text-lg font-bold text-purple-400 mb-3 flex items-center gap-2">
+                <Zap className="w-5 h-5" />
+                Advantage & Penalty Adjustments
+              </h3>
+              {playerBreakdown.length === 0 ? (
+                <p className="text-gray-500 text-sm mb-4">No manual entries yet.</p>
+              ) : (
+                <div className="space-y-2 mb-4">
+                  {playerBreakdown.map((entry) => {
+                    const isEditingEntry = scoreAdjEditing?.type === 'breakdown' && scoreAdjEditing?.id === entry.id;
+                    return (
+                      <div key={entry.id} className="py-2 border-b border-gray-800">
+                        {isEditingEntry ? (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              placeholder="Description"
+                              className="w-full px-3 py-1 rounded bg-black/50 text-white border border-purple-500 focus:outline-none focus:border-purple-300 text-sm"
+                              value={scoreAdjEditing.description}
+                              onChange={e => setScoreAdjEditing(prev => ({ ...prev, description: e.target.value }))}
+                              disabled={scoreAdjSaving}
+                            />
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                placeholder="Points"
+                                className="px-3 py-1 rounded bg-black/50 text-white border border-purple-500 focus:outline-none focus:border-purple-300 w-24 text-sm"
+                                value={scoreAdjEditing.value}
+                                onChange={e => setScoreAdjEditing(prev => ({ ...prev, value: e.target.value }))}
+                                disabled={scoreAdjSaving}
+                              />
+                              <button
+                                onClick={() => editBreakdownEntry(scoreAdjPlayer, entry.id, scoreAdjEditing.value, scoreAdjEditing.description)}
+                                disabled={scoreAdjSaving}
+                                className="px-3 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-xs font-semibold disabled:opacity-50"
+                              >
+                                {scoreAdjSaving ? 'Saving…' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => setScoreAdjEditing(null)}
+                                disabled={scoreAdjSaving}
+                                className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-3 text-sm">
+                            <div className="flex-1">
+                              <span className="text-gray-200">{entry.description}</span>
+                              {entry.date && (
+                                <span className="text-gray-600 text-xs ml-2">{new Date(entry.date).toLocaleDateString()}</span>
+                              )}
+                              {entry.type && (
+                                <span className="text-gray-600 text-xs ml-2 italic">({entry.type})</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className={`font-semibold w-12 text-right ${entry.points >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {entry.points >= 0 ? '+' : ''}{entry.points}
+                              </span>
+                              <button
+                                onClick={() => setScoreAdjEditing({ type: 'breakdown', id: entry.id, value: String(entry.points), description: entry.description })}
+                                className="px-2 py-1 bg-purple-800 hover:bg-purple-700 text-white rounded text-xs"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => deleteBreakdownEntry(scoreAdjPlayer, entry.id)}
+                                disabled={scoreAdjSaving}
+                                className="px-2 py-1 bg-red-900 hover:bg-red-800 text-white rounded text-xs disabled:opacity-50"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div className="flex justify-end pt-1 text-sm font-semibold text-gray-400">
+                    Subtotal: {playerBreakdown.reduce((s, e) => s + e.points, 0)} pts
+                  </div>
+                </div>
+              )}
+
+              {/* Add new manual entry form */}
+              <div className="mt-4 p-4 bg-purple-900/20 rounded-lg border border-purple-800">
+                <h4 className="text-purple-300 font-semibold text-sm mb-3">+ Add Manual Adjustment</h4>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    placeholder="Description (e.g. Challenge bonus)"
+                    className="flex-1 px-3 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-300 text-sm"
+                    value={scoreAdjNewEntry.description}
+                    onChange={e => setScoreAdjNewEntry(prev => ({ ...prev, description: e.target.value }))}
+                    disabled={scoreAdjSaving}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Points (e.g. -5)"
+                    className="w-36 px-3 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-300 text-sm"
+                    value={scoreAdjNewEntry.points}
+                    onChange={e => setScoreAdjNewEntry(prev => ({ ...prev, points: e.target.value }))}
+                    disabled={scoreAdjSaving}
+                  />
+                  <button
+                    onClick={addManualAdjustment}
+                    disabled={scoreAdjSaving}
+                    className="px-4 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded font-semibold text-sm disabled:opacity-50"
+                  >
+                    {scoreAdjSaving ? 'Saving…' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Back button */}
+        <button
+          onClick={() => setAdminView('main')}
+          className="w-full py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+        >
+          Back to Controls
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Guest Mode Banner */}
@@ -9523,6 +10048,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               <div className="flex items-center gap-2">
                 <Zap className="w-5 h-5" />
                 <span>Advantage Inspector</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => { setScoreAdjPlayer(null); setScoreAdjEditing(null); setAdminView('score-adjustments'); }}
+            className="bg-gradient-to-r from-purple-700 to-purple-900 text-white py-4 px-6 rounded-lg font-semibold hover:from-purple-600 hover:to-purple-800 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5" />
+                <span>Score Adjustments</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
