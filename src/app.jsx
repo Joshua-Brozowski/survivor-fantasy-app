@@ -3496,10 +3496,41 @@ export default function SurvivorFantasyApp() {
             )}
 
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
-              <h2 className="text-2xl font-bold text-amber-400 mb-6 flex items-center gap-2">
-                <Trophy className="w-6 h-6" />
-                Leaderboard - Season {currentSeason}
-              </h2>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-amber-400 flex items-center gap-2">
+                  <Trophy className="w-6 h-6" />
+                  Leaderboard - Season {currentSeason}
+                </h2>
+                {leaguePlayers.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const sorted = [...leaguePlayers].sort((a, b) => getPoints(b.id) - getPoints(a.id));
+                      let rank = 1;
+                      const rows = sorted.map((p, i) => {
+                        if (i > 0 && getPoints(sorted[i - 1].id) === getPoints(p.id)) {
+                          // tied — keep same rank
+                        } else {
+                          rank = i + 1;
+                        }
+                        return [rank, p.name, getPoints(p.id)].join(',');
+                      });
+                      const csv = 'Rank,Player,Points\n' + rows.join('\n');
+                      const blob = new Blob([csv], { type: 'text/csv' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `survivor-s${currentSeason}-leaderboard.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-700/60 hover:bg-amber-600/70 text-amber-200 text-sm rounded border border-amber-600 transition"
+                    title="Export leaderboard as CSV"
+                  >
+                    <Download className="w-4 h-4" />
+                    Export CSV
+                  </button>
+                )}
+              </div>
 
               {leaguePlayers.length === 0 && (
                 <div className="text-center py-12 text-gray-400">
@@ -4665,6 +4696,14 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [auditLog, setAuditLog] = useState(null);
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [penaltyWaivers, setPenaltyWaivers] = useState(new Set()); // Player IDs waived from -5 penalty for current scoring session
+
+  // Auto-increment episode number when admin opens create-questionnaire view
+  useEffect(() => {
+    if (adminView === 'create-questionnaire') {
+      const nextEp = Math.max(0, ...questionnaires.map(q => q.episode || q.episodeNumber || 0)) + 1;
+      setNewQ(prev => ({ ...prev, episodeNumber: nextEp }));
+    }
+  }, [adminView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Helper function to convert image file to Base64
   const handleImageFile = (file, callback) => {
@@ -6464,7 +6503,17 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                             onError={(e) => { e.target.src = 'https://via.placeholder.com/50?text=?'; }}
                           />
                           <div>
-                            <p className="text-white font-semibold">{contestant.name}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-white font-semibold">{contestant.name}</p>
+                              {(() => {
+                                const pickCount = picks.filter(pk => pk.contestantId === contestant.id).length;
+                                return pickCount > 0 ? (
+                                  <span className="bg-amber-700 text-amber-200 text-xs px-1.5 py-0.5 rounded">
+                                    {pickCount} pick{pickCount !== 1 ? 's' : ''}
+                                  </span>
+                                ) : null;
+                              })()}
+                            </div>
                             <p className="text-green-300 text-sm">{contestant.tribe}</p>
                             {contestant.eliminated && <span className="text-red-400 text-xs">Eliminated</span>}
                           </div>
