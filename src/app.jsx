@@ -248,6 +248,10 @@ export default function SurvivorFantasyApp() {
   const [castAccordionOpen, setCastAccordionOpen] = useState(false);
   const [picksCastAccordionOpen, setPicksCastAccordionOpen] = useState(false);
   const [howToPlayOpen, setHowToPlayOpen] = useState(false);
+  const [recapsAccordionOpen, setRecapsAccordionOpen] = useState(false);
+
+  // Episode Recaps state
+  const [episodeRecaps, setEpisodeRecaps] = useState([]);
 
   // Wordle Challenge state
   const [challenges, setChallenges] = useState([]);
@@ -856,6 +860,10 @@ export default function SurvivorFantasyApp() {
       const wordleAuditData = await leagueStore.get('wordleAuditLog');
       setWordleAuditLog(wordleAuditData ? JSON.parse(wordleAuditData.value) : []);
 
+      // Load episodeRecaps (league-specific)
+      const episodeRecapsData = await leagueStore.get('episodeRecaps');
+      setEpisodeRecaps(episodeRecapsData ? JSON.parse(episodeRecapsData.value) : []);
+
       setIsDataLoaded(true);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -1360,12 +1368,14 @@ export default function SurvivorFantasyApp() {
     const seasonFinalizedData = await leagueStore.get('seasonFinalized');
     const challengesData = await leagueStore.get('challenges');
     const challengeAttemptsData = await leagueStore.get('challengeAttempts');
+    const episodeRecapsData2 = await leagueStore.get('episodeRecaps');
 
     setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 50);
     setSeasonHistory(seasonHistoryData ? JSON.parse(seasonHistoryData.value) : []);
     setSeasonFinalized(seasonFinalizedData ? JSON.parse(seasonFinalizedData.value) : false);
     setChallenges(challengesData ? JSON.parse(challengesData.value) : []);
     setChallengeAttempts(challengeAttemptsData ? JSON.parse(challengeAttemptsData.value) : []);
+    setEpisodeRecaps(episodeRecapsData2 ? JSON.parse(episodeRecapsData2.value) : []);
     setPicks(picksData ? JSON.parse(picksData.value) : []);
     setPicksLocked(picksLockedData ? JSON.parse(picksLockedData.value) : { instinct: false, final: false });
     setGamePhase(gamePhaseData ? gamePhaseData.value : 'instinct-picks');
@@ -1464,6 +1474,9 @@ export default function SurvivorFantasyApp() {
     // Reset Wordle audit log for new season (schedule stays global, audit is per-league)
     setWordleAuditLog([]);
     await leagueStore.set('wordleAuditLog', JSON.stringify([]));
+    // Reset episode recaps for new season
+    setEpisodeRecaps([]);
+    await leagueStore.set('episodeRecaps', JSON.stringify([]));
     // Contestants is global (shared across leagues)
     await storage.set('contestants', JSON.stringify(defaultCast));
 
@@ -3856,6 +3869,8 @@ export default function SurvivorFantasyApp() {
             rollbackWordleChallenge={rollbackWordleChallenge}
             autoCloseWordle={autoCloseWordle}
             appendWordleAuditLog={appendWordleAuditLog}
+            episodeRecaps={episodeRecaps}
+            setEpisodeRecaps={setEpisodeRecaps}
           />
         )}
 
@@ -4076,6 +4091,63 @@ export default function SurvivorFantasyApp() {
                 </div>
               );
             })()}
+
+            {/* Episode Recaps Accordion */}
+            {episodeRecaps.length > 0 && (
+              <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
+                <button
+                  onClick={() => setRecapsAccordionOpen(prev => !prev)}
+                  className="w-full p-4 flex items-center justify-between text-left hover:bg-white/5 transition"
+                  aria-expanded={recapsAccordionOpen}
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-amber-400" />
+                    <span className="text-lg font-bold text-amber-300">Episode Recaps</span>
+                    <span className="text-sm text-gray-400">({episodeRecaps.length} episode{episodeRecaps.length !== 1 ? 's' : ''})</span>
+                  </div>
+                  <ChevronDown className={`w-5 h-5 text-amber-400 transition-transform duration-200 ${recapsAccordionOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                <AnimatePresence>
+                  {recapsAccordionOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      <div className="p-4 border-t border-amber-600/50 space-y-4">
+                        {[...episodeRecaps].reverse().map(recap => (
+                          <div key={recap.id} className="bg-black/40 rounded-lg p-4 border border-amber-700/50">
+                            <div className="flex items-center justify-between mb-2">
+                              <h3 className="font-bold text-amber-300">
+                                Episode {recap.episode}
+                                {recap.title ? ` — ${recap.title}` : ''}
+                              </h3>
+                              <div className="flex items-center gap-2">
+                                {recap.autoGenerated && (
+                                  <span className="text-xs px-2 py-1 rounded bg-purple-900/50 text-purple-300 border border-purple-700">
+                                    AI Generated
+                                  </span>
+                                )}
+                                <span className="text-xs text-gray-500">
+                                  {recap.publishedAt ? new Date(recap.publishedAt).toLocaleDateString() : ''}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-gray-300 text-sm leading-relaxed">{recap.content}</p>
+                            {recap.confidence != null && (
+                              <p className="text-xs text-gray-500 mt-2">Confidence: {recap.confidence}%</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
 
             {/* Cast Accordion */}
             <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-amber-600 overflow-hidden">
@@ -4734,7 +4806,7 @@ function GoogleEmailMapping({ storage, players }) {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, playerScores, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus, wordleSchedule, setWordleSchedule, wordleAuditLog, rollbackWordleChallenge, autoCloseWordle, appendWordleAuditLog }) {
+function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, playerScores, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus, wordleSchedule, setWordleSchedule, wordleAuditLog, rollbackWordleChallenge, autoCloseWordle, appendWordleAuditLog, episodeRecaps, setEpisodeRecaps }) {
   const [adminView, setAdminView] = useState('main');
   const [releasingScores, setReleasingScores] = useState(false);
   const [grantTarget, setGrantTarget] = useState('');
@@ -4786,6 +4858,12 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [actionLog, setActionLog] = useState([]);
   const [loadingActionLog, setLoadingActionLog] = useState(false);
   const [penaltyWaivers, setPenaltyWaivers] = useState(new Set()); // Player IDs waived from -5 penalty for current scoring session
+
+  // Episode Recaps admin form state
+  const [newRecapEpisode, setNewRecapEpisode] = useState('');
+  const [newRecapTitle, setNewRecapTitle] = useState('');
+  const [newRecapContent, setNewRecapContent] = useState('');
+  const [recapSaving, setRecapSaving] = useState(false);
 
   // Auto-increment episode number when admin opens create-questionnaire view
   useEffect(() => {
@@ -9102,6 +9180,136 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     );
   }
 
+  if (adminView === 'episode-recaps-admin') {
+    const saveRecap = async () => {
+      if (!newRecapContent.trim()) return;
+      setRecapSaving(true);
+      const recap = {
+        id: Date.now(),
+        episode: parseInt(newRecapEpisode) || (episodeRecaps.length + 1),
+        title: newRecapTitle.trim(),
+        content: newRecapContent.trim(),
+        publishedAt: new Date().toISOString(),
+        autoGenerated: false,
+        confidence: null
+      };
+      const updated = [...episodeRecaps, recap];
+      setEpisodeRecaps(updated);
+      const leagueStore = getLeagueStorage();
+      await leagueStore.set('episodeRecaps', JSON.stringify(updated));
+      setNewRecapEpisode('');
+      setNewRecapTitle('');
+      setNewRecapContent('');
+      setRecapSaving(false);
+    };
+
+    const deleteRecap = async (recapId) => {
+      if (!window.confirm('Delete this recap?')) return;
+      const updated = episodeRecaps.filter(r => r.id !== recapId);
+      setEpisodeRecaps(updated);
+      const leagueStore = getLeagueStorage();
+      await leagueStore.set('episodeRecaps', JSON.stringify(updated));
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-700">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-amber-400 flex items-center gap-2">
+              <FileText className="w-6 h-6" />
+              Episode Recaps
+            </h2>
+            <button
+              onClick={() => setAdminView('main')}
+              className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition text-sm"
+            >
+              Back to Controls
+            </button>
+          </div>
+
+          {/* Add New Recap Form */}
+          <div className="bg-black/40 rounded-lg p-4 border border-amber-700/50 mb-6">
+            <h3 className="text-amber-300 font-semibold mb-3">Add New Recap</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-gray-400 text-xs mb-1">Episode #</label>
+                  <input
+                    type="number"
+                    value={newRecapEpisode}
+                    onChange={e => setNewRecapEpisode(e.target.value)}
+                    placeholder={episodeRecaps.length + 1}
+                    className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm border border-gray-600 focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-400 text-xs mb-1">Title (optional)</label>
+                  <input
+                    type="text"
+                    value={newRecapTitle}
+                    onChange={e => setNewRecapTitle(e.target.value)}
+                    placeholder="Episode title..."
+                    className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm border border-gray-600 focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-gray-400 text-xs mb-1">Recap Content *</label>
+                <textarea
+                  value={newRecapContent}
+                  onChange={e => setNewRecapContent(e.target.value)}
+                  placeholder="Write the episode recap here..."
+                  rows={5}
+                  className="w-full bg-gray-800 text-white rounded px-3 py-2 text-sm border border-gray-600 focus:border-amber-500 focus:outline-none resize-y"
+                />
+              </div>
+              <button
+                onClick={saveRecap}
+                disabled={recapSaving || !newRecapContent.trim()}
+                className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-500 transition text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {recapSaving ? 'Saving...' : 'Save Recap'}
+              </button>
+            </div>
+          </div>
+
+          {/* Existing Recaps */}
+          {episodeRecaps.length === 0 ? (
+            <p className="text-gray-400 text-center py-4">No recaps yet. Add one above.</p>
+          ) : (
+            <div className="space-y-4">
+              <h3 className="text-amber-300 font-semibold">Published Recaps ({episodeRecaps.length})</h3>
+              {[...episodeRecaps].reverse().map(recap => (
+                <div key={recap.id} className="bg-black/40 rounded-lg p-4 border border-amber-700/50">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div>
+                      <h4 className="font-bold text-amber-300">
+                        Episode {recap.episode}
+                        {recap.title ? ` — ${recap.title}` : ''}
+                      </h4>
+                      <span className="text-xs text-gray-500">
+                        {recap.publishedAt ? new Date(recap.publishedAt).toLocaleDateString() : ''}
+                        {recap.autoGenerated && ' • AI Generated'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => deleteRecap(recap.id)}
+                      className="text-red-400 hover:text-red-300 transition flex-shrink-0"
+                      title="Delete recap"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <p className="text-gray-300 text-sm leading-relaxed">{recap.content}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Guest Mode Banner */}
@@ -9393,6 +9601,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               <div className="flex items-center gap-2">
                 <Mail className="w-5 h-5" />
                 <span>Tree Mail</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('episode-recaps-admin')}
+            className="bg-gradient-to-r from-teal-700 to-teal-900 text-white py-4 px-6 rounded-lg font-semibold hover:from-teal-600 hover:to-teal-800 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                <span>Episode Recaps</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>
