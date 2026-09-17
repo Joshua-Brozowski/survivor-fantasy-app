@@ -646,6 +646,28 @@ export default function SurvivorFantasyApp() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [currentUser, isDataLoaded]);
 
+  // Background poll: refresh live data every 60s when logged in
+  useEffect(() => {
+    if (!currentUser || !isDataLoaded || !currentLeagueId || isGuestMode()) return;
+    const leagueStore = createLeagueStorage(currentLeagueId);
+    const poll = async () => {
+      try {
+        const [scoresData, qData, notifData] = await Promise.all([
+          leagueStore.get('playerScores'),
+          leagueStore.get('questionnaires'),
+          leagueStore.get('notifications'),
+        ]);
+        if (scoresData?.value) setPlayerScores(JSON.parse(scoresData.value));
+        if (qData?.value) setQuestionnaires(JSON.parse(qData.value));
+        if (notifData?.value) setNotifications(JSON.parse(notifData.value));
+      } catch {
+        // silent — polling errors should never interrupt the app
+      }
+    };
+    const intervalId = setInterval(poll, 60000);
+    return () => clearInterval(intervalId);
+  }, [currentUser, isDataLoaded, currentLeagueId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const loadGameData = async () => {
     try {
       // STEP 1: Load global data (shared across all leagues)
