@@ -414,6 +414,30 @@ export default async function handler(req, res) {
     return;
   }
 
+  // -----------------------------------------------
+  // suggestQotw — no auth required, GET only
+  // -----------------------------------------------
+  if (req.method === 'GET' && req.query.action === 'suggestQotw') {
+    const episodeNum = parseInt(req.query.episode) || '?';
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(200).json({ suggestion: '' });
+    }
+    try {
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-1.5-flash',
+        tools: [{ googleSearchRetrieval: {} }],
+      });
+      const prompt = `For Survivor Season 51, Episode ${episodeNum}, suggest ONE interesting "Question of the Week" for a fantasy league. This is an open-ended short-answer question players answer before watching the episode — about predictions, strategy, alliances, or player dynamics. Make it specific, fun, and thought-provoking. Return ONLY the question text (one sentence, ending in a question mark), nothing else.`;
+      const result = await model.generateContent(prompt);
+      const suggestion = result.response.text().trim();
+      return res.status(200).json({ suggestion });
+    } catch (e) {
+      console.error('[gemini-episode] suggestQotw error:', e.message);
+      return res.status(200).json({ suggestion: '' });
+    }
+  }
+
   // GET = Vercel cron trigger (no auth needed — endpoint is internal, not sensitive)
   // POST = admin manual trigger (requires JWT auth)
   const isCron = req.method === 'GET';

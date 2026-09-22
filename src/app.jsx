@@ -4852,6 +4852,11 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [usageData, setUsageData] = useState(null);
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [expandedSubmissionsQ, setExpandedSubmissionsQ] = useState(null);
+  // wordle-schedule view local state (must be at top level — Rules of Hooks)
+  const [editingScheduleId, setEditingScheduleId] = useState(null);
+  const [editingWord, setEditingWord] = useState('');
+  const [newWeekForm, setNewWeekForm] = useState({ word: '', releaseDate: '', closeDate: '' });
+  const [auditExpanded, setAuditExpanded] = useState(false);
   const [showAllWeeks, setShowAllWeeks] = useState(false);
   const [auditLog, setAuditLog] = useState(null);
   const [loadingAudit, setLoadingAudit] = useState(false);
@@ -4870,6 +4875,14 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [scoreAdjEditing, setScoreAdjEditing] = useState(null); // { type, id, field, value }
   const [scoreAdjNewEntry, setScoreAdjNewEntry] = useState({ points: '', description: '' });
   const [scoreAdjSaving, setScoreAdjSaving] = useState(false);
+
+  // Questionnaire template state
+  const [questionnaireTemplates, setQuestionnaireTemplates] = useState([]);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState('');
+  const [broadcastToLeagues, setBroadcastToLeagues] = useState(false);
 
   // Migration: ensure breakdown entries have unique IDs
   useEffect(() => {
@@ -4916,6 +4929,104 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   useEffect(() => {
     if (adminView === 'action-log') loadActionLog();
   }, [adminView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadUsageData = async () => {
+    setLoadingUsage(true);
+    try {
+      const result = await storage.get('usage_visits');
+      setUsageData(result ? JSON.parse(result.value) : {});
+    } catch (e) {
+      setUsageData({});
+    }
+    setLoadingUsage(false);
+  };
+
+  // Auto-load + auto-refresh usage analytics every 30s while on that view
+  useEffect(() => {
+    if (adminView !== 'usage-analytics') return;
+    loadUsageData();
+    const interval = setInterval(loadUsageData, 30000);
+    return () => clearInterval(interval);
+  }, [adminView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- Questionnaire Template helpers ----
+
+  const buildDefaultTemplate = () => ({
+    id: Date.now(),
+    name: 'Standard Episode',
+    questions: [
+      { id: 'tq1', type: 'cast-dropdown', text: 'Who will win immunity?', required: true, options: [], immunity: true },
+      { id: 'tq2', type: 'true-false', text: 'Will an idol or advantage be found this episode?', required: true, options: [] },
+      { id: 'tq3', type: 'true-false', text: 'Will an idol or advantage be played at Tribal Council?', required: true, options: [] },
+      { id: 'tq4', type: 'cast-dropdown', text: 'Who will be voted off this episode?', required: true, options: [] },
+    ],
+    includeQotW: true,
+    createdAt: new Date().toISOString(),
+  });
+
+  const loadTemplates = async () => {
+    setLoadingTemplates(true);
+    try {
+      const result = await storage.get('questionnaireTemplates');
+      const loaded = result?.value ? JSON.parse(result.value) : [];
+      if (loaded.length === 0) {
+        const defaultTemplate = buildDefaultTemplate();
+        await storage.set('questionnaireTemplates', JSON.stringify([defaultTemplate]));
+        setQuestionnaireTemplates([defaultTemplate]);
+      } else {
+        setQuestionnaireTemplates(loaded);
+      }
+    } catch (e) {
+      setQuestionnaireTemplates([]);
+    }
+    setLoadingTemplates(false);
+  };
+
+  const applyTemplate = (template) => {
+    const convertedQuestions = template.questions.map(q => {
+      if (q.immunity && gamePhase === 'early-season') {
+        const tribeNames = [...new Set(contestants.filter(c => !c.eliminated).map(c => c.tribe))].sort();
+        return { ...q, type: 'multiple-choice', options: tribeNames, immunity: undefined };
+      }
+      const { immunity, ...rest } = q;
+      return { ...rest, id: `q${Date.now()}_${Math.random().toString(36).slice(2, 6)}` };
+    });
+    setNewQ(prev => ({
+      ...prev,
+      questions: convertedQuestions,
+      hasQotw: template.includeQotW ?? true,
+    }));
+    setShowTemplatePicker(false);
+  };
+
+  const saveAsTemplate = async () => {
+    const name = newTemplateName.trim();
+    if (!name) return;
+    const template = {
+      id: Date.now(),
+      name,
+      questions: newQ.questions.map(q => ({ ...q })),
+      includeQotW: newQ.hasQotw ?? true,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...questionnaireTemplates, template];
+    setQuestionnaireTemplates(updated);
+    await storage.set('questionnaireTemplates', JSON.stringify(updated));
+    setShowSaveTemplate(false);
+    setNewTemplateName('');
+  };
+
+  const deleteTemplate = async (templateId) => {
+    const updated = questionnaireTemplates.filter(t => t.id !== templateId);
+    setQuestionnaireTemplates(updated);
+    await storage.set('questionnaireTemplates', JSON.stringify(updated));
+  };
+
+  useEffect(() => {
+    if (adminView === 'create-questionnaire') loadTemplates();
+  }, [adminView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- End Questionnaire Template helpers ----
 
   // Helper function to convert image file to Base64
   const handleImageFile = (file, callback) => {
@@ -4971,6 +5082,20 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       const leagueStore = getLeagueStorage();
       await leagueStore.set('questionnaires', JSON.stringify(updated));
 
+      // Broadcast to other leagues if requested
+      if (broadcastToLeagues) {
+        const adminMemberships = (leagueMemberships || []).filter(m => m.playerId === currentUser.id);
+        for (const membership of adminMemberships) {
+          if (membership.leagueId === currentLeagueId) continue;
+          try {
+            const otherStore = createLeagueStorage(membership.leagueId);
+            const existing = await otherStore.get('questionnaires');
+            const others = existing?.value ? JSON.parse(existing.value) : [];
+            await otherStore.set('questionnaires', JSON.stringify([...others, { ...questionnaire, id: Date.now() + membership.leagueId }]));
+          } catch (e) { /* silent */ }
+        }
+      }
+
       alert(`Questionnaire scheduled! It will auto-activate on ${new Date(newQ.scheduledFor).toLocaleString()}.`);
     } else {
       // Publish immediately — archive current active and notify players
@@ -4995,6 +5120,21 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       const leagueStore = getLeagueStorage();
       await leagueStore.set('questionnaires', JSON.stringify(updated));
 
+      // Broadcast to other leagues if requested
+      if (broadcastToLeagues) {
+        const adminMemberships = (leagueMemberships || []).filter(m => m.playerId === currentUser.id);
+        for (const membership of adminMemberships) {
+          if (membership.leagueId === currentLeagueId) continue;
+          try {
+            const otherStore = createLeagueStorage(membership.leagueId);
+            const existing = await otherStore.get('questionnaires');
+            const others = existing?.value ? JSON.parse(existing.value) : [];
+            const archived = others.map(q => q.status === 'active' ? { ...q, status: 'archived' } : q);
+            await otherStore.set('questionnaires', JSON.stringify([...archived, { ...questionnaire, id: Date.now() + membership.leagueId }]));
+          } catch (e) { /* silent */ }
+        }
+      }
+
       await addNotification({
         type: 'new_questionnaire',
         message: `New questionnaire "${newQ.title}" is now available!`,
@@ -5005,6 +5145,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     }
 
     setAdminView('main');
+    setBroadcastToLeagues(false);
     setNewQ({ title: '', episodeNumber: episodes.length + 1, questions: [], hasQotw: true, qotw: { id: 'qotw', text: '', anonymous: false }, scheduledFor: '' });
   };
 
@@ -5599,6 +5740,103 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           <h2 className="text-2xl font-bold text-yellow-400 mb-6">Create Weekly Questionnaire</h2>
 
           <div className="space-y-4">
+            {/* Template loader */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowTemplatePicker(true)}
+                className="px-3 py-1.5 bg-purple-800 text-purple-200 rounded font-semibold hover:bg-purple-700 transition text-sm flex items-center gap-1.5"
+              >
+                <FileText className="w-4 h-4" /> Load Template
+              </button>
+              {questionnaireTemplates.length === 0 && !loadingTemplates && (
+                <span className="text-gray-500 text-xs">No templates saved yet</span>
+              )}
+            </div>
+
+            {/* Template Picker Modal */}
+            {showTemplatePicker && (
+              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-900 border border-purple-600 rounded-xl p-6 w-full max-w-md">
+                  <h3 className="text-purple-300 font-bold text-lg mb-4">Load Template</h3>
+                  {loadingTemplates ? (
+                    <p className="text-gray-400 text-sm">Loading templates...</p>
+                  ) : questionnaireTemplates.length === 0 ? (
+                    <p className="text-gray-400 text-sm">No templates saved yet.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-72 overflow-y-auto">
+                      {questionnaireTemplates.map(t => (
+                        <div key={t.id} className="flex items-center justify-between bg-gray-800 rounded-lg px-4 py-3">
+                          <div>
+                            <p className="text-white font-semibold text-sm">{t.name}</p>
+                            <p className="text-gray-400 text-xs">{t.questions.length} questions · {t.includeQotW ? 'with QotW' : 'no QotW'}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => applyTemplate(t)}
+                              className="px-3 py-1.5 bg-purple-700 text-purple-200 rounded text-sm hover:bg-purple-600 transition"
+                            >
+                              Load
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { if (confirm(`Delete template "${t.name}"?`)) deleteTemplate(t.id); }}
+                              className="px-2 py-1.5 bg-red-900/50 text-red-400 rounded text-sm hover:bg-red-800/60 transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowTemplatePicker(false)}
+                    className="mt-4 w-full py-2 bg-gray-700 text-gray-200 rounded font-semibold hover:bg-gray-600 transition text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Save Template Modal */}
+            {showSaveTemplate && (
+              <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-900 border border-gray-600 rounded-xl p-6 w-full max-w-sm">
+                  <h3 className="text-gray-200 font-bold text-lg mb-4">Save as Template</h3>
+                  <input
+                    type="text"
+                    value={newTemplateName}
+                    onChange={e => setNewTemplateName(e.target.value)}
+                    placeholder="Template name (e.g. Standard Episode)"
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white text-sm mb-4"
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Enter') saveAsTemplate(); }}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={saveAsTemplate}
+                      disabled={!newTemplateName.trim()}
+                      className="flex-1 py-2 bg-purple-700 text-purple-200 rounded font-semibold hover:bg-purple-600 transition text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowSaveTemplate(false); setNewTemplateName(''); }}
+                      className="flex-1 py-2 bg-gray-700 text-gray-200 rounded font-semibold hover:bg-gray-600 transition text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-yellow-300 mb-2">Title</label>
               <input
@@ -5760,13 +5998,30 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               </label>
               {newQ.hasQotw && (
                 <>
-                  <input
-                    type="text"
-                    value={newQ.qotw.text}
-                    onChange={(e) => setNewQ({...newQ, qotw: {...newQ.qotw, text: e.target.value}})}
-                    placeholder="Enter Question of the Week..."
-                    className="w-full px-4 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-400 mb-2"
-                  />
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={newQ.qotw.text}
+                      onChange={(e) => setNewQ({...newQ, qotw: {...newQ.qotw, text: e.target.value}})}
+                      placeholder="Enter Question of the Week..."
+                      className="flex-1 px-4 py-2 rounded bg-black/50 text-white border border-purple-600 focus:outline-none focus:border-purple-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ep = newQ.episodeNumber || 1;
+                        try {
+                          const r = await fetch(`/api/gemini-episode?action=suggestQotw&episode=${ep}`);
+                          const data = await r.json();
+                          if (data.suggestion) setNewQ(prev => ({ ...prev, qotw: { ...prev.qotw, text: data.suggestion } }));
+                        } catch (e) { /* silent */ }
+                      }}
+                      className="px-3 py-2 bg-indigo-700 text-indigo-200 rounded text-sm hover:bg-indigo-600 transition whitespace-nowrap flex items-center gap-1"
+                      title="AI-suggested QotW based on episode"
+                    >
+                      ✨ Suggest
+                    </button>
+                  </div>
                   <label className="flex items-center gap-2 text-purple-300">
                     <input
                       type="checkbox"
@@ -5796,6 +6051,29 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 </p>
               )}
             </div>
+
+            {/* Save as Template */}
+            <button
+              type="button"
+              onClick={() => { setNewTemplateName(''); setShowSaveTemplate(true); }}
+              disabled={newQ.questions.length === 0}
+              className="w-full py-2 bg-gray-700 text-gray-200 rounded font-semibold hover:bg-gray-600 transition text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Save Current Questions as Template
+            </button>
+
+            {/* Broadcast to all leagues — only shown when admin is in multiple leagues */}
+            {leagueMemberships && leagueMemberships.filter(m => m.playerId === currentUser.id).length > 1 && (
+              <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={broadcastToLeagues}
+                  onChange={e => setBroadcastToLeagues(e.target.checked)}
+                  className="w-4 h-4 accent-purple-500"
+                />
+                Create in ALL my leagues (same questionnaire for every league)
+              </label>
+            )}
 
             <div className="flex gap-4">
               <button
@@ -8401,11 +8679,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
 
   if (adminView === 'wordle-schedule') {
-    // Local state for inline editing and form
-    const [editingScheduleId, setEditingScheduleId] = React.useState(null);
-    const [editingWord, setEditingWord] = React.useState('');
-    const [newWeekForm, setNewWeekForm] = React.useState({ word: '', releaseDate: '', closeDate: '' });
-    const [auditExpanded, setAuditExpanded] = React.useState(false);
 
     const statusBadge = (status) => {
       if (status === 'pending') return <span className="px-2 py-0.5 rounded text-xs font-bold bg-gray-700 text-gray-300">PENDING</span>;
@@ -8815,24 +9088,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   }
 
   if (adminView === 'usage-analytics') {
-    const loadUsageData = async () => {
-      setLoadingUsage(true);
-      try {
-        const result = await storage.get('usage_visits');
-        setUsageData(result ? JSON.parse(result.value) : {});
-      } catch (e) {
-        setUsageData({});
-      }
-      setLoadingUsage(false);
-    };
-
-    if (usageData === null && !loadingUsage) loadUsageData();
-
-    // Auto-refresh every 30s while on this view
-    useEffect(() => {
-      const interval = setInterval(loadUsageData, 30000);
-      return () => clearInterval(interval);
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const timeAgo = (isoString) => {
       if (!isoString) return 'Never';

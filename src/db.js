@@ -142,7 +142,8 @@ export const GLOBAL_KEYS = [
   'players',
   'leagues',
   'leagueMemberships',
-  'contestants'
+  'contestants',
+  'questionnaireTemplates'
   // Note: password_{id} and security_{id} are also global but use dynamic keys
 ];
 
