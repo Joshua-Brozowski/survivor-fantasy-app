@@ -244,6 +244,10 @@ export default function SurvivorFantasyApp() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [expandedPlayer, setExpandedPlayer] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [profilePhotos, setProfilePhotos] = useState({});   // approved { [playerId]: base64 }
+  const [pendingPhotos, setPendingPhotos] = useState({});   // pending { [playerId]: { image, submittedAt, playerName } }
+  const [photoLightbox, setPhotoLightbox] = useState(null); // base64 string to show full-screen
+  const [photoUploadStatus, setPhotoUploadStatus] = useState('');
   const [securitySetup, setSecuritySetup] = useState({ question: '', answer: '' });
   const [passwordChange, setPasswordChange] = useState({ current: '', new: '', confirm: '' });
   const [hasSecurityQuestion, setHasSecurityQuestion] = useState(false);
@@ -879,6 +883,14 @@ export default function SurvivorFantasyApp() {
       const episodeRecapsData = await leagueStore.get('episodeRecaps');
       setEpisodeRecaps(episodeRecapsData ? JSON.parse(episodeRecapsData.value) : []);
 
+      // Load profile photos (global, non-critical — silent fail)
+      try {
+        const photosData = await storage.get('profilePhotos');
+        if (photosData?.value) setProfilePhotos(JSON.parse(photosData.value));
+        const pendingData = await storage.get('profilePhotosPending');
+        if (pendingData?.value) setPendingPhotos(JSON.parse(pendingData.value));
+      } catch (e) { /* photos are non-critical */ }
+
       setIsDataLoaded(true);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -1141,6 +1153,47 @@ export default function SurvivorFantasyApp() {
     setCurrentUser(null);
     setLoginForm({ name: '', password: '', rememberMe: true });
     setCurrentView('home');
+  };
+
+  // Resize an image File to at most maxPx × maxPx, returns base64 JPEG string
+  const resizeImage = (file, maxPx = 150) => new Promise((resolve, reject) => {
+    try {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.src = e.target.result;
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            let w = img.width, h = img.height;
+            const ratio = Math.min(maxPx / w, maxPx / h);
+            if (ratio < 1) { w = Math.round(w * ratio); h = Math.round(h * ratio); }
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', 0.82));
+          } catch (err) { reject(err); }
+        };
+        img.onerror = reject;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    } catch (err) { reject(err); }
+  });
+
+  const uploadProfilePhoto = async (file) => {
+    if (isGuestMode()) return;
+    setPhotoUploadStatus('uploading');
+    try {
+      const base64 = await resizeImage(file);
+      const entry = { image: base64, submittedAt: new Date().toISOString(), playerName: currentUser.name };
+      const updated = { ...pendingPhotos, [currentUser.id]: entry };
+      await storage.set('profilePhotosPending', JSON.stringify(updated));
+      setPendingPhotos(updated);
+      setPhotoUploadStatus('pending');
+    } catch (e) {
+      console.error('Photo upload failed:', e);
+      setPhotoUploadStatus('error');
+    }
   };
 
   const handleGoogleLink = async () => {
@@ -3004,6 +3057,26 @@ export default function SurvivorFantasyApp() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900 overflow-x-hidden w-full max-w-full">
 
+      {/* Full-screen photo lightbox */}
+      {photoLightbox && (
+        <div
+          className="fixed inset-0 bg-black/92 z-[200] flex items-center justify-center cursor-pointer"
+          onClick={() => setPhotoLightbox(null)}
+        >
+          <img
+            src={photoLightbox}
+            alt="Profile photo"
+            className="max-w-[88vw] max-h-[88vh] rounded-2xl object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            className="absolute top-4 right-4 text-white/70 hover:text-white transition text-3xl leading-none"
+            onClick={() => setPhotoLightbox(null)}
+            aria-label="Close"
+          >×</button>
+        </div>
+      )}
+
       {/* Demo mode banner — fixed bottom strip */}
       {isGuestMode() && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-sm border-t border-amber-800/60 text-amber-300/80 text-xs py-2 px-4 flex items-center justify-between gap-4">
@@ -3427,6 +3500,71 @@ export default function SurvivorFantasyApp() {
                   </button>
                 </div>
               </div>
+
+              {/* Profile Photo */}
+              {!isGuestMode() && (
+                <div className="mb-6 p-4 bg-gray-800/60 border border-gray-600/60 rounded-lg">
+                  <h3 className="text-lg font-semibold text-gray-200 mb-3">Profile Photo</h3>
+                  <p className="text-gray-400 text-sm mb-3">Shows in the leaderboard instead of your initials. Photos are reviewed by the admin before appearing.</p>
+
+                  {/* Current status */}
+                  {profilePhotos[currentUser.id] ? (
+                    <div className="flex items-center gap-3 mb-3">
+                      <img
+                        src={profilePhotos[currentUser.id]}
+                        alt="Your profile"
+                        className="w-14 h-14 rounded-full object-cover border-2 border-green-500"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                      <div>
+                        <p className="text-green-400 text-sm font-semibold">Active photo</p>
+                        <p className="text-gray-400 text-xs">Showing on leaderboard</p>
+                      </div>
+                    </div>
+                  ) : pendingPhotos[currentUser.id] ? (
+                    <div className="flex items-center gap-3 mb-3">
+                      <img
+                        src={pendingPhotos[currentUser.id].image}
+                        alt="Pending"
+                        className="w-14 h-14 rounded-full object-cover border-2 border-yellow-500 opacity-70"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                      <div>
+                        <p className="text-yellow-400 text-sm font-semibold">Pending approval</p>
+                        <p className="text-gray-400 text-xs">Waiting for admin review</p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Upload button */}
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        e.target.value = '';
+                        await uploadProfilePhoto(file);
+                      }}
+                    />
+                    <span className={`inline-block px-4 py-2 rounded font-semibold text-sm transition ${
+                      photoUploadStatus === 'uploading'
+                        ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                        : 'bg-amber-700 text-amber-200 hover:bg-amber-600 cursor-pointer'
+                    }`}>
+                      {photoUploadStatus === 'uploading' ? 'Uploading...' : profilePhotos[currentUser.id] || pendingPhotos[currentUser.id] ? 'Replace Photo' : 'Upload Photo'}
+                    </span>
+                  </label>
+                  {photoUploadStatus === 'pending' && (
+                    <p className="text-yellow-400 text-xs mt-2">Submitted! Waiting for admin approval.</p>
+                  )}
+                  {photoUploadStatus === 'error' && (
+                    <p className="text-red-400 text-xs mt-2">Upload failed. Please try again.</p>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={() => setShowSettings(false)}
@@ -3958,16 +4096,33 @@ export default function SurvivorFantasyApp() {
                               {rankDisplay}
                             </div>
 
-                            {/* Player Initial Circle */}
-                            <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br flex items-center justify-center border-2 ${
-                              isCurrentUser
-                                ? 'from-cyan-500 to-teal-500 border-cyan-300'
-                                : 'from-amber-600 to-orange-600 border-amber-400'
-                            }`}>
-                              <span className="text-white font-bold text-lg sm:text-xl" style={{ fontFamily: 'Impact, fantasy' }}>
-                                {player.name.charAt(0).toUpperCase()}
-                              </span>
-                            </div>
+                            {/* Player Photo or Initial Circle */}
+                            {profilePhotos[player.id] ? (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setPhotoLightbox(profilePhotos[player.id]); }}
+                                className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 overflow-hidden flex-shrink-0 ${
+                                  isCurrentUser ? 'border-cyan-300' : 'border-amber-400'
+                                } hover:ring-2 hover:ring-white/40 transition`}
+                                title="View full photo"
+                              >
+                                <img
+                                  src={profilePhotos[player.id]}
+                                  alt={player.name}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { e.target.parentElement.style.display = 'none'; }}
+                                />
+                              </button>
+                            ) : (
+                              <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br flex items-center justify-center border-2 ${
+                                isCurrentUser
+                                  ? 'from-cyan-500 to-teal-500 border-cyan-300'
+                                  : 'from-amber-600 to-orange-600 border-amber-400'
+                              }`}>
+                                <span className="text-white font-bold text-lg sm:text-xl" style={{ fontFamily: 'Impact, fantasy' }}>
+                                  {player.name.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                            )}
 
                             {/* Player Info */}
                             <div>
@@ -4199,6 +4354,10 @@ export default function SurvivorFantasyApp() {
             appendWordleAuditLog={appendWordleAuditLog}
             episodeRecaps={episodeRecaps}
             setEpisodeRecaps={setEpisodeRecaps}
+            profilePhotos={profilePhotos}
+            setProfilePhotos={setProfilePhotos}
+            pendingPhotos={pendingPhotos}
+            setPendingPhotos={setPendingPhotos}
           />
         )}
 
@@ -5134,7 +5293,7 @@ function GoogleEmailMapping({ storage, players }) {
 }
 
 // Admin Panel Component
-function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, playerScores, setPlayerScores, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus, wordleSchedule, setWordleSchedule, wordleAuditLog, rollbackWordleChallenge, autoCloseWordle, appendWordleAuditLog, episodeRecaps, setEpisodeRecaps }) {
+function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestants, setContestants, questionnaires, setQuestionnaires, submissions, setSubmissions, pickStatus, gamePhase, setGamePhase, picks, pickScores, setPickScores, advantages, setAdvantages, episodes, setEpisodes, qotWVotes, addNotification, notifications, deleteNotification, clearAllNotifications, storage, currentSeason, updateContestant, addContestant, removeContestant, updateTribeName, addPlayer, leagues, leagueMemberships, currentLeagueId, createLeague, addPlayerToLeague, removePlayerFromLeague, getLeaguePlayers, startNewSeason, archiveCurrentSeason, seasonHistory, seasonFinalized, setSeasonFinalized, challenges, setChallenges, challengeAttempts, adminCreateChallenge, adminEndChallenge, isGuestMode, picksLocked, setPicksLocked, togglePicksLock, playerAdvantages, setPlayerAdvantages, updatePlayerScore, playerScores, setPlayerScores, loadingBackup, setLoadingBackup, snapshots, setSnapshots, passwordStatus, setPasswordStatus, loadingPasswordStatus, setLoadingPasswordStatus, wordleSchedule, setWordleSchedule, wordleAuditLog, rollbackWordleChallenge, autoCloseWordle, appendWordleAuditLog, episodeRecaps, setEpisodeRecaps, profilePhotos = {}, setProfilePhotos, pendingPhotos = {}, setPendingPhotos }) {
   const [adminView, setAdminView] = useState('main');
   const [releasingScores, setReleasingScores] = useState(false);
   const [grantTarget, setGrantTarget] = useState('');
@@ -5151,6 +5310,35 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   // League-scoped storage helper — AdminPanel is a separate component so it can't
   // access getLeagueStorage() from the parent scope; recreate it using the prop.
   const getLeagueStorage = () => createLeagueStorage(currentLeagueId || 1);
+
+  const approveProfilePhoto = async (playerId) => {
+    try {
+      const entry = pendingPhotos[playerId];
+      if (!entry) return;
+      const updatedApproved = { ...profilePhotos, [playerId]: entry.image };
+      const { [playerId]: _, ...updatedPending } = pendingPhotos;
+      await storage.set('profilePhotos', JSON.stringify(updatedApproved));
+      await storage.set('profilePhotosPending', JSON.stringify(updatedPending));
+      setProfilePhotos(updatedApproved);
+      setPendingPhotos(updatedPending);
+    } catch (e) { alert('Failed to approve photo. Try again.'); }
+  };
+
+  const rejectProfilePhoto = async (playerId) => {
+    try {
+      const { [playerId]: _, ...updatedPending } = pendingPhotos;
+      await storage.set('profilePhotosPending', JSON.stringify(updatedPending));
+      setPendingPhotos(updatedPending);
+    } catch (e) { alert('Failed to reject photo. Try again.'); }
+  };
+
+  const revokeProfilePhoto = async (playerId) => {
+    try {
+      const { [playerId]: _, ...updatedApproved } = profilePhotos;
+      await storage.set('profilePhotos', JSON.stringify(updatedApproved));
+      setProfilePhotos(updatedApproved);
+    } catch (e) { alert('Failed to revoke photo. Try again.'); }
+  };
 
   const [newQ, setNewQ] = useState({
     title: '',
@@ -8713,6 +8901,84 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             <h3 className="text-blue-300 font-semibold mb-1">Google Account Mapping</h3>
             <p className="text-blue-200/70 text-sm mb-4">Link each player's Google email so they can use "Sign in with Google".</p>
             <GoogleEmailMapping storage={storage} players={leaguePlayers} />
+          </div>
+
+          {/* Profile Photo Queue */}
+          <div className="mt-6 p-4 bg-amber-900/20 border border-amber-600/60 rounded-lg">
+            <h3 className="text-amber-300 font-semibold mb-1 flex items-center gap-2">
+              Profile Photo Queue
+              {Object.keys(pendingPhotos).length > 0 && (
+                <span className="bg-red-600 text-white text-xs rounded-full px-2 py-0.5">{Object.keys(pendingPhotos).length}</span>
+              )}
+            </h3>
+            <p className="text-amber-200/60 text-sm mb-4">Review and approve or reject photos submitted by players.</p>
+
+            {/* Pending approvals */}
+            {Object.keys(pendingPhotos).length === 0 ? (
+              <p className="text-gray-500 text-sm">No photos pending approval.</p>
+            ) : (
+              <div className="space-y-3 mb-4">
+                <h4 className="text-yellow-300 text-sm font-semibold">Pending Approval</h4>
+                {Object.entries(pendingPhotos).map(([pid, entry]) => {
+                  const player = players.find(p => p.id === parseInt(pid));
+                  return (
+                    <div key={pid} className="flex items-center gap-3 bg-black/40 rounded-lg p-3">
+                      <img
+                        src={entry.image}
+                        alt={entry.playerName}
+                        className="w-14 h-14 rounded-full object-cover border-2 border-yellow-500"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-semibold text-sm">{player?.name || entry.playerName}</p>
+                        <p className="text-gray-400 text-xs">{new Date(entry.submittedAt).toLocaleDateString()}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => approveProfilePhoto(parseInt(pid))}
+                          className="px-3 py-1.5 bg-green-700 text-green-200 rounded text-xs font-semibold hover:bg-green-600 transition"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => rejectProfilePhoto(parseInt(pid))}
+                          className="px-3 py-1.5 bg-red-900/60 text-red-300 rounded text-xs font-semibold hover:bg-red-800/70 transition"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Approved photos */}
+            {Object.keys(profilePhotos).length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-green-300 text-sm font-semibold">Approved Photos</h4>
+                {Object.entries(profilePhotos).map(([pid, img]) => {
+                  const player = players.find(p => p.id === parseInt(pid));
+                  return (
+                    <div key={pid} className="flex items-center gap-3 bg-black/30 rounded-lg p-2">
+                      <img
+                        src={img}
+                        alt={player?.name || 'Player'}
+                        className="w-10 h-10 rounded-full object-cover border border-green-500"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                      <p className="text-white text-sm flex-1">{player?.name || `Player ${pid}`}</p>
+                      <button
+                        onClick={() => revokeProfilePhoto(parseInt(pid))}
+                        className="px-2 py-1 bg-gray-700 text-gray-300 rounded text-xs hover:bg-red-900/60 hover:text-red-300 transition"
+                      >
+                        Revoke
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <button
