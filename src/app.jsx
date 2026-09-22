@@ -366,12 +366,10 @@ export default function SurvivorFantasyApp() {
     try {
       const result = await storage.get('usage_visits');
       const visits = result ? JSON.parse(result.value) : {};
-      const playerData = visits[playerId] || { total: 0, weeks: {}, lastSeen: null };
+      const playerData = visits[playerId] || { total: 0, thursdayWeeks: {}, lastSeen: null };
       const now = new Date();
-      const weekKey = getISOWeekKey(now);
       const thursdayKey = getThursdayWeekKey(now);
       playerData.total = (playerData.total || 0) + 1;
-      playerData.weeks[weekKey] = (playerData.weeks[weekKey] || 0) + 1;
       playerData.thursdayWeeks = playerData.thursdayWeeks || {};
       playerData.thursdayWeeks[thursdayKey] = (playerData.thursdayWeeks[thursdayKey] || 0) + 1;
       playerData.lastSeen = now.toISOString();
@@ -396,20 +394,21 @@ export default function SurvivorFantasyApp() {
     try {
       const result = await storage.get('usage_visits');
       const visits = result ? JSON.parse(result.value) : {};
-      const playerData = visits[playerId] || { total: 0, weeks: {}, lastSeen: null };
-      // Merge tab visit counts
+      const playerData = visits[playerId] || { total: 0, thursdayWeeks: {}, lastSeen: null };
+      const thursdayKey = getThursdayWeekKey();
+      // All-time tab counts
       const existingTabs = playerData.tabs || {};
       Object.entries(tabVisitsRef.current).forEach(([tab, count]) => {
         existingTabs[tab] = (existingTabs[tab] || 0) + count;
       });
       playerData.tabs = existingTabs;
-      // Accumulate total all-time seconds
-      playerData.totalSeconds = (playerData.totalSeconds || 0) + totalPending;
-      // Accumulate this-week seconds (Thursday-based, resets each Thursday)
-      const thursdayKey = getThursdayWeekKey();
-      playerData.weekSeconds = playerData.weekSeconds || {};
-      playerData.weekSeconds[thursdayKey] = (playerData.weekSeconds[thursdayKey] || 0) + totalPending;
-      // Write heartbeat timestamp so admin can show green dot for active users
+      // Per-week tab breakdown — the key "where did they go this week" metric
+      playerData.weekTabs = playerData.weekTabs || {};
+      playerData.weekTabs[thursdayKey] = playerData.weekTabs[thursdayKey] || {};
+      Object.entries(tabVisitsRef.current).forEach(([tab, count]) => {
+        playerData.weekTabs[thursdayKey][tab] = (playerData.weekTabs[thursdayKey][tab] || 0) + count;
+      });
+      // Heartbeat for "Active Now" green dot
       playerData.lastHeartbeat = new Date().toISOString();
       visits[playerId] = playerData;
       await storage.set('usage_visits', JSON.stringify(visits));
@@ -8829,25 +8828,23 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
     if (usageData === null && !loadingUsage) loadUsageData();
 
+    // Auto-refresh every 30s while on this view
+    useEffect(() => {
+      const interval = setInterval(loadUsageData, 30000);
+      return () => clearInterval(interval);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
     const timeAgo = (isoString) => {
       if (!isoString) return 'Never';
       const diff = Date.now() - new Date(isoString).getTime();
-      const minutes = Math.floor(diff / 60000);
-      if (minutes < 1) return 'Just now';
-      if (minutes < 60) return `${minutes}m ago`;
-      const hours = Math.floor(minutes / 60);
-      if (hours < 24) return `${hours}h ago`;
-      return `${Math.floor(hours / 24)}d ago`;
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      return `${Math.floor(hrs / 24)}d ago`;
     };
 
-    const fmtTime = (secs) => {
-      if (!secs || secs < 1) return null;
-      if (secs < 60) return `${secs}s`;
-      if (secs < 3600) return `${Math.floor(secs / 60)}m`;
-      return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
-    };
-
-    // Thursday week key matching getThursdayWeekKey() on the client
     const currentThursdayKey = (() => {
       const d = new Date();
       d.setHours(0, 0, 0, 0);
@@ -8856,146 +8853,139 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       return `thu-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     })();
 
-    const TAB_KEYS = ['home','picks','questionnaire','challenge','leaderboard','advantages','admin'];
-    const TAB_LABELS = { home:'Home', picks:'Picks', questionnaire:"Q'aire", challenge:'Wordle', leaderboard:'Board', advantages:"Adv's", admin:'Admin' };
+    const TAB_LABELS = { home: 'Home', picks: 'Picks', questionnaire: 'Q\'aire', challenge: 'Wordle', leaderboard: 'Board', advantages: 'Adv\'s', admin: 'Admin' };
+    const TAB_COLORS = { home: 'bg-amber-900/50 text-amber-300', picks: 'bg-blue-900/50 text-blue-300', questionnaire: 'bg-purple-900/50 text-purple-300', challenge: 'bg-green-900/50 text-green-300', leaderboard: 'bg-cyan-900/50 text-cyan-300', advantages: 'bg-orange-900/50 text-orange-300', admin: 'bg-red-900/50 text-red-300' };
 
     const isActiveNow = (data) => {
       if (!data?.lastHeartbeat) return false;
       return Date.now() - new Date(data.lastHeartbeat).getTime() < 3 * 60 * 1000;
     };
 
-    const totalVisits = usageData
-      ? Object.values(usageData).reduce((sum, d) => sum + (d.total || 0), 0)
-      : 0;
+    const activeNowPlayers = usageData ? players.filter(p => isActiveNow(usageData[p.id])) : [];
+    const totalAllTime = usageData ? Object.values(usageData).reduce((s, d) => s + (d.total || 0), 0) : 0;
+    const totalThisWeek = usageData ? players.reduce((s, p) => s + ((usageData[p.id]?.thursdayWeeks || {})[currentThursdayKey] || 0), 0) : 0;
 
-    const activeNowCount = usageData
-      ? players.filter(p => isActiveNow(usageData[p.id])).length
-      : 0;
+    const sortedPlayers = [...players].sort((a, b) => {
+      const aActive = isActiveNow(usageData?.[a.id]);
+      const bActive = isActiveNow(usageData?.[b.id]);
+      if (aActive !== bActive) return aActive ? -1 : 1;
+      const aWk = (usageData?.[a.id]?.thursdayWeeks || {})[currentThursdayKey] || 0;
+      const bWk = (usageData?.[b.id]?.thursdayWeeks || {})[currentThursdayKey] || 0;
+      return bWk - aWk;
+    });
 
     return (
       <div className="space-y-6">
         <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-cyan-700">
 
           {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-300 flex items-center gap-2">
-                <TrendingUp className="w-6 h-6 text-cyan-400" />
-                Usage Analytics
-              </h2>
-              <p className="text-gray-500 text-xs mt-1">Time pauses when phone is locked. Week resets Thursday.</p>
-            </div>
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-2xl font-bold text-gray-300 flex items-center gap-2">
+              <TrendingUp className="w-6 h-6 text-cyan-400" />
+              Usage Analytics
+            </h2>
             <button
               onClick={loadUsageData}
-              className="px-3 py-1.5 bg-cyan-800 text-cyan-200 rounded font-semibold hover:bg-cyan-700 transition flex items-center gap-1.5 text-sm"
+              disabled={loadingUsage}
+              className="px-3 py-1.5 bg-cyan-800 text-cyan-200 rounded font-semibold hover:bg-cyan-700 transition flex items-center gap-1.5 text-sm disabled:opacity-50"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingUsage ? 'animate-spin' : ''}`} />
               Refresh
             </button>
           </div>
 
-          {loadingUsage && <p className="text-gray-400 text-center py-8">Loading...</p>}
+          {/* Summary stats */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className={`rounded-lg p-3 text-center border ${activeNowPlayers.length > 0 ? 'bg-green-900/40 border-green-600' : 'bg-gray-900/40 border-gray-700'}`}>
+              <p className={`text-3xl font-bold ${activeNowPlayers.length > 0 ? 'text-green-400' : 'text-gray-600'}`}>
+                {activeNowPlayers.length}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">Active Now</p>
+              {activeNowPlayers.length > 0 && (
+                <p className="text-xs text-green-400 mt-1 truncate">{activeNowPlayers.map(p => p.name).join(', ')}</p>
+              )}
+            </div>
+            <div className="bg-cyan-900/30 border border-cyan-800 rounded-lg p-3 text-center">
+              <p className="text-3xl font-bold text-cyan-400">{totalThisWeek}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Opens This Week</p>
+            </div>
+            <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3 text-center">
+              <p className="text-3xl font-bold text-gray-300">{totalAllTime}</p>
+              <p className="text-xs text-gray-400 mt-0.5">All-Time Opens</p>
+            </div>
+          </div>
 
-          {!loadingUsage && usageData !== null && (
-            <>
-              {/* Summary chips */}
-              <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="bg-cyan-900/30 border border-cyan-700 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{totalVisits}</p>
-                  <p className="text-xs text-cyan-300">Total Opens</p>
-                </div>
-                <div className="bg-green-900/30 border border-green-700 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-green-400">{activeNowCount}</p>
-                  <p className="text-xs text-green-300">Active Now</p>
-                </div>
-              </div>
+          {loadingUsage && !usageData && <p className="text-gray-400 text-center py-8">Loading...</p>}
 
-              {/* Main player table */}
-              <div className="mb-8">
-                <h3 className="text-gray-400 font-semibold mb-3 text-sm uppercase tracking-wide">Player Overview</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-gray-400 border-b border-gray-700">
-                        <th className="py-2 pr-2 w-4"></th>
-                        <th className="text-left py-2 pr-4 font-semibold">Player</th>
-                        <th className="text-center py-2 px-2 font-semibold text-xs">Opens</th>
-                        <th className="text-center py-2 px-2 font-semibold text-xs">This Wk</th>
-                        <th className="text-center py-2 px-2 font-semibold text-xs">Total Time</th>
-                        <th className="text-center py-2 px-2 font-semibold text-xs">Wk Time</th>
-                        <th className="text-right py-2 pl-2 font-semibold text-xs">Last Seen</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {players.map(player => {
-                        const data = usageData[player.id] || {};
-                        const active = isActiveNow(data);
-                        const thisWkOpens = (data.thursdayWeeks || {})[currentThursdayKey] || 0;
-                        const wkSecs = (data.weekSeconds || {})[currentThursdayKey] || 0;
-                        return (
-                          <tr key={player.id} className="border-b border-gray-800 hover:bg-gray-900/40">
-                            <td className="py-2 pr-2">
-                              <span
-                                className={`inline-block w-2 h-2 rounded-full ${active ? 'bg-green-400' : 'bg-gray-700'}`}
-                                title={active ? 'Active now' : 'Offline'}
-                              />
-                            </td>
-                            <td className="py-2 pr-4 text-white font-medium">{player.name}</td>
-                            <td className="text-center py-2 px-2 text-cyan-300 font-semibold">{data.total || 0}</td>
-                            <td className="text-center py-2 px-2 text-teal-300">{thisWkOpens || '—'}</td>
-                            <td className="text-center py-2 px-2 text-purple-300">{fmtTime(data.totalSeconds) || '—'}</td>
-                            <td className="text-center py-2 px-2 text-indigo-300">{fmtTime(wkSecs) || '—'}</td>
-                            <td className="text-right py-2 pl-2 text-gray-500 text-xs">{timeAgo(data.lastSeen)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+          {usageData !== null && (
+            <div className="space-y-2">
+              <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold mb-3">Players — sorted by active, then this week's opens</p>
+              {sortedPlayers.map(player => {
+                const data = usageData[player.id] || {};
+                const active = isActiveNow(data);
+                const thisWk = (data.thursdayWeeks || {})[currentThursdayKey] || 0;
+                const weekTabData = (data.weekTabs || {})[currentThursdayKey] || {};
+                const weekTabEntries = Object.entries(weekTabData)
+                  .filter(([, c]) => c > 0)
+                  .sort(([, a], [, b]) => b - a);
 
-              {/* Tab visit breakdown */}
-              <div>
-                <h3 className="text-gray-400 font-semibold mb-3 text-sm uppercase tracking-wide">Tab Visits (All-Time)</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-gray-400 border-b border-gray-700">
-                        <th className="text-left py-2 pr-4 font-semibold">Player</th>
-                        {TAB_KEYS.map(tab => (
-                          <th key={tab} className="text-center py-2 px-2 font-semibold text-xs whitespace-nowrap">{TAB_LABELS[tab]}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {players.map(player => {
-                        const data = usageData[player.id] || {};
-                        const tabs = data.tabs || {};
-                        return (
-                          <tr key={player.id} className="border-b border-gray-800 hover:bg-gray-900/40">
-                            <td className="py-2 pr-4 text-white font-medium">{player.name}</td>
-                            {TAB_KEYS.map(tab => (
-                              <td key={tab} className="text-center py-2 px-2">
-                                {tabs[tab] ? (
-                                  <span className="text-cyan-300 font-semibold">{tabs[tab]}</span>
-                                ) : (
-                                  <span className="text-gray-700">—</span>
-                                )}
-                              </td>
-                            ))}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
+                return (
+                  <div
+                    key={player.id}
+                    className={`rounded-lg p-3 border transition ${active ? 'bg-green-950/40 border-green-700' : 'bg-gray-900/30 border-gray-800'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Status dot */}
+                      <span
+                        className={`flex-shrink-0 w-2.5 h-2.5 rounded-full ${active ? 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.8)]' : 'bg-gray-700'}`}
+                        title={active ? 'Active now' : 'Offline'}
+                      />
+
+                      {/* Name */}
+                      <span className={`font-semibold w-20 flex-shrink-0 ${active ? 'text-green-300' : 'text-white'}`}>
+                        {player.name}
+                      </span>
+
+                      {/* Stats */}
+                      <div className="flex items-center gap-4 text-sm flex-shrink-0">
+                        <div className="text-center">
+                          <span className="text-cyan-400 font-bold">{thisWk || '0'}</span>
+                          <span className="text-gray-600 text-xs ml-1">wk</span>
+                        </div>
+                        <div className="text-center">
+                          <span className="text-gray-400">{data.total || 0}</span>
+                          <span className="text-gray-600 text-xs ml-1">total</span>
+                        </div>
+                        <div className="text-gray-600 text-xs">{timeAgo(data.lastSeen)}</div>
+                      </div>
+
+                      {/* This week's tab chips */}
+                      <div className="flex flex-wrap gap-1 ml-auto">
+                        {weekTabEntries.length === 0 ? (
+                          <span className="text-gray-700 text-xs">no activity this week</span>
+                        ) : (
+                          weekTabEntries.map(([tab, count]) => (
+                            <span
+                              key={tab}
+                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAB_COLORS[tab] || 'bg-gray-800 text-gray-400'}`}
+                            >
+                              {TAB_LABELS[tab] || tab} {count}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
+
+          <p className="text-gray-700 text-xs mt-4">Week resets Thursday · Active = heartbeat within 3 min · Tab chips show this week only</p>
 
           <button
             onClick={() => setAdminView('main')}
-            className="w-full mt-6 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
+            className="w-full mt-4 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
           >
             Back to Controls
           </button>
