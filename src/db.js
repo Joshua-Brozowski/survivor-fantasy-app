@@ -116,7 +116,6 @@ export async function authFetch(url, options = {}) {
 export const LEAGUE_SPECIFIC_KEYS = [
   'picks',
   'picksLocked',
-  'questionnaires',
   'submissions',
   'qotWVotes',
   'pickScores',
@@ -143,6 +142,7 @@ export const GLOBAL_KEYS = [
   'leagues',
   'leagueMemberships',
   'contestants',
+  'questionnaires',
   'questionnaireTemplates',
   'joinCodes'
   // Note: password_{id} and security_{id} are also global but use dynamic keys

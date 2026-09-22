@@ -36,6 +36,7 @@ const GLOBAL_BACKUP_KEYS = [
   'contestants',
   'leagues',
   'leagueMemberships',
+  'questionnaires',
   '_multiLeagueMigrated'
 ];
 
@@ -43,7 +44,6 @@ const GLOBAL_BACKUP_KEYS = [
 const LEAGUE_SPECIFIC_KEYS = [
   'picks',
   'picksLocked',
-  'questionnaires',
   'submissions',
   'qotWVotes',
   'pickScores',
