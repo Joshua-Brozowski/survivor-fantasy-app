@@ -4006,6 +4006,8 @@ export default function SurvivorFantasyApp() {
             getLeagueStorage={getLeagueStorage}
             isGuestMode={isGuestMode}
             playerAdvantages={playerAdvantages}
+            leagueMemberships={leagueMemberships}
+            currentLeagueId={currentLeagueId}
           />
         )}
 
@@ -11328,7 +11330,7 @@ function NotificationBanners({ notifications, currentUser, markNotificationSeen,
   );
 }
 
-function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmissions, contestants, latePenalties, setLatePenalties, qotWVotes, setQotWVotes, players, guestSafeLeagueSet, getLeagueStorage, isGuestMode, playerAdvantages }) {
+function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmissions, contestants, latePenalties, setLatePenalties, qotWVotes, setQotWVotes, players, guestSafeLeagueSet, getLeagueStorage, isGuestMode, playerAdvantages, leagueMemberships, currentLeagueId }) {
   const activeQ = questionnaires.find(q => q.status === 'active');
   const mySubmission = activeQ ? submissions.find(s => s.questionnaireId === activeQ.id && s.playerId === currentUser.id) : null;
   const [answers, setAnswers] = useState({});
