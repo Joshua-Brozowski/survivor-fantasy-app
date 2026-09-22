@@ -215,6 +215,11 @@ export default function SurvivorFantasyApp() {
   const [googleLinkLoading, setGoogleLinkLoading] = useState(false);
   const [showGoogleLinkPassword, setShowGoogleLinkPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
+  // Join league state
+  const [joinForm, setJoinForm] = useState({ name: '', joinCode: '', password: '', confirm: '' });
+  const [joinError, setJoinError] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [showJoinPassword, setShowJoinPassword] = useState(false);
   const [linkedGoogleEmail, setLinkedGoogleEmail] = useState(null); // null = not yet loaded
   const [linkingGoogle, setLinkingGoogle] = useState(false);
   const [googleLinkedSuccess, setGoogleLinkedSuccess] = useState(false);
@@ -983,8 +988,13 @@ export default function SurvivorFantasyApp() {
           setShowLeagueSelector(true);
         }
       } else {
-        // Show rate limit message if available, otherwise generic error
-        alert(result.error || 'Invalid username or password');
+        // Check for deactivated account error specifically
+        if (result.error && result.error.includes('deactivated')) {
+          alert(result.error);
+        } else {
+          // Show rate limit message if available, otherwise generic error
+          alert(result.error || 'Invalid username or password');
+        }
       }
     } else {
       // Don't reveal whether username exists - same error message
@@ -995,6 +1005,42 @@ export default function SurvivorFantasyApp() {
     } finally {
       setLoginLoading(false);
     }
+  };
+
+  const handleJoin = async () => {
+    setJoinError('');
+    if (!joinForm.name.trim()) { setJoinError('Please enter your name.'); return; }
+    if (!joinForm.joinCode.trim()) { setJoinError('Please enter the join code.'); return; }
+    if (joinForm.password.length < 8) { setJoinError('Password must be at least 8 characters.'); return; }
+    if (joinForm.password !== joinForm.confirm) { setJoinError('Passwords do not match.'); return; }
+
+    setJoinLoading(true);
+    try {
+      const result = await auth.joinLeague(joinForm.name, joinForm.joinCode, joinForm.password);
+      if (result.success) {
+        // Re-fetch players and memberships so the new player is in local state
+        const playersData = await storage.get('players');
+        if (playersData?.value) setPlayers(JSON.parse(playersData.value));
+        const membershipsData = await storage.get('leagueMemberships');
+        if (membershipsData?.value) setLeagueMemberships(JSON.parse(membershipsData.value));
+
+        const newPlayer = result.player;
+        const leagueId = result.leagueId;
+
+        // Default to remembering for new registrations
+        localStorage.setItem('survivorFantasyUser', JSON.stringify({ id: newPlayer.id, name: newPlayer.name }));
+
+        setCurrentUser(newPlayer);
+        localStorage.setItem('survivorFantasyLeagueId', leagueId.toString());
+        await switchLeague(leagueId);
+        setCurrentView('home');
+      } else {
+        setJoinError(result.error || 'Failed to join. Check your join code.');
+      }
+    } catch (e) {
+      setJoinError('Something went wrong. Please try again.');
+    }
+    setJoinLoading(false);
   };
 
   const handleGoogleLink = async () => {
@@ -1333,11 +1379,11 @@ export default function SurvivorFantasyApp() {
     const memberPlayerIds = leagueMemberships
       .filter(m => m.leagueId === leagueId)
       .map(m => m.playerId);
-    return players.filter(p => memberPlayerIds.includes(p.id));
+    return players.filter(p => memberPlayerIds.includes(p.id) && p.active !== false);
   };
 
   // Computed: Players in the current league (use this for all league-scoped displays)
-  const leaguePlayers = currentLeagueId ? getLeaguePlayers(currentLeagueId) : players;
+  const leaguePlayers = currentLeagueId ? getLeaguePlayers(currentLeagueId) : players.filter(p => p.active !== false);
 
   // Switch to a different league and reload its data
   const switchLeague = async (leagueId) => {
@@ -2483,6 +2529,108 @@ export default function SurvivorFantasyApp() {
                   </p>
                 </div>
               )}
+
+              {/* Join a league link */}
+              <div className="text-center mt-2">
+                <button
+                  type="button"
+                  onClick={() => { setLoginView('join'); setJoinError(''); setJoinForm({ name: '', joinCode: '', password: '', confirm: '' }); }}
+                  className="text-amber-400 hover:text-amber-300 text-sm underline"
+                >
+                  Join a league with an invite code
+                </button>
+              </div>
+            </div>
+          ) : loginView === 'join' ? (
+            <div className="space-y-4">
+              <div className="text-center">
+                <h2 className="text-xl font-semibold text-amber-300 mb-1">Join a League</h2>
+                <p className="text-amber-200/60 text-sm">Enter the invite code from your league admin.</p>
+              </div>
+
+              {joinError && (
+                <div className="p-3 bg-red-900/40 border border-red-500 rounded text-red-300 text-sm">
+                  {joinError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-amber-200 mb-2">Your Name</label>
+                <input
+                  type="text"
+                  value={joinForm.name}
+                  onChange={(e) => setJoinForm({...joinForm, name: e.target.value})}
+                  className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                  placeholder="Enter your name"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-amber-200 mb-2">Invite Code</label>
+                <input
+                  type="text"
+                  value={joinForm.joinCode}
+                  onChange={(e) => setJoinForm({...joinForm, joinCode: e.target.value.toUpperCase()})}
+                  className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400 tracking-widest uppercase font-mono"
+                  placeholder="ABC123"
+                  maxLength={8}
+                />
+              </div>
+
+              <div>
+                <label className="block text-amber-200 mb-2">Password</label>
+                <div className="relative">
+                  <input
+                    type={showJoinPassword ? 'text' : 'password'}
+                    value={joinForm.password}
+                    onChange={(e) => setJoinForm({...joinForm, password: e.target.value})}
+                    className="w-full px-4 py-2 pr-10 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                    placeholder="Choose a password (min 8 chars)"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowJoinPassword(!showJoinPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-amber-400 hover:text-amber-300 transition"
+                    aria-label={showJoinPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showJoinPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-amber-200 mb-2">Confirm Password</label>
+                <input
+                  type={showJoinPassword ? 'text' : 'password'}
+                  value={joinForm.confirm}
+                  onChange={(e) => setJoinForm({...joinForm, confirm: e.target.value})}
+                  onKeyPress={(e) => e.key === 'Enter' && handleJoin()}
+                  className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
+                  placeholder="Confirm your password"
+                />
+              </div>
+
+              <button
+                onClick={handleJoin}
+                type="button"
+                disabled={joinLoading}
+                className={`w-full py-3 rounded font-semibold transition ${
+                  joinLoading
+                    ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-amber-600 to-orange-600 text-white hover:from-amber-500 hover:to-orange-500'
+                }`}
+              >
+                {joinLoading ? 'Joining...' : 'Join League'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setLoginView('login'); setJoinError(''); }}
+                className="w-full text-amber-500/60 text-sm hover:text-amber-400 transition text-center py-1"
+              >
+                ← Back to Login
+              </button>
             </div>
           ) : loginView === 'google-link' ? (
             <div className="space-y-4">
@@ -4846,6 +4994,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newLeagueName, setNewLeagueName] = useState('');
   const [selectedLeagueForMembers, setSelectedLeagueForMembers] = useState(null);
+  const [joinCodes, setJoinCodes] = useState({});
   const [dragOverNew, setDragOverNew] = useState(false);
   const [dragOverEdit, setDragOverEdit] = useState(null);
   const [notificationForm, setNotificationForm] = useState({ selectedPlayers: [], message: '', sendToAll: false });
@@ -8358,26 +8507,63 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           <div>
             <h3 className="text-emerald-300 font-semibold mb-3">Current Players ({players.length})</h3>
             <div className="grid gap-2">
-              {players.map(player => (
-                <div
-                  key={player.id}
-                  className={`flex items-center justify-between p-3 rounded-lg ${
-                    player.isAdmin ? 'bg-amber-900/30 border border-amber-600' : 'bg-emerald-900/20 border border-emerald-700'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
-                      player.isAdmin ? 'bg-amber-600' : 'bg-emerald-600'
-                    }`}>
-                      {player.name.substring(0, 2).toUpperCase()}
+              {players.map(player => {
+                const isDeactivated = player.active === false;
+                const handleToggleActive = async () => {
+                  if (player.isAdmin) return; // Never deactivate admin
+                  if (isDeactivated) {
+                    if (!confirm(`Reactivate ${player.name}? They will be able to log in again.`)) return;
+                  } else {
+                    if (!confirm(`Deactivate ${player.name}? They will lose access but their data is preserved.`)) return;
+                  }
+                  const updatedPlayers = players.map(p =>
+                    p.id === player.id ? { ...p, active: isDeactivated ? true : false } : p
+                  );
+                  setPlayers(updatedPlayers);
+                  await storage.set('players', JSON.stringify(updatedPlayers));
+                };
+                return (
+                  <div
+                    key={player.id}
+                    className={`flex items-center justify-between p-3 rounded-lg ${
+                      isDeactivated
+                        ? 'bg-gray-900/40 border border-gray-600 opacity-60'
+                        : player.isAdmin
+                          ? 'bg-amber-900/30 border border-amber-600'
+                          : 'bg-emerald-900/20 border border-emerald-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
+                        isDeactivated ? 'bg-gray-600' : player.isAdmin ? 'bg-amber-600' : 'bg-emerald-600'
+                      }`}>
+                        {player.name.substring(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className={`font-semibold ${isDeactivated ? 'text-gray-400' : 'text-white'}`}>{player.name}</p>
+                          {isDeactivated && (
+                            <span className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">Deactivated</span>
+                          )}
+                        </div>
+                        <p className="text-gray-400 text-sm">ID: {player.id} {player.isAdmin && '• Admin'}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-white font-semibold">{player.name}</p>
-                      <p className="text-gray-400 text-sm">ID: {player.id} {player.isAdmin && '• Admin'}</p>
-                    </div>
+                    {!player.isAdmin && (
+                      <button
+                        onClick={handleToggleActive}
+                        className={`px-3 py-1.5 rounded text-sm font-medium transition ${
+                          isDeactivated
+                            ? 'bg-green-700 hover:bg-green-600 text-white'
+                            : 'bg-red-800 hover:bg-red-700 text-red-200'
+                        }`}
+                      >
+                        {isDeactivated ? 'Reactivate' : 'Deactivate'}
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -8412,6 +8598,35 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
         setNewLeagueName('');
       }
     };
+
+    const generateJoinCode = () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    };
+
+    const createJoinCode = async (league) => {
+      const code = generateJoinCode();
+      const updated = { ...joinCodes, [code]: { leagueId: league.id, leagueName: league.name, enabled: true, createdAt: new Date().toISOString() } };
+      // Remove any existing code for this league first
+      Object.keys(updated).forEach(k => { if (k !== code && updated[k].leagueId === league.id) delete updated[k]; });
+      setJoinCodes(updated);
+      await storage.set('joinCodes', JSON.stringify(updated));
+    };
+
+    const toggleJoinCode = async (code) => {
+      const updated = { ...joinCodes, [code]: { ...joinCodes[code], enabled: !joinCodes[code].enabled } };
+      setJoinCodes(updated);
+      await storage.set('joinCodes', JSON.stringify(updated));
+    };
+
+    // Load join codes if not loaded yet
+    if (Object.keys(joinCodes).length === 0) {
+      storage.get('joinCodes').then(data => {
+        if (data?.value) {
+          try { setJoinCodes(JSON.parse(data.value)); } catch(e) {}
+        }
+      });
+    }
 
     const handleAddToLeague = async (playerId) => {
       if (!requireRealUser('Add Player to League')) return;
@@ -8537,6 +8752,57 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               </div>
             </div>
           )}
+
+          {/* Join Code Settings per League */}
+          <div className="mt-6 p-4 bg-indigo-900/30 border border-indigo-600 rounded-lg">
+            <h3 className="text-indigo-300 font-semibold mb-3">Join Code Settings</h3>
+            <p className="text-indigo-200/70 text-sm mb-4">Share an invite code so new players can self-register and join a league.</p>
+            <div className="grid gap-3">
+              {leagues.map(league => {
+                const leagueCode = Object.entries(joinCodes).find(([, v]) => v.leagueId === league.id);
+                const [code, codeEntry] = leagueCode || [null, null];
+                return (
+                  <div key={league.id} className="p-3 bg-indigo-900/20 border border-indigo-700 rounded-lg">
+                    <p className="text-white font-semibold mb-2">{league.name}</p>
+                    {code ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`font-mono text-lg tracking-widest px-3 py-1 rounded ${codeEntry.enabled ? 'bg-green-900/40 text-green-300 border border-green-600' : 'bg-gray-800 text-gray-400 border border-gray-600 line-through'}`}>
+                          {code}
+                        </span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard?.writeText(code).then(() => alert(`Copied: ${code}`)).catch(() => alert(`Code: ${code}`));
+                          }}
+                          className="px-2 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded text-xs"
+                        >
+                          Copy
+                        </button>
+                        <button
+                          onClick={() => toggleJoinCode(code)}
+                          className={`px-2 py-1 rounded text-xs ${codeEntry.enabled ? 'bg-yellow-700 hover:bg-yellow-600 text-white' : 'bg-green-700 hover:bg-green-600 text-white'}`}
+                        >
+                          {codeEntry.enabled ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          onClick={() => createJoinCode(league)}
+                          className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs"
+                        >
+                          New Code
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => createJoinCode(league)}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-sm"
+                      >
+                        Generate Code
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           <button
             onClick={() => setAdminView('main')}

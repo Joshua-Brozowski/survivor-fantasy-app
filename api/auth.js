@@ -180,6 +180,13 @@ export default async function handler(req, res) {
           return;
         }
 
+        // Block deactivated players from refreshing tokens
+        if (player.active === false) {
+          clearRefreshTokenCookie(res);
+          res.status(403).json({ error: 'This account has been deactivated. Contact the league admin.' });
+          return;
+        }
+
         // Generate new access token
         const accessToken = generateAccessToken(player);
 
@@ -233,6 +240,83 @@ export default async function handler(req, res) {
       return;
     }
 
+    // joinLeague action — no playerId needed (creates a new player)
+    if (action === 'joinLeague') {
+      const { name, joinCode, password: joinPassword } = req.body;
+
+      // Validate inputs
+      if (!name?.trim() || !joinCode?.trim() || !joinPassword) {
+        return res.status(400).json({ error: 'Name, join code, and password are required.' });
+      }
+      if (joinPassword.length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+      }
+
+      const trimmedName = name.trim();
+      const upperCode = joinCode.trim().toUpperCase();
+
+      // Validate join code
+      const codesData = await collection.findOne({ key: 'joinCodes' });
+      const codes = codesData?.value ? JSON.parse(codesData.value) : {};
+      const codeEntry = codes[upperCode];
+
+      if (!codeEntry || !codeEntry.enabled) {
+        return res.status(400).json({ error: 'Invalid or disabled join code.' });
+      }
+
+      // Check name not already taken (case-insensitive)
+      const playersData = await collection.findOne({ key: 'players' });
+      const allPlayers = playersData?.value ? JSON.parse(playersData.value) : [];
+      const nameTaken = allPlayers.some(p => p.name.toLowerCase() === trimmedName.toLowerCase());
+      if (nameTaken) {
+        return res.status(400).json({ error: 'That name is already taken. Try a variation.' });
+      }
+
+      // Generate new player ID
+      const newId = allPlayers.length > 0 ? Math.max(...allPlayers.map(p => p.id)) + 1 : 1;
+      const newPlayer = { id: newId, name: trimmedName, isAdmin: false, active: true };
+
+      // Add player
+      const updatedPlayers = [...allPlayers, newPlayer];
+      await collection.updateOne(
+        { key: 'players' },
+        { $set: { key: 'players', value: JSON.stringify(updatedPlayers), updatedAt: new Date() } },
+        { upsert: true }
+      );
+
+      // Add league membership
+      const membershipsData = await collection.findOne({ key: 'leagueMemberships' });
+      const memberships = membershipsData?.value ? JSON.parse(membershipsData.value) : [];
+      const updatedMemberships = [...memberships, { playerId: newId, leagueId: codeEntry.leagueId }];
+      await collection.updateOne(
+        { key: 'leagueMemberships' },
+        { $set: { key: 'leagueMemberships', value: JSON.stringify(updatedMemberships), updatedAt: new Date() } },
+        { upsert: true }
+      );
+
+      // Hash and store password
+      const hashedJoinPassword = await bcrypt.hash(joinPassword, SALT_ROUNDS);
+      const joinPasswordKey = `password_${newId}`;
+      await collection.updateOne(
+        { key: joinPasswordKey },
+        { $set: { key: joinPasswordKey, value: hashedJoinPassword, updatedAt: new Date() } },
+        { upsert: true }
+      );
+
+      // Issue JWT tokens (same pattern as login)
+      const accessToken = generateAccessToken(newPlayer);
+      const refreshToken = generateRefreshToken(newPlayer, 0);
+      setRefreshTokenCookie(res, refreshToken);
+
+      return res.status(200).json({
+        success: true,
+        player: newPlayer,
+        leagueId: codeEntry.leagueId,
+        accessToken,
+        user: { id: newPlayer.id, name: newPlayer.name, isAdmin: false }
+      });
+    }
+
     if (!action || !playerId) {
       res.status(400).json({ error: 'Missing action or playerId' });
       return;
@@ -271,6 +355,12 @@ export default async function handler(req, res) {
 
           if (!player) {
             res.status(500).json({ error: 'Player not found' });
+            return;
+          }
+
+          // Block deactivated players
+          if (player.active === false) {
+            res.status(403).json({ success: false, error: 'This account has been deactivated. Contact the league admin.' });
             return;
           }
 

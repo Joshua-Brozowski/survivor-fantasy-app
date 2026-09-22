@@ -143,7 +143,8 @@ export const GLOBAL_KEYS = [
   'leagues',
   'leagueMemberships',
   'contestants',
-  'questionnaireTemplates'
+  'questionnaireTemplates',
+  'joinCodes'
   // Note: password_{id} and security_{id} are also global but use dynamic keys
 ];
 
@@ -324,6 +325,26 @@ export const auth = {
     } catch (error) {
       console.error('Auth checkDefaultPasswords error:', error);
       return { success: false, results: {}, error: 'Network error' };
+    }
+  },
+
+  async joinLeague(name, joinCode, password) {
+    try {
+      const response = await fetch(`${API_BASE}/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'joinLeague', name, joinCode, password })
+      });
+      const data = await response.json();
+      if (response.ok && data.success && data.accessToken) {
+        setAccessToken(data.accessToken);
+        return { success: true, player: data.player, leagueId: data.leagueId, user: data.user };
+      }
+      return { success: false, error: data.error };
+    } catch (error) {
+      console.error('Auth joinLeague error:', error);
+      return { success: false, error: 'Network error' };
     }
   }
 };
