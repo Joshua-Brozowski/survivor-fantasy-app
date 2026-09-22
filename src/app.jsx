@@ -9129,14 +9129,20 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       return bWk - aWk;
     });
 
+    const resetUsageStats = async () => {
+      if (!confirm('Reset ALL usage stats for all players? This cannot be undone.')) return;
+      await storage.set('usage_visits', JSON.stringify({}));
+      setUsageData({});
+    };
+
     return (
-      <div className="space-y-6">
-        <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-cyan-700">
+      <div className="space-y-4">
+        <div className="bg-black/60 backdrop-blur-sm p-4 rounded-lg border-2 border-cyan-700">
 
           {/* Header */}
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-2xl font-bold text-gray-300 flex items-center gap-2">
-              <TrendingUp className="w-6 h-6 text-cyan-400" />
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-300 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-cyan-400" />
               Usage Analytics
             </h2>
             <button
@@ -9150,31 +9156,30 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           </div>
 
           {/* Summary stats */}
-          <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="grid grid-cols-3 gap-2 mb-4">
             <div className={`rounded-lg p-3 text-center border ${activeNowPlayers.length > 0 ? 'bg-green-900/40 border-green-600' : 'bg-gray-900/40 border-gray-700'}`}>
-              <p className={`text-3xl font-bold ${activeNowPlayers.length > 0 ? 'text-green-400' : 'text-gray-600'}`}>
+              <p className={`text-2xl font-bold ${activeNowPlayers.length > 0 ? 'text-green-400' : 'text-gray-600'}`}>
                 {activeNowPlayers.length}
               </p>
               <p className="text-xs text-gray-400 mt-0.5">Active Now</p>
               {activeNowPlayers.length > 0 && (
-                <p className="text-xs text-green-400 mt-1 truncate">{activeNowPlayers.map(p => p.name).join(', ')}</p>
+                <p className="text-xs text-green-400 mt-1 leading-tight">{activeNowPlayers.map(p => p.name).join(', ')}</p>
               )}
             </div>
             <div className="bg-cyan-900/30 border border-cyan-800 rounded-lg p-3 text-center">
-              <p className="text-3xl font-bold text-cyan-400">{totalThisWeek}</p>
-              <p className="text-xs text-gray-400 mt-0.5">Opens This Week</p>
+              <p className="text-2xl font-bold text-cyan-400">{totalThisWeek}</p>
+              <p className="text-xs text-gray-400 mt-0.5">This Week</p>
             </div>
             <div className="bg-gray-900/40 border border-gray-700 rounded-lg p-3 text-center">
-              <p className="text-3xl font-bold text-gray-300">{totalAllTime}</p>
-              <p className="text-xs text-gray-400 mt-0.5">All-Time Opens</p>
+              <p className="text-2xl font-bold text-gray-300">{totalAllTime}</p>
+              <p className="text-xs text-gray-400 mt-0.5">All-Time</p>
             </div>
           </div>
 
-          {loadingUsage && !usageData && <p className="text-gray-400 text-center py-8">Loading...</p>}
+          {loadingUsage && !usageData && <p className="text-gray-400 text-center py-6 text-sm">Loading...</p>}
 
           {usageData !== null && (
             <div className="space-y-2">
-              <p className="text-gray-500 text-xs uppercase tracking-wide font-semibold mb-3">Players — sorted by active, then this week's opens</p>
               {sortedPlayers.map(player => {
                 const data = usageData[player.id] || {};
                 const active = isActiveNow(data);
@@ -9187,63 +9192,63 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 return (
                   <div
                     key={player.id}
-                    className={`rounded-lg p-3 border transition ${active ? 'bg-green-950/40 border-green-700' : 'bg-gray-900/30 border-gray-800'}`}
+                    className={`rounded-lg px-3 py-2.5 border transition ${active ? 'bg-green-950/40 border-green-700' : 'bg-gray-900/30 border-gray-800'}`}
                   >
-                    <div className="flex items-center gap-3">
-                      {/* Status dot */}
+                    {/* Row 1: dot · name · stats */}
+                    <div className="flex items-center gap-2 min-w-0">
                       <span
                         className={`flex-shrink-0 w-2.5 h-2.5 rounded-full ${active ? 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.8)]' : 'bg-gray-700'}`}
-                        title={active ? 'Active now' : 'Offline'}
                       />
-
-                      {/* Name */}
-                      <span className={`font-semibold w-20 flex-shrink-0 ${active ? 'text-green-300' : 'text-white'}`}>
+                      <span className={`font-semibold flex-1 min-w-0 truncate text-sm ${active ? 'text-green-300' : 'text-white'}`}>
                         {player.name}
                       </span>
-
-                      {/* Stats */}
-                      <div className="flex items-center gap-4 text-sm flex-shrink-0">
-                        <div className="text-center">
-                          <span className="text-cyan-400 font-bold">{thisWk || '0'}</span>
-                          <span className="text-gray-600 text-xs ml-1">wk</span>
-                        </div>
-                        <div className="text-center">
+                      <div className="flex items-center gap-3 flex-shrink-0 text-sm">
+                        <span>
+                          <span className="text-cyan-400 font-bold">{thisWk || 0}</span>
+                          <span className="text-gray-600 text-xs ml-0.5">wk</span>
+                        </span>
+                        <span>
                           <span className="text-gray-400">{data.total || 0}</span>
-                          <span className="text-gray-600 text-xs ml-1">total</span>
-                        </div>
-                        <div className="text-gray-600 text-xs">{timeAgo(data.lastSeen)}</div>
-                      </div>
-
-                      {/* This week's tab chips */}
-                      <div className="flex flex-wrap gap-1 ml-auto">
-                        {weekTabEntries.length === 0 ? (
-                          <span className="text-gray-700 text-xs">no activity this week</span>
-                        ) : (
-                          weekTabEntries.map(([tab, count]) => (
-                            <span
-                              key={tab}
-                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAB_COLORS[tab] || 'bg-gray-800 text-gray-400'}`}
-                            >
-                              {TAB_LABELS[tab] || tab} {count}
-                            </span>
-                          ))
-                        )}
+                          <span className="text-gray-600 text-xs ml-0.5">total</span>
+                        </span>
+                        <span className="text-gray-600 text-xs">{timeAgo(data.lastSeen)}</span>
                       </div>
                     </div>
+                    {/* Row 2: tab chips (only if there's activity) */}
+                    {weekTabEntries.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5 pl-4">
+                        {weekTabEntries.map(([tab, count]) => (
+                          <span
+                            key={tab}
+                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${TAB_COLORS[tab] || 'bg-gray-800 text-gray-400'}`}
+                          >
+                            {TAB_LABELS[tab] || tab} {count}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           )}
 
-          <p className="text-gray-700 text-xs mt-4">Week resets Thursday · Active = heartbeat within 3 min · Tab chips show this week only</p>
+          <p className="text-gray-700 text-xs mt-3">Week resets Thursday · Active = heartbeat within 3 min</p>
 
-          <button
-            onClick={() => setAdminView('main')}
-            className="w-full mt-4 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition"
-          >
-            Back to Controls
-          </button>
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => setAdminView('main')}
+              className="flex-1 py-3 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 transition text-sm"
+            >
+              Back to Controls
+            </button>
+            <button
+              onClick={resetUsageStats}
+              className="px-4 py-3 bg-red-900/60 text-red-300 border border-red-700 rounded-lg font-semibold hover:bg-red-800/70 transition text-sm"
+            >
+              Reset Stats
+            </button>
+          </div>
         </div>
       </div>
     );
