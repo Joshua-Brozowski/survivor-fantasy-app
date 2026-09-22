@@ -1056,6 +1056,93 @@ export default function SurvivorFantasyApp() {
     setJoinLoading(false);
   };
 
+  // Demo mode — loads hardcoded sandbox data, no DB reads/writes
+  const enterDemoMode = () => {
+    const demoContestants = [
+      { id: 101, name: 'Marcus', tribe: 'Lagi', image: '', eliminated: false },
+      { id: 102, name: 'Diana', tribe: 'Lagi', image: '', eliminated: false },
+      { id: 103, name: 'Carlos', tribe: 'Lagi', image: '', eliminated: false },
+      { id: 104, name: 'Priya', tribe: 'Lagi', image: '', eliminated: false },
+      { id: 105, name: 'Beth', tribe: 'Vula', image: '', eliminated: false },
+      { id: 106, name: 'Finn', tribe: 'Vula', image: '', eliminated: false },
+      { id: 107, name: 'Zara', tribe: 'Vula', image: '', eliminated: false },
+      { id: 108, name: 'Leo', tribe: 'Vula', image: '', eliminated: false },
+    ];
+    const demoPlayers = [
+      { id: -1, name: 'Demo Guest', isAdmin: false },
+      { id: -2, name: 'Alex', isAdmin: false },
+      { id: -3, name: 'Jordan', isAdmin: false },
+      { id: -4, name: 'Sam', isAdmin: false },
+      { id: -5, name: 'Riley', isAdmin: false },
+    ];
+    const demoQuestionnaire = {
+      id: 99001,
+      title: 'Episode 1 Questionnaire',
+      episodeNumber: 1,
+      status: 'active',
+      deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      lockedAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      scoresReleased: false,
+      correctAnswers: {},
+      hasQotw: true,
+      qotw: { id: 'qotw', text: 'If you were on Survivor, what would your strategy be?', anonymous: false },
+      questions: [
+        { id: 'dq1', type: 'cast-dropdown', text: 'Who will win immunity this episode?', required: true, options: [] },
+        { id: 'dq2', type: 'true-false', text: 'Will an idol or advantage be found this episode?', required: true, options: [] },
+        { id: 'dq3', type: 'true-false', text: 'Will the vote be unanimous at Tribal Council?', required: false, options: [] },
+        { id: 'dq4', type: 'cast-dropdown', text: 'Who will be voted off this episode?', required: true, options: [] },
+      ],
+    };
+    const demoChallenge = {
+      id: 99002,
+      word: 'IDOLS',
+      status: 'active',
+      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      pointsAwarded: false,
+      winnerId: null,
+    };
+    setPlayers(demoPlayers);
+    setContestants(demoContestants);
+    setLeagues([{ id: -1, name: 'Demo League', createdAt: new Date().toISOString(), createdBy: -1, isDefault: true }]);
+    setLeagueMemberships(demoPlayers.map(p => ({ playerId: p.id, leagueId: -1 })));
+    setCurrentLeagueId(-1);
+    setQuestionnaires([demoQuestionnaire]);
+    setSubmissions([]);
+    setQotWVotes([]);
+    setPicks([
+      { playerId: -2, type: 'instinct', contestantId: 103, timestamp: Date.now() - 5000 },
+      { playerId: -3, type: 'instinct', contestantId: 106, timestamp: Date.now() - 4000 },
+      { playerId: -4, type: 'instinct', contestantId: 102, timestamp: Date.now() - 3000 },
+    ]);
+    setPicksLocked({ instinct: false, final: false });
+    setPickScores([]);
+    setPlayerScores({ '-2': { total: 15, breakdown: [] }, '-3': { total: 12, breakdown: [] }, '-4': { total: 7, breakdown: [] }, '-1': { total: 5, breakdown: [] }, '-5': { total: 3, breakdown: [] } });
+    setPlayerAdvantages([]);
+    setAdvantages([]);
+    setGamePhase('early-season');
+    setCurrentSeason(51);
+    setEpisodes([]);
+    setNotifications([]);
+    setChallenges([demoChallenge]);
+    setChallengeAttempts([]);
+    setSeasonHistory([]);
+    setSeasonFinalized(false);
+    setLatePenalties({});
+    setWordleSchedule([]);
+    setWordleAuditLog([]);
+    setEpisodeRecaps([]);
+    setIsDataLoaded(true);
+    setCurrentUser({ id: -1, name: 'Demo Guest', isAdmin: false, isGuest: true });
+    setCurrentView('home');
+  };
+
+  const exitDemoMode = () => {
+    setCurrentUser(null);
+    setLoginForm({ name: '', password: '', rememberMe: true });
+    setCurrentView('home');
+  };
+
   const handleGoogleLink = async () => {
     if (!googleLinkForm.name.trim() || !googleLinkForm.password) {
       setGoogleLinkError('Please enter your player name and password.');
@@ -2876,6 +2963,17 @@ export default function SurvivorFantasyApp() {
               </button>
             </div>
           )}
+
+          {/* Barely-visible demo entry — intentionally subtle */}
+          <div className="mt-6 text-center">
+            <button
+              type="button"
+              onClick={enterDemoMode}
+              className="text-xs text-amber-900/35 hover:text-amber-800/55 transition-colors"
+            >
+              view demo
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -2905,6 +3003,20 @@ export default function SurvivorFantasyApp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-900 via-orange-800 to-red-900 overflow-x-hidden w-full max-w-full">
+
+      {/* Demo mode banner — fixed bottom strip */}
+      {isGuestMode() && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-sm border-t border-amber-800/60 text-amber-300/80 text-xs py-2 px-4 flex items-center justify-between gap-4">
+          <span className="truncate">Demo Mode — explore freely, nothing you do here is saved</span>
+          <button
+            onClick={exitDemoMode}
+            className="shrink-0 text-amber-400 hover:text-amber-200 underline transition-colors"
+          >
+            Exit Demo
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-black/60 backdrop-blur-sm border-b-2 border-amber-600 relative z-50">
         <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4">
