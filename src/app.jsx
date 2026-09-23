@@ -257,6 +257,7 @@ export default function SurvivorFantasyApp() {
   const [castAccordionOpen, setCastAccordionOpen] = useState(false);
   const [picksCastAccordionOpen, setPicksCastAccordionOpen] = useState(false);
   const [howToPlayOpen, setHowToPlayOpen] = useState(false);
+  const [lastSeasonOpen, setLastSeasonOpen] = useState(false);
   const [recapsAccordionOpen, setRecapsAccordionOpen] = useState(false);
 
   // Episode Recaps state
@@ -4394,6 +4395,53 @@ export default function SurvivorFantasyApp() {
                 Welcome to Survivor Fantasy Season {currentSeason}, {currentUser.name}!
               </h2>
             </div>
+
+            {/* Last Season Results — shown for 1 week after new season start */}
+            {(() => {
+              try {
+                const cutoff = new Date('2026-10-01T00:00:00');
+                const lastSeason = seasonHistory && seasonHistory.length > 0
+                  ? seasonHistory[seasonHistory.length - 1]
+                  : null;
+                if (!lastSeason || !lastSeason.finalStandings || new Date() >= cutoff) return null;
+                const standings = lastSeason.finalStandings.slice(0, 3);
+                const medalColors = ['text-yellow-400', 'text-gray-300', 'text-amber-600'];
+                const medalEmojis = ['🥇', '🥈', '🥉'];
+                return (
+                  <div className="bg-black/60 backdrop-blur-sm rounded-lg border-2 border-purple-600/60 overflow-hidden">
+                    <button
+                      className="w-full flex items-center justify-between p-4 text-left hover:bg-purple-900/20 transition-colors"
+                      onClick={() => setLastSeasonOpen(o => !o)}
+                    >
+                      <span className="text-purple-300 font-bold flex items-center gap-2">
+                        <Trophy className="w-5 h-5 text-purple-400" />
+                        Season {lastSeason.season} Final Results
+                      </span>
+                      <ChevronDown className={`w-5 h-5 text-purple-400 transition-transform ${lastSeasonOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {lastSeasonOpen && (
+                      <div className="px-4 pb-4 space-y-3">
+                        <p className="text-purple-300/70 text-xs">Season {lastSeason.season} wrapped up — here's how everyone finished.</p>
+                        <div className="space-y-2">
+                          {standings.map((p, i) => (
+                            <div key={p.id} className="flex items-center gap-3 bg-purple-900/20 rounded-lg px-3 py-2">
+                              <span className="text-xl">{medalEmojis[i]}</span>
+                              <span className={`font-bold ${medalColors[i]}`}>{p.name}</span>
+                              <span className="ml-auto text-amber-300 font-mono font-semibold">{p.points} pts</span>
+                            </div>
+                          ))}
+                          {lastSeason.finalStandings.length > 3 && (
+                            <div className="text-purple-300/50 text-xs pt-1 pl-1">
+                              +{lastSeason.finalStandings.length - 3} more players
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              } catch { return null; }
+            })()}
 
             {/* Your Stats Section */}
             <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
