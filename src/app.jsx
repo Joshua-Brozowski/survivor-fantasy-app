@@ -8535,7 +8535,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       setLoadingBackup(true);
       const result = await backup.repairLeagueKey(currentLeagueId, 'questionnaires');
       if (result.success) {
-        // Pull the restored data into React state immediately
         const leagueStore = getLeagueStorage();
         const freshData = await leagueStore.get('questionnaires');
         if (freshData?.value) {
@@ -8553,7 +8552,29 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           window.location.reload();
         }
       } else {
-        alert(`Recovery failed: ${result.message || result.error}\n\nNo usable snapshot was found. Contact support or restore from a full backup.`);
+        alert(`Recovery failed: ${result.message || result.error}\n\nNo usable snapshot was found. Try "Reconstruct from Submissions" instead.`);
+      }
+      setLoadingBackup(false);
+    };
+
+    const reconstructQuestionnaire = async () => {
+      if (!requireRealUser('Reconstruct Questionnaire')) return;
+      if (!confirm('Reconstruct the questionnaire from the 7 player submissions already in the database?\n\nThis creates a new questionnaire object with the correct ID so existing submissions can be scored.\nSubmissions are never touched. Question text will show as "Question 1", "Question 2", etc. — you can rename them after.')) return;
+
+      setLoadingBackup(true);
+      const result = await backup.reconstructQuestionnaire(currentLeagueId);
+      if (result.success) {
+        // Pull reconstructed data into state immediately
+        const leagueStore = getLeagueStorage();
+        const freshData = await leagueStore.get('questionnaires');
+        if (freshData?.value) {
+          try {
+            setQuestionnaires(JSON.parse(freshData.value));
+          } catch {}
+        }
+        alert(`Questionnaire reconstructed from ${result.submitterCount} submissions!\n${result.questionCount} question(s) detected.\n\nThe questionnaire is now visible in the admin panel. The question text shows as "Question 1", "Question 2" etc — the answers are correct. Now click Re-Open to let the remaining players submit.`);
+      } else {
+        alert(`Reconstruction failed: ${result.message || result.error}`);
       }
       setLoadingBackup(false);
     };
@@ -8583,21 +8604,28 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             Backup Management
           </h2>
 
-          {/* Emergency recovery — shown when questionnaires state is empty */}
-          {questionnaires.length === 0 && (
-            <div className="mb-6 p-4 bg-red-900/40 border-2 border-red-500 rounded-lg">
-              <p className="text-red-300 font-bold mb-1">⚠ Questionnaire Missing</p>
-              <p className="text-red-200 text-sm mb-3">The questionnaire list is empty. Use this to recover it from the most recent backup snapshot — submissions are never touched.</p>
+          {/* Emergency recovery — always shown in backup panel for easy access */}
+          <div className="mb-6 p-4 bg-red-900/40 border-2 border-red-500 rounded-lg">
+            <p className="text-red-300 font-bold mb-1">⚠ Questionnaire Recovery</p>
+            <p className="text-red-200 text-sm mb-3">If the questionnaire is missing or showing wrong season data, use one of these. Submissions are <strong>never</strong> touched.</p>
+            <div className="space-y-2">
               <button
-                onClick={recoverQuestionnaire}
+                onClick={reconstructQuestionnaire}
                 disabled={loadingBackup}
                 className="w-full py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-500 transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <RotateCcw className="w-5 h-5" />
-                {loadingBackup ? 'Recovering...' : 'Recover Questionnaire from Backup'}
+                {loadingBackup ? 'Working...' : 'Reconstruct from Submissions (Use This)'}
+              </button>
+              <button
+                onClick={recoverQuestionnaire}
+                disabled={loadingBackup}
+                className="w-full py-2 bg-slate-700 text-slate-300 rounded-lg font-medium hover:bg-slate-600 transition flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
+              >
+                Recover from Backup Snapshot (last season data — use with caution)
               </button>
             </div>
-          )}
+          </div>
 
           <div className="grid sm:grid-cols-2 gap-4 mb-6">
             <button

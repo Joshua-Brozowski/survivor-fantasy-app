@@ -420,6 +420,21 @@ export const backup = {
     }
   },
 
+  async reconstructQuestionnaire(leagueId) {
+    try {
+      const response = await authFetch(`${API_BASE}/backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reconstructQuestionnaire', leagueId })
+      });
+      const data = await response.json();
+      return { success: response.ok && data.success, message: data.message, questionnaire: data.questionnaire, submitterCount: data.submitterCount, questionCount: data.questionCount, error: data.error };
+    } catch (error) {
+      console.error('Backup reconstructQuestionnaire error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
   async repairLeagueKey(leagueId, baseKey) {
     try {
       const response = await authFetch(`${API_BASE}/backup`, {

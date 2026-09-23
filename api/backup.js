@@ -484,6 +484,133 @@ export default async function handler(req, res) {
         break;
       }
 
+      case 'reconstructQuestionnaire': {
+        // Reconstruct the active questionnaire from submission records.
+        // Finds the questionnaireId that submissions reference, collects all
+        // question IDs and answer values from those submissions, and writes
+        // a valid questionnaire object back to league_{id}_questionnaires.
+        // Does NOT touch submissions.
+        const { leagueId: rLeagueId } = req.body;
+        if (!rLeagueId) {
+          res.status(400).json({ error: 'Missing leagueId' });
+          return;
+        }
+
+        const subKey = `league_${rLeagueId}_submissions`;
+        const qKey = `league_${rLeagueId}_questionnaires`;
+        const seasonKey = `league_${rLeagueId}_currentSeason`;
+
+        const subDoc = await gameDataCollection.findOne({ key: subKey });
+        if (!subDoc) {
+          res.status(200).json({ success: false, message: 'No submissions found — nothing to reconstruct from.' });
+          return;
+        }
+
+        let submissions;
+        try { submissions = JSON.parse(subDoc.value); } catch {
+          res.status(200).json({ success: false, message: 'Could not parse submissions.' });
+          return;
+        }
+
+        if (!submissions.length) {
+          res.status(200).json({ success: false, message: 'Submissions array is empty.' });
+          return;
+        }
+
+        // Find the most common questionnaireId (Q1 of this season)
+        const idCounts = {};
+        for (const s of submissions) {
+          if (s.questionnaireId) idCounts[s.questionnaireId] = (idCounts[s.questionnaireId] || 0) + 1;
+        }
+        const targetQId = Number(Object.entries(idCounts).sort((a, b) => b[1] - a[1])[0][0]);
+        const targetSubs = submissions.filter(s => s.questionnaireId === targetQId);
+
+        // Collect all unique question IDs and their answer values across all submissions
+        const questionMap = {}; // questionId -> Set of answer values
+        let hasQotw = false;
+        for (const s of targetSubs) {
+          if (s.qotw) hasQotw = true;
+          if (s.answers && typeof s.answers === 'object') {
+            for (const [qid, ans] of Object.entries(s.answers)) {
+              if (!questionMap[qid]) questionMap[qid] = new Set();
+              if (ans !== null && ans !== undefined && ans !== '') questionMap[qid].add(String(ans));
+            }
+          }
+        }
+
+        // Get contestants to help infer cast-dropdown questions
+        const contestantsDoc = await gameDataCollection.findOne({ key: 'contestants' });
+        let contestantNames = new Set();
+        try {
+          const contestants = JSON.parse(contestantsDoc.value);
+          contestants.forEach(c => contestantNames.add(c.name));
+        } catch {}
+
+        // Build question objects
+        const questions = Object.entries(questionMap).map(([qid, answerSet], i) => {
+          const answers = [...answerSet];
+          let type = 'multiple-choice';
+          // Detect true-false
+          if (answers.every(a => a === 'true' || a === 'false') && answers.length <= 2) {
+            type = 'true-false';
+          }
+          // Detect cast-dropdown: majority of answers are contestant names
+          const contestantMatches = answers.filter(a => contestantNames.has(a)).length;
+          if (contestantMatches > 0 && contestantMatches >= answers.length * 0.6) {
+            type = 'cast-dropdown';
+          }
+          return {
+            id: qid,
+            text: `Question ${i + 1}`,
+            type,
+            required: true,
+            options: type === 'multiple-choice' ? answers : []
+          };
+        });
+
+        // Get season number for the title
+        const seasonDoc = await gameDataCollection.findOne({ key: seasonKey });
+        let seasonNum = '';
+        try { seasonNum = JSON.parse(seasonDoc.value); } catch {}
+
+        // Determine earliest submission time as a rough questionnaire creation date
+        const earliestSub = targetSubs.reduce((min, s) =>
+          new Date(s.submittedAt) < new Date(min.submittedAt) ? s : min, targetSubs[0]);
+
+        const reconstructed = {
+          id: targetQId,
+          title: `Season ${seasonNum} Episode 1 Questionnaire`,
+          episodeNumber: 1,
+          status: 'active',
+          deadline: new Date(Date.now() - 1000 * 60 * 60).toISOString(), // 1 hour ago (past, so Re-Open shows)
+          lockedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+          createdAt: earliestSub?.submittedAt || new Date().toISOString(),
+          questions,
+          includeQotw: hasQotw,
+          questionOfTheWeek: hasQotw ? 'Question of the Week' : '',
+          scoresReleased: false,
+          correctAnswers: {},
+          qotwWinner: null
+        };
+
+        await gameDataCollection.updateOne(
+          { key: qKey },
+          { $set: { key: qKey, value: JSON.stringify([reconstructed]), updatedAt: new Date() } },
+          { upsert: true }
+        );
+
+        res.status(200).json({
+          success: true,
+          message: `Reconstructed questionnaire from ${targetSubs.length} submissions.`,
+          questionnaireId: targetQId,
+          questionCount: questions.length,
+          hasQotw,
+          submitterCount: targetSubs.length,
+          questionnaire: reconstructed
+        });
+        break;
+      }
+
       case 'readLiveKey': {
         // Read and return the raw value of any key — for diagnostics
         const { key: readKey } = req.body;
