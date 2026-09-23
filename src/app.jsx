@@ -5396,6 +5396,8 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   });
   const [scoringQ, setScoringQ] = useState(null);
   const [correctAnswers, setCorrectAnswers] = useState({});
+  const [editingQuestionId, setEditingQuestionId] = useState(null);
+  const [editingQuestionText, setEditingQuestionText] = useState('');
   const [episodeScoring, setEpisodeScoring] = useState({
     episodeNumber: episodes.length + 1,
     contestantScores: {} // { [contestantId]: { survived, immunity, reward, ... } }
@@ -5731,6 +5733,29 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     });
 
     alert(`Questionnaire re-opened!\n\nNew deadline: ${newDeadline.toLocaleString()}\nLocks at: ${newLockedAt.toLocaleString()}`);
+  };
+
+  const saveQuestionText = async (questionnaireId, questionId, newText) => {
+    if (!requireRealUser('Edit Question Text')) return;
+    const trimmed = newText.trim();
+    if (!trimmed) { setEditingQuestionId(null); return; }
+
+    try { await backup.createSnapshot('before-edit-question-text'); } catch {}
+
+    const updated = questionnaires.map(q =>
+      q.id === questionnaireId
+        ? { ...q, questions: q.questions.map(qq => qq.id === questionId ? { ...qq, text: trimmed } : qq) }
+        : q
+    );
+    setQuestionnaires(updated);
+    await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
+
+    // Keep the in-progress scoring view in sync
+    setScoringQ(prev => prev && prev.id === questionnaireId
+      ? { ...prev, questions: prev.questions.map(qq => qq.id === questionId ? { ...qq, text: trimmed } : qq) }
+      : prev);
+
+    setEditingQuestionId(null);
   };
 
   const calculateScores = (questionnaire, correctAns, waivedSet = new Set()) => {
@@ -6756,9 +6781,45 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             
             {scoringQ.questions.map((q, idx) => (
               <div key={q.id} className="bg-gradient-to-r from-amber-900/40 to-orange-900/40 p-4 rounded-lg border border-amber-600">
-                <p className="text-white font-semibold mb-3">
-                  {idx + 1}. {q.text} {q.required && <span className="text-green-400">(Required)</span>}
-                </p>
+                {editingQuestionId === q.id ? (
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-white font-semibold">{idx + 1}.</span>
+                    <input
+                      type="text"
+                      value={editingQuestionText}
+                      onChange={(e) => setEditingQuestionText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveQuestionText(scoringQ.id, q.id, editingQuestionText);
+                        if (e.key === 'Escape') setEditingQuestionId(null);
+                      }}
+                      autoFocus
+                      className="flex-1 px-2 py-1 rounded bg-black/50 text-white border border-amber-400 focus:outline-none"
+                    />
+                    <button
+                      onClick={() => saveQuestionText(scoringQ.id, q.id, editingQuestionText)}
+                      className="text-xs px-2 py-1 rounded bg-green-700 text-white hover:bg-green-600"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => setEditingQuestionId(null)}
+                      className="text-xs px-2 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-white font-semibold mb-3 flex items-center gap-2">
+                    {idx + 1}. {q.text} {q.required && <span className="text-green-400">(Required)</span>}
+                    <button
+                      onClick={() => { setEditingQuestionId(q.id); setEditingQuestionText(q.text); }}
+                      title="Edit question text"
+                      className="text-amber-400 hover:text-amber-200"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                  </p>
+                )}
 
                 {q.type === 'multiple-choice' && (
                   <select
