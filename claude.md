@@ -61,6 +61,12 @@ survivor-fantasy-app/
 - **Password visibility toggle**: Eye icon to show/hide password on login form
 - **Login loading state**: Button shows "Loading..." until player data is ready
 - **Name help tooltip**: Question mark icon next to Player Name explains names may vary (e.g., "Charles" → "Charlie")
+- **Google OAuth login**: "Sign in with Google" is the primary login option; "Use Password" is a secondary toggle
+  - Self-service linking: first-time Google users see a "Link Your Google Account" screen — they enter their name + password once to prove identity; email saved automatically, no admin needed
+  - Settings panel: logged-in players can link/view their Google account from the gear icon
+  - Admin override: Admin Panel → Player Management → Google Account Mapping for manual email entry
+  - Google email stored in MongoDB global key `google_email_mapping` as `{ playerId: email }`
+  - API: `GET /api/auth-google?action=redirect` → OAuth, `POST /api/auth-google` with `action=link` or `action=createLinkToken`
 
 ### 2. Player Roles
 - **Players**: 9 friends competing in the league
@@ -600,7 +606,7 @@ All data stored in MongoDB `game_data` collection as key-value pairs:
 
 **Security & Reliability Features** (all endpoints):
 - **JWT Authentication**: Access tokens via Authorization header, refresh tokens via httpOnly cookies
-- **CORS Restriction**: Only allows requests from `survivor-fantasy-app.vercel.app`, `*.vercel.app` (previews), and `localhost`
+- **CORS Restriction**: Only allows requests from `survivor-fantasy-app-gamma.vercel.app`, `*.vercel.app` (previews), and `localhost`
 - **Connection Health Check**: Pings MongoDB before reusing cached connections, auto-reconnects if unhealthy
 
 ### `/api/storage/[key]`
@@ -692,7 +698,7 @@ npm run dev
 **Note**: Local dev server (Vite) does NOT serve Vercel serverless functions. API calls to `/api/*` will fail locally. For full testing with backend, deploy to production.
 
 ### Production Deployment
-Live at: `https://survivor-fantasy-app.vercel.app` — Vercel auto-deploys ~2 minutes after every push to `main`.
+Live at: `https://survivor-fantasy-app-gamma.vercel.app` — Vercel auto-deploys ~2 minutes after every push to `main`.
 
 **IMPORTANT**: Local Vite dev server does NOT run Vercel serverless functions. All `/api/*` calls fail locally. Real testing only happens on production after deploying to `main`.
 
@@ -720,7 +726,7 @@ git commit -m "..."
 git push origin feature/my-change
 # open PR: feature/my-change → dev
 # after review/merge to dev, open PR: dev → main
-# verify on https://survivor-fantasy-app.vercel.app
+# verify on https://survivor-fantasy-app-gamma.vercel.app
 ```
 
 ## Current Players

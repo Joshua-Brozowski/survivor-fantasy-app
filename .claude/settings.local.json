@@ -16,7 +16,14 @@
       "Bash(git config:*)",
       "Bash(npm install:*)",
       "Bash(curl:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "WebFetch(domain:support.claude.com)",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:survivor-fantasy-app.vercel.app)",
+      "Bash(git fetch *)",
+      "Bash(git *)",
+      "Bash(grep -v \"//.*example\\\\|//.*doc\")",
+      "Bash(grep -v \"//\\\\|mapping\\\\|GoogleEmailMapping\\\\|admin\\\\|Admin\\\\|handleGoogle\\\\|setGoogle\\\\|googleLink\")"
     ]
   }
 }
