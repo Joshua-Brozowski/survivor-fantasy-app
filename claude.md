@@ -291,6 +291,10 @@ Layout from top to bottom:
   - Creates safety backup before restoring
 - **Delete**: Remove old snapshots
 - Stores ~45-60 snapshots per season
+- **Emergency Recovery** (shown in Backup Management panel):
+  - **Reconstruct from Submissions**: If `league_X_questionnaires` is empty or has wrong data, this rebuilds the questionnaire from existing submission records — finds the most common `questionnaireId` in submissions, infers question types from answer values, and writes a valid questionnaire back. Question text will be generic ("Question 1" etc) unless separately restored. Does NOT touch submissions.
+  - **Recover from Backup Snapshot**: Restores the questionnaire key from the most recent non-empty backup snapshot. May pull last season's data if no current-season backup exists — use Reconstruct instead if that happens.
+  - **Real question text recovery**: Question text is NOT stored in submission records. If lost, check other leagues' questionnaire keys — questions are shared across leagues when created from the same admin session (same question IDs). If another league has the questionnaire intact, `readLiveKey` can be used to copy text across.
 
 ### 9. Notifications System
 
@@ -652,6 +656,11 @@ Snapshot management for data integrity. **All operations require admin authentic
 - **POST** with `action: 'restoreSnapshot'` - Restore from snapshot (creates safety backup first)
 - **GET** with `action: 'exportData'` - Export all game data as JSON
 - **POST** with `action: 'deleteSnapshot'` - Delete a specific snapshot
+- **POST** with `action: 'repairLeagueKey'` - Restore a single league key from the most recent non-empty snapshot (safe: only writes that one key)
+  - Required: `leagueId`, `baseKey` (e.g., `'questionnaires'`)
+- **POST** with `action: 'reconstructQuestionnaire'` - Rebuild questionnaire from submission records when no backup has current-season data
+  - Required: `leagueId`; question text will be generic, must be patched separately
+- **POST** with `action: 'readLiveKey'` - Diagnostic: read raw value of any DB key, returns length/preview without writing
 
 ### `/api/advantage`
 Atomic advantage operations (prevents race conditions). **All operations require authentication.**
@@ -747,6 +756,13 @@ git push origin feature/my-change
 
 ## Multi-League System
 The app supports multiple isolated leagues (e.g., Friends, Family, Work leagues). Each league has completely independent game data.
+
+**Active Leagues (Season 51):**
+- **League 1 — Main League** (Friends): Joshua, Charlie, Emma, Tyler, Brayden, Dakota, Patia, Kaleigh, Sarah, Grace (10 players)
+- **League 2 — Family League**: Joshua, Patia, Sharon, Jim, Kim, Adam (6 players; Joshua & Patia are in both)
+- **League 3 — Travelers/Work League**: Joshua, Kasey, Nina (mostly inactive)
+
+**Important note on cross-league questionnaires**: Questions are authored once and shared when admin creates them in the same session — question IDs are identical across leagues. If one league's questionnaire data is lost, the question text can be recovered from another league's questionnaire using the same question IDs.
 
 **Features:**
 - League state: `leagues`, `leagueMemberships`, `currentLeagueId`
