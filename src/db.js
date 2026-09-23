@@ -418,6 +418,36 @@ export const backup = {
       console.error('Backup deleteSnapshot error:', error);
       return { success: false, error: 'Network error' };
     }
+  },
+
+  async repairLeagueKey(leagueId, baseKey) {
+    try {
+      const response = await authFetch(`${API_BASE}/backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'repairLeagueKey', leagueId, baseKey })
+      });
+      const data = await response.json();
+      return { success: response.ok && data.success, message: data.message, summary: data.summary, restoredFrom: data.restoredFrom, restoredCount: data.restoredCount, error: data.error };
+    } catch (error) {
+      console.error('Backup repairLeagueKey error:', error);
+      return { success: false, error: 'Network error' };
+    }
+  },
+
+  async readLiveKey(key) {
+    try {
+      const response = await authFetch(`${API_BASE}/backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'readLiveKey', key })
+      });
+      const data = await response.json();
+      return { success: response.ok, ...data };
+    } catch (error) {
+      console.error('Backup readLiveKey error:', error);
+      return { success: false, error: 'Network error' };
+    }
   }
 };
 

@@ -8528,6 +8528,36 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       }
     };
 
+    const recoverQuestionnaire = async () => {
+      if (!requireRealUser('Recover Questionnaire')) return;
+      if (!confirm('Recover questionnaire data from the most recent backup snapshot?\n\nThis will ONLY restore the questionnaire list — submissions are never touched.')) return;
+
+      setLoadingBackup(true);
+      const result = await backup.repairLeagueKey(currentLeagueId, 'questionnaires');
+      if (result.success) {
+        // Pull the restored data into React state immediately
+        const leagueStore = getLeagueStorage();
+        const freshData = await leagueStore.get('questionnaires');
+        if (freshData?.value) {
+          try {
+            const restored = JSON.parse(freshData.value);
+            setQuestionnaires(restored);
+            const titles = result.summary?.map(q => `"${q.title}" (Ep ${q.episode}, ${q.status})`).join('\n') || '(unknown)';
+            alert(`Questionnaire recovered from backup!\nSnapshot: ${result.restoredFrom?.trigger} (${new Date(result.restoredFrom?.createdAt).toLocaleString()})\n\nRestored ${result.restoredCount} questionnaire(s):\n${titles}\n\nThe questionnaire is now visible. Use Re-Open to extend the deadline for players who haven't submitted yet.`);
+          } catch {
+            alert('Recovered, but could not parse result. Please refresh the page.');
+            window.location.reload();
+          }
+        } else {
+          alert('Recovered, but reload needed. Refreshing...');
+          window.location.reload();
+        }
+      } else {
+        alert(`Recovery failed: ${result.message || result.error}\n\nNo usable snapshot was found. Contact support or restore from a full backup.`);
+      }
+      setLoadingBackup(false);
+    };
+
     // Load snapshots on mount
     if (snapshots.length === 0 && !loadingBackup) {
       loadSnapshots();
@@ -8552,6 +8582,22 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
             <Database className="w-6 h-6" />
             Backup Management
           </h2>
+
+          {/* Emergency recovery — shown when questionnaires state is empty */}
+          {questionnaires.length === 0 && (
+            <div className="mb-6 p-4 bg-red-900/40 border-2 border-red-500 rounded-lg">
+              <p className="text-red-300 font-bold mb-1">⚠ Questionnaire Missing</p>
+              <p className="text-red-200 text-sm mb-3">The questionnaire list is empty. Use this to recover it from the most recent backup snapshot — submissions are never touched.</p>
+              <button
+                onClick={recoverQuestionnaire}
+                disabled={loadingBackup}
+                className="w-full py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-500 transition flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <RotateCcw className="w-5 h-5" />
+                {loadingBackup ? 'Recovering...' : 'Recover Questionnaire from Backup'}
+              </button>
+            </div>
+          )}
 
           <div className="grid sm:grid-cols-2 gap-4 mb-6">
             <button

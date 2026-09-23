@@ -396,6 +396,122 @@ export default async function handler(req, res) {
         break;
       }
 
+      case 'repairLeagueKey': {
+        // Restore a single league-specific key from the most recent snapshot that has non-empty data for it.
+        // Safe: only writes the one key, never touches submissions or other data.
+        const { leagueId, baseKey } = req.body;
+
+        if (!leagueId || !baseKey) {
+          res.status(400).json({ error: 'Missing leagueId or baseKey' });
+          return;
+        }
+
+        const targetKey = `league_${leagueId}_${baseKey}`;
+
+        // Read what's currently in DB for this key
+        const currentDoc = await gameDataCollection.findOne({ key: targetKey });
+        let currentValue = null;
+        try { currentValue = currentDoc ? JSON.parse(currentDoc.value) : null; } catch {}
+        const currentIsEmpty = !currentValue || (Array.isArray(currentValue) && currentValue.length === 0);
+
+        // Scan snapshots from most recent to oldest, find one with non-empty data
+        const snapshots = await backupsCollection
+          .find({})
+          .sort({ id: -1 })
+          .limit(30)
+          .toArray();
+
+        let restoredFrom = null;
+        let restoredValue = null;
+
+        for (const snap of snapshots) {
+          if (!snap.data) continue;
+          const candidate = snap.data[targetKey];
+          if (!candidate) continue;
+          let parsed;
+          try { parsed = JSON.parse(candidate); } catch { continue; }
+          if (!parsed || (Array.isArray(parsed) && parsed.length === 0)) continue;
+          // Found non-empty data
+          restoredFrom = { id: snap.id, trigger: snap.trigger, createdAt: snap.createdAt };
+          restoredValue = candidate;
+          break;
+        }
+
+        // Also check legacy global key (questionnaires stored globally before per-league migration)
+        if (!restoredValue && baseKey === 'questionnaires') {
+          for (const snap of snapshots) {
+            if (!snap.data) continue;
+            const candidate = snap.data['questionnaires'];
+            if (!candidate) continue;
+            let parsed;
+            try { parsed = JSON.parse(candidate); } catch { continue; }
+            if (!parsed || (Array.isArray(parsed) && parsed.length === 0)) continue;
+            restoredFrom = { id: snap.id, trigger: snap.trigger, createdAt: snap.createdAt, legacy: true };
+            restoredValue = candidate;
+            break;
+          }
+        }
+
+        if (!restoredValue) {
+          res.status(200).json({
+            success: false,
+            message: `No non-empty backup found for ${targetKey}. Could not repair.`,
+            currentIsEmpty,
+            snapshotsScanned: snapshots.length
+          });
+          return;
+        }
+
+        // Write it back
+        await gameDataCollection.updateOne(
+          { key: targetKey },
+          { $set: { key: targetKey, value: restoredValue, updatedAt: new Date() } },
+          { upsert: true }
+        );
+
+        const restored = JSON.parse(restoredValue);
+        const summary = Array.isArray(restored)
+          ? restored.map(q => ({ id: q.id, title: q.title, status: q.status, episode: q.episodeNumber }))
+          : restored;
+
+        res.status(200).json({
+          success: true,
+          message: `Restored ${targetKey} from snapshot "${restoredFrom.trigger}" (${restoredFrom.createdAt})`,
+          restoredFrom,
+          restoredCount: Array.isArray(restored) ? restored.length : 1,
+          summary
+        });
+        break;
+      }
+
+      case 'readLiveKey': {
+        // Read and return the raw value of any key — for diagnostics
+        const { key: readKey } = req.body;
+        if (!readKey) {
+          res.status(400).json({ error: 'Missing key' });
+          return;
+        }
+        const doc = await gameDataCollection.findOne({ key: readKey });
+        if (!doc) {
+          res.status(200).json({ found: false, key: readKey });
+          return;
+        }
+        let parsed = null;
+        let parseError = null;
+        try { parsed = JSON.parse(doc.value); } catch(e) { parseError = e.message; }
+        res.status(200).json({
+          found: true,
+          key: readKey,
+          rawLength: doc.value?.length || 0,
+          isArray: Array.isArray(parsed),
+          arrayLength: Array.isArray(parsed) ? parsed.length : null,
+          parseError,
+          // Return first 2 items if array to preview
+          preview: Array.isArray(parsed) ? parsed.slice(0, 2) : parsed
+        });
+        break;
+      }
+
       default:
         res.status(400).json({ error: 'Invalid action' });
     }
