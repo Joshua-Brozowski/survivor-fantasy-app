@@ -43,6 +43,29 @@ const fireFireworks = () => {
   }());
 };
 
+// One-time self-heal: S51 Q1 was reconstructed from submissions after a migration bug
+// wiped its question text (see backup.js reconstructQuestionnaire, Sept 2026). Fills in
+// the real text from the "Standard Episode" template. Guarded to the exact known
+// questionnaire + placeholder text so it's a no-op once fixed or for any other questionnaire.
+const S51_Q1_TEXT_REPAIR = {
+  'q1790043704375_b9rr': 'Who will win immunity?',
+  'q1790043704375_3p46': 'Will an idol or advantage be found this episode?',
+  'q1790043704375_bfk2': 'Will an idol or advantage be played at Tribal Council?',
+  'q1790043704375_1gkx': 'Who will be voted off this episode?'
+};
+const repairS51Q1Text = (questionnairesArr) => {
+  const needsRepair = questionnairesArr.some(
+    q => q.id === 1790044008118 && q.questions.some(qq => S51_Q1_TEXT_REPAIR[qq.id] && qq.text.startsWith('Question '))
+  );
+  if (!needsRepair) return { questionnaires: questionnairesArr, changed: false };
+  const repaired = questionnairesArr.map(q =>
+    q.id === 1790044008118
+      ? { ...q, questions: q.questions.map(qq => S51_Q1_TEXT_REPAIR[qq.id] ? { ...qq, text: S51_Q1_TEXT_REPAIR[qq.id] } : qq) }
+      : q
+  );
+  return { questionnaires: repaired, changed: true };
+};
+
 // Survivor 50 Default Cast (24 returning players)
 const DEFAULT_CAST = [
   // PURPLE Tribe (10 players)
@@ -816,6 +839,15 @@ export default function SurvivorFantasyApp() {
 
       // Auto-activate any draft questionnaires whose scheduledFor date has passed
       let loadedQuestionnaires = questionnairesData ? JSON.parse(questionnairesData.value) : [];
+
+      {
+        const { questionnaires: repairedQ, changed } = repairS51Q1Text(loadedQuestionnaires);
+        if (changed) {
+          loadedQuestionnaires = repairedQ;
+          try { await leagueStore.set('questionnaires', JSON.stringify(loadedQuestionnaires)); } catch {}
+        }
+      }
+
       let effectiveNotificationsData = notificationsData;
       const nowLoad = new Date();
       const pastDueDrafts = loadedQuestionnaires.filter(
@@ -1625,7 +1657,15 @@ export default function SurvivorFantasyApp() {
     setPicks(picksData ? JSON.parse(picksData.value) : []);
     setPicksLocked(picksLockedData ? JSON.parse(picksLockedData.value) : { instinct: false, final: false });
     setGamePhase(gamePhaseData ? gamePhaseData.value : 'instinct-picks');
-    setQuestionnaires(questionnairesData ? JSON.parse(questionnairesData.value) : []);
+    {
+      let switchLoadedQuestionnaires = questionnairesData ? JSON.parse(questionnairesData.value) : [];
+      const { questionnaires: repairedQ, changed } = repairS51Q1Text(switchLoadedQuestionnaires);
+      if (changed) {
+        switchLoadedQuestionnaires = repairedQ;
+        try { await leagueStore.set('questionnaires', JSON.stringify(switchLoadedQuestionnaires)); } catch {}
+      }
+      setQuestionnaires(switchLoadedQuestionnaires);
+    }
     setSubmissions(submissionsData ? JSON.parse(submissionsData.value) : []);
     setQotWVotes(qotWVotesData ? JSON.parse(qotWVotesData.value) : []);
     setLatePenalties(latePenaltiesData ? JSON.parse(latePenaltiesData.value) : {});
