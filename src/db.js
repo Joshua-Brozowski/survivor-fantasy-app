@@ -133,7 +133,10 @@ export const LEAGUE_SPECIFIC_KEYS = [
   'seasonFinalized',
   'submissionAuditLog',
   'episodeScoringHistory',
-  'episodeRecaps'
+  'episodeRecaps',
+  'questionnaires',
+  'wordleSchedule',
+  'wordleAuditLog'
 ];
 
 // Keys that are global (shared across all leagues)
@@ -142,7 +145,6 @@ export const GLOBAL_KEYS = [
   'leagues',
   'leagueMemberships',
   'contestants',
-  'questionnaires',
   'questionnaireTemplates',
   'joinCodes'
   // Note: password_{id} and security_{id} are also global but use dynamic keys

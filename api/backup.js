@@ -36,7 +36,6 @@ const GLOBAL_BACKUP_KEYS = [
   'contestants',
   'leagues',
   'leagueMemberships',
-  'questionnaires',
   '_multiLeagueMigrated'
 ];
 
@@ -58,7 +57,10 @@ const LEAGUE_SPECIFIC_KEYS = [
   'gamePhase',
   'currentSeason',
   'seasonHistory',
-  'seasonFinalized'
+  'seasonFinalized',
+  'questionnaires',
+  'wordleSchedule',
+  'wordleAuditLog'
 ];
 
 // Legacy keys for backwards compatibility during restore

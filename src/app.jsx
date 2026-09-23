@@ -148,6 +148,24 @@ const DEFAULT_WORDLE_SCHEDULE = [
   { id: 13, word: 'SNUFF', releaseDate: '2026-12-18', closeDate: '2026-12-24', status: 'pending', challengeId: null },
 ];
 
+// Alternative Wordle word list — used for leagues that are NOT league 1
+// Different words, same release/close dates as DEFAULT_WORDLE_SCHEDULE
+const DEFAULT_WORDLE_SCHEDULE_ALT = [
+  { id: 1, word: 'QUEST', releaseDate: '2026-09-25', closeDate: '2026-10-01', status: 'pending', challengeId: null },
+  { id: 2, word: 'ARENA', releaseDate: '2026-10-02', closeDate: '2026-10-08', status: 'pending', challengeId: null },
+  { id: 3, word: 'CAMPS', releaseDate: '2026-10-09', closeDate: '2026-10-15', status: 'pending', challengeId: null },
+  { id: 4, word: 'CROWN', releaseDate: '2026-10-16', closeDate: '2026-10-22', status: 'pending', challengeId: null },
+  { id: 5, word: 'BLUFF', releaseDate: '2026-10-23', closeDate: '2026-10-29', status: 'pending', challengeId: null },
+  { id: 6, word: 'SWAPS', releaseDate: '2026-10-30', closeDate: '2026-11-05', status: 'pending', challengeId: null },
+  { id: 7, word: 'OASIS', releaseDate: '2026-11-06', closeDate: '2026-11-12', status: 'pending', challengeId: null },
+  { id: 8, word: 'VOTED', releaseDate: '2026-11-13', closeDate: '2026-11-19', status: 'pending', challengeId: null },
+  { id: 9, word: 'CLIFF', releaseDate: '2026-11-20', closeDate: '2026-11-26', status: 'pending', challengeId: null },
+  { id: 10, word: 'NIGHT', releaseDate: '2026-11-27', closeDate: '2026-12-03', status: 'pending', challengeId: null },
+  { id: 11, word: 'PERCH', releaseDate: '2026-12-04', closeDate: '2026-12-10', status: 'pending', challengeId: null },
+  { id: 12, word: 'REIGN', releaseDate: '2026-12-11', closeDate: '2026-12-17', status: 'pending', challengeId: null },
+  { id: 13, word: 'EMBER', releaseDate: '2026-12-18', closeDate: '2026-12-24', status: 'pending', challengeId: null },
+];
+
 // Default Advantages Available for Purchase
 // SCARCITY RULE: Only ONE of each advantage can exist in the game at a time
 // Once purchased, no one else can buy it. Once PLAYED, it returns to the shop.
@@ -667,7 +685,7 @@ export default function SurvivorFantasyApp() {
       try {
         const [scoresData, qData, notifData] = await Promise.all([
           leagueStore.get('playerScores'),
-          storage.get('questionnaires'),
+          leagueStore.get('questionnaires'),
           leagueStore.get('notifications'),
         ]);
         if (scoresData?.value) setPlayerScores(JSON.parse(scoresData.value));
@@ -756,24 +774,21 @@ export default function SurvivorFantasyApp() {
       // STEP 3: Run data migration if needed (one-time upgrade to multi-league)
       await migrateToMultiLeague();
 
-      // STEP 3b: Migrate questionnaires from league-specific to global (one-time)
-      const globalQData = await storage.get('questionnaires');
-      if (!globalQData) {
-        // Try to migrate from league_1 as canonical source
-        const legacyQ = await storage.get('league_1_questionnaires');
-        if (legacyQ?.value) {
-          await storage.set('questionnaires', legacyQ.value);
-          console.log('[migrate] Promoted league_1_questionnaires to global questionnaires');
-        }
-      }
-
       // STEP 4: Create league-scoped storage and load league-specific data
       const leagueStore = createLeagueStorage(activeLeagueId);
 
       const picksData = await leagueStore.get('picks');
       const picksLockedData = await leagueStore.get('picksLocked');
       const gamePhaseData = await leagueStore.get('gamePhase');
-      const questionnairesData = await storage.get('questionnaires');
+      // Questionnaires are now league-specific; migrate from global key on first load
+      let questionnairesData = await leagueStore.get('questionnaires');
+      if (!questionnairesData) {
+        const globalQ = await storage.get('questionnaires');
+        if (globalQ?.value) {
+          await leagueStore.set('questionnaires', globalQ.value);
+          questionnairesData = globalQ;
+        }
+      }
       const submissionsData = await leagueStore.get('submissions');
       const qotWVotesData = await leagueStore.get('qotWVotes');
       const latePenaltiesData = await leagueStore.get('latePenalties');
@@ -815,7 +830,7 @@ export default function SurvivorFantasyApp() {
           if (q.status === 'active') return { ...q, status: 'archived' };
           return q;
         });
-        await storage.set('questionnaires', JSON.stringify(loadedQuestionnaires));
+        await leagueStore.set('questionnaires', JSON.stringify(loadedQuestionnaires));
         // Add a notification for the auto-activation
         const activationNotif = {
           id: Date.now(),
@@ -868,13 +883,25 @@ export default function SurvivorFantasyApp() {
         }
       }
 
-      // Load wordleSchedule (global key — shared across leagues)
-      const wordleScheduleData = await storage.get('wordleSchedule');
-      const parsedWordleSchedule = wordleScheduleData ? JSON.parse(wordleScheduleData.value) : DEFAULT_WORDLE_SCHEDULE;
-      setWordleSchedule(parsedWordleSchedule);
+      // Load wordleSchedule (league-specific; migrate from global on first load)
+      let wordleScheduleData = await leagueStore.get('wordleSchedule');
       if (!wordleScheduleData) {
-        await storage.set('wordleSchedule', JSON.stringify(DEFAULT_WORDLE_SCHEDULE));
+        // League 1 inherits the existing global schedule; other leagues get the alt word list
+        if (activeLeagueId === 1) {
+          const globalWS = await storage.get('wordleSchedule');
+          if (globalWS?.value) {
+            await leagueStore.set('wordleSchedule', globalWS.value);
+            wordleScheduleData = globalWS;
+          } else {
+            await leagueStore.set('wordleSchedule', JSON.stringify(DEFAULT_WORDLE_SCHEDULE));
+            wordleScheduleData = { value: JSON.stringify(DEFAULT_WORDLE_SCHEDULE) };
+          }
+        } else {
+          await leagueStore.set('wordleSchedule', JSON.stringify(DEFAULT_WORDLE_SCHEDULE_ALT));
+          wordleScheduleData = { value: JSON.stringify(DEFAULT_WORDLE_SCHEDULE_ALT) };
+        }
       }
+      setWordleSchedule(JSON.parse(wordleScheduleData.value));
 
       // Load wordleAuditLog (league-specific)
       const wordleAuditData = await leagueStore.get('wordleAuditLog');
@@ -932,8 +959,8 @@ export default function SurvivorFantasyApp() {
       await storage.set('leagues', JSON.stringify([{ id: 1, name: 'Main League', createdAt: new Date().toISOString(), createdBy: 1, isDefault: true }]));
       await storage.set('leagueMemberships', JSON.stringify(INITIAL_PLAYERS.map(p => ({ playerId: p.id, leagueId: 1 }))));
 
-      // questionnaires are now global — save to global storage
-      await storage.set('questionnaires', JSON.stringify([]));
+      // questionnaires are league-specific
+      await createLeagueStorage(1).set('questionnaires', JSON.stringify([]));
 
       // Save initial league-specific data (prefixed with league_1_)
       const leagueStore = createLeagueStorage(1);
@@ -1552,7 +1579,15 @@ export default function SurvivorFantasyApp() {
     const picksData = await leagueStore.get('picks');
     const picksLockedData = await leagueStore.get('picksLocked');
     const gamePhaseData = await leagueStore.get('gamePhase');
-    const questionnairesData = await storage.get('questionnaires');
+    // Questionnaires are league-specific; migrate from global on first load
+    let questionnairesData = await leagueStore.get('questionnaires');
+    if (!questionnairesData) {
+      const globalQ = await storage.get('questionnaires');
+      if (globalQ?.value) {
+        await leagueStore.set('questionnaires', globalQ.value);
+        questionnairesData = globalQ;
+      }
+    }
     const submissionsData = await leagueStore.get('submissions');
     const qotWVotesData = await leagueStore.get('qotWVotes');
     const latePenaltiesData = await leagueStore.get('latePenalties');
@@ -1568,6 +1603,18 @@ export default function SurvivorFantasyApp() {
     const challengesData = await leagueStore.get('challenges');
     const challengeAttemptsData = await leagueStore.get('challengeAttempts');
     const episodeRecapsData2 = await leagueStore.get('episodeRecaps');
+    // Load per-league wordleSchedule (migrate from global on first load)
+    let switchWordleData = await leagueStore.get('wordleSchedule');
+    if (!switchWordleData) {
+      if (leagueId === 1) {
+        const globalWS = await storage.get('wordleSchedule');
+        switchWordleData = globalWS?.value ? globalWS : { value: JSON.stringify(DEFAULT_WORDLE_SCHEDULE) };
+      } else {
+        switchWordleData = { value: JSON.stringify(DEFAULT_WORDLE_SCHEDULE_ALT) };
+      }
+      await leagueStore.set('wordleSchedule', switchWordleData.value);
+    }
+    const wordleAuditData2 = await leagueStore.get('wordleAuditLog');
 
     setCurrentSeason(currentSeasonData ? parseInt(currentSeasonData.value) : 50);
     setSeasonHistory(seasonHistoryData ? JSON.parse(seasonHistoryData.value) : []);
@@ -1588,6 +1635,8 @@ export default function SurvivorFantasyApp() {
     setPlayerAdvantages(playerAdvantagesData ? JSON.parse(playerAdvantagesData.value) : []);
     setPlayerScores(playerScoresData ? JSON.parse(playerScoresData.value) : {});
     setNotifications(notificationsData ? JSON.parse(notificationsData.value) : []);
+    setWordleSchedule(JSON.parse(switchWordleData.value));
+    setWordleAuditLog(wordleAuditData2 ? JSON.parse(wordleAuditData2.value) : []);
 
     const leagueName = leagues.find(l => l.id === leagueId)?.name || 'Unknown League';
     console.log(`Switched to league: ${leagueName}`);
@@ -1660,8 +1709,7 @@ export default function SurvivorFantasyApp() {
     await leagueStore.set('seasonFinalized', JSON.stringify(false));
     await leagueStore.set('picks', JSON.stringify([]));
     await leagueStore.set('picksLocked', JSON.stringify({ instinct: false, final: false }));
-    // questionnaires are now global — clear via storage directly
-    await storage.set('questionnaires', JSON.stringify([]));
+    await leagueStore.set('questionnaires', JSON.stringify([]));
     await leagueStore.set('submissions', JSON.stringify([]));
     await leagueStore.set('qotWVotes', JSON.stringify([]));
     await leagueStore.set('pickScores', JSON.stringify([]));
@@ -1702,24 +1750,7 @@ export default function SurvivorFantasyApp() {
     setPicks(updatedPicks);
     await guestSafeLeagueSet('picks', JSON.stringify(updatedPicks));
 
-    // Fan-out pick to all other leagues this player is in
-    if (!isGuestMode()) {
-      const allPlayerLeagues = (leagueMemberships || []).filter(m => m.playerId === currentUser.id);
-      for (const membership of allPlayerLeagues) {
-        if (membership.leagueId === currentLeagueId) continue;
-        try {
-          const otherStore = createLeagueStorage(membership.leagueId);
-          const otherPicksRaw = await otherStore.get('picks');
-          const otherPicks = otherPicksRaw?.value ? JSON.parse(otherPicksRaw.value) : [];
-          // Replace or add (same player, same type)
-          const filtered = otherPicks.filter(p => !(p.playerId === currentUser.id && p.type === newPick.type));
-          await otherStore.set('picks', JSON.stringify([...filtered, { ...newPick, leagueSynced: true }]));
-        } catch (e) { /* silent */ }
-      }
-    }
-
-    const multiLeagueSuffix = !isGuestMode() && (leagueMemberships || []).filter(m => m.playerId === currentUser.id).length > 1 ? ' Applied to all leagues.' : '';
-    alert(isGuestMode() ? `${label} pick submitted! (Demo mode - not saved)` : `${label} pick submitted!${multiLeagueSuffix}`);
+    alert(isGuestMode() ? `${label} pick submitted! (Demo mode - not saved)` : `${label} pick submitted!`);
   };
 
   const submitInstinctPick = (contestantId) => submitPick('instinct', contestantId);
@@ -2309,23 +2340,6 @@ export default function SurvivorFantasyApp() {
     setChallengeAttempts(updated);
     await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
 
-    // Fan-out new attempt to all other leagues this player is in
-    if (!isGuestMode()) {
-      const allPlayerLeagues = (leagueMemberships || []).filter(m => m.playerId === currentUser.id);
-      for (const membership of allPlayerLeagues) {
-        if (membership.leagueId === currentLeagueId) continue;
-        try {
-          const otherStore = createLeagueStorage(membership.leagueId);
-          const otherAttemptsRaw = await otherStore.get('challengeAttempts');
-          const otherAttempts = otherAttemptsRaw?.value ? JSON.parse(otherAttemptsRaw.value) : [];
-          const alreadyExists = otherAttempts.some(a => a.playerId === currentUser.id && a.challengeId === newAttempt.challengeId);
-          if (!alreadyExists) {
-            await otherStore.set('challengeAttempts', JSON.stringify([...otherAttempts, { ...newAttempt, leagueSynced: true }]));
-          }
-        } catch (e) { /* silent */ }
-      }
-    }
-
     return newAttempt;
   };
 
@@ -2356,22 +2370,6 @@ export default function SurvivorFantasyApp() {
     );
     setChallengeAttempts(updated);
     await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
-
-    // Fan-out updated attempt to all other leagues this player is in
-    if (!isGuestMode()) {
-      const allPlayerLeagues = (leagueMemberships || []).filter(m => m.playerId === currentUser.id);
-      for (const membership of allPlayerLeagues) {
-        if (membership.leagueId === currentLeagueId) continue;
-        try {
-          const otherStore = createLeagueStorage(membership.leagueId);
-          const otherAttemptsRaw = await otherStore.get('challengeAttempts');
-          const otherAttempts = otherAttemptsRaw?.value ? JSON.parse(otherAttemptsRaw.value) : [];
-          // Replace matching attempt (same player + challenge) or add if not exists
-          const filteredOther = otherAttempts.filter(a => !(a.playerId === currentUser.id && a.challengeId === updatedAttempt.challengeId));
-          await otherStore.set('challengeAttempts', JSON.stringify([...filteredOther, { ...updatedAttempt, leagueSynced: true }]));
-        } catch (e) { /* silent */ }
-      }
-    }
 
     return updatedAttempt;
   };
@@ -2433,7 +2431,7 @@ export default function SurvivorFantasyApp() {
       e.id === scheduleEntry.id ? { ...e, status: 'released', challengeId: newChallenge.id } : e
     );
     setWordleSchedule(updatedSchedule);
-    await storage.set('wordleSchedule', JSON.stringify(updatedSchedule));
+    await getLeagueStorage().set('wordleSchedule', JSON.stringify(updatedSchedule));
     await appendWordleAuditLog({
       action: 'auto-released',
       challengeId: newChallenge.id,
@@ -2450,7 +2448,7 @@ export default function SurvivorFantasyApp() {
       e.id === scheduleId ? { ...e, status: 'completed' } : e
     );
     setWordleSchedule(updatedSchedule);
-    await storage.set('wordleSchedule', JSON.stringify(updatedSchedule));
+    await getLeagueStorage().set('wordleSchedule', JSON.stringify(updatedSchedule));
     await appendWordleAuditLog({
       action: 'auto-closed',
       challengeId,
@@ -2499,7 +2497,7 @@ export default function SurvivorFantasyApp() {
       e.challengeId === challengeId ? { ...e, status: 'released' } : e
     );
     setWordleSchedule(updatedSchedule);
-    await storage.set('wordleSchedule', JSON.stringify(updatedSchedule));
+    await getLeagueStorage().set('wordleSchedule', JSON.stringify(updatedSchedule));
 
     await appendWordleAuditLog({
       action: 'rollback',
@@ -5447,7 +5445,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
-  const [broadcastToLeagues, setBroadcastToLeagues] = useState(false);
 
   // Migration: ensure breakdown entries have unique IDs
   useEffect(() => {
@@ -5645,7 +5642,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       const updated = [...questionnaires, questionnaire];
       setQuestionnaires(updated);
       // questionnaires are now global — write to global storage
-      await storage.set('questionnaires', JSON.stringify(updated));
+      await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
 
       alert(`Questionnaire scheduled! It will auto-activate on ${new Date(newQ.scheduledFor).toLocaleString()}.`);
     } else {
@@ -5669,7 +5666,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       const updated = [...updatedQuestionnaires, questionnaire];
       setQuestionnaires(updated);
       // questionnaires are now global — write to global storage
-      await storage.set('questionnaires', JSON.stringify(updated));
+      await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
 
       await addNotification({
         type: 'new_questionnaire',
@@ -5681,7 +5678,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     }
 
     setAdminView('main');
-    setBroadcastToLeagues(false);
     setNewQ({ title: '', episodeNumber: episodes.length + 1, questions: [], hasQotw: true, qotw: { id: 'qotw', text: '', anonymous: false }, scheduledFor: '' });
   };
 
@@ -5726,7 +5722,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
     setQuestionnaires(updated);
     // questionnaires are now global
-    await storage.set('questionnaires', JSON.stringify(updated));
+    await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
 
     await addNotification({
       type: 'questionnaire_reopened',
@@ -5818,7 +5814,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       const leagueStore = getLeagueStorage();
       await leagueStore.set('submissions', JSON.stringify(updatedSubmissions));
       // questionnaires are now global
-      await storage.set('questionnaires', JSON.stringify(updatedQuestionnaires));
+      await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updatedQuestionnaires));
       setSubmissions(updatedSubmissions);
       setQuestionnaires(updatedQuestionnaires);
 
@@ -5871,7 +5867,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     const leagueStore = getLeagueStorage();
     await leagueStore.set('submissions', JSON.stringify(updatedSubmissions));
     // questionnaires are now global
-    await storage.set('questionnaires', JSON.stringify(updatedQuestionnaires));
+    await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updatedQuestionnaires));
     setSubmissions(updatedSubmissions);
     setQuestionnaires(updatedQuestionnaires);
 
@@ -6214,7 +6210,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     );
     setQuestionnaires(updated);
     // questionnaires are now global
-    await storage.set('questionnaires', JSON.stringify(updated));
+    await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
 
     alert('QOTW voting opened!');
   };
@@ -6225,7 +6221,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     );
     setQuestionnaires(updated);
     // questionnaires are now global
-    await storage.set('questionnaires', JSON.stringify(updated));
+    await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
     alert('QOTW voting closed! Players can no longer vote on this questionnaire.');
   };
 
@@ -6244,7 +6240,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
         );
         setQuestionnaires(updated);
         // questionnaires are now global
-        await storage.set('questionnaires', JSON.stringify(updated));
+        await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
         alert('QotW skipped for this week (no winner awarded).');
       }
       return;
@@ -6259,7 +6255,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     );
     setQuestionnaires(updated);
     // questionnaires are now global
-    await storage.set('questionnaires', JSON.stringify(updated));
+    await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
 
     const winnerNames = winnerPlayerIds.map(id => players.find(p => p.id === id)?.name).join(', ');
     await addNotification({
@@ -7350,7 +7346,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                             );
                             setQuestionnaires(updated);
                             // questionnaires are now global
-                            await storage.set('questionnaires', JSON.stringify(updated));
+                            await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
                             alert('Voting re-opened!');
                           }}
                           className="px-4 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-500 transition"
@@ -9416,7 +9412,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       }
       const updated = wordleSchedule.map(e => e.id === entry.id ? { ...e, word } : e);
       setWordleSchedule(updated);
-      await storage.set('wordleSchedule', JSON.stringify(updated));
+      await createLeagueStorage(currentLeagueId).set('wordleSchedule', JSON.stringify(updated));
       setEditingScheduleId(null);
     };
 
@@ -9424,7 +9420,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       if (!window.confirm(`Delete "${entry.word}" (${entry.releaseDate})? This cannot be undone.`)) return;
       const updated = wordleSchedule.filter(e => e.id !== entry.id);
       setWordleSchedule(updated);
-      await storage.set('wordleSchedule', JSON.stringify(updated));
+      await createLeagueStorage(currentLeagueId).set('wordleSchedule', JSON.stringify(updated));
     };
 
     const addWeek = async () => {
@@ -9447,7 +9443,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       };
       const updated = [...wordleSchedule, newEntry].sort((a, b) => new Date(a.releaseDate) - new Date(b.releaseDate));
       setWordleSchedule(updated);
-      await storage.set('wordleSchedule', JSON.stringify(updated));
+      await createLeagueStorage(currentLeagueId).set('wordleSchedule', JSON.stringify(updated));
       setNewWeekForm({ word: '', releaseDate: '', closeDate: '' });
     };
 
@@ -11319,7 +11315,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                                 });
                                 setQuestionnaires(updated);
                                 // questionnaires are now global
-                                await storage.set('questionnaires', JSON.stringify(updated));
+                                await createLeagueStorage(currentLeagueId).set('questionnaires', JSON.stringify(updated));
                                 await addNotification({
                                   type: 'new_questionnaire',
                                   message: `New questionnaire "${q.title}" is now available!`,
@@ -11852,24 +11848,6 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
       // Write confirmed — update local state and clear the form
       setSubmissions(updatedSubmissions);
-
-      // Fan-out submission to all other leagues this player is in
-      if (!isGuestMode()) {
-        const allPlayerLeagues = (leagueMemberships || []).filter(m => m.playerId === currentUser.id);
-        for (const membership of allPlayerLeagues) {
-          if (membership.leagueId === currentLeagueId) continue; // already saved
-          try {
-            const otherStore = createLeagueStorage(membership.leagueId);
-            const otherSubsRaw = await otherStore.get('submissions');
-            const otherSubs = otherSubsRaw?.value ? JSON.parse(otherSubsRaw.value) : [];
-            // Don't overwrite if already submitted (idempotent)
-            const alreadyExists = otherSubs.some(s => s.playerId === currentUser.id && s.questionnaireId === newSubmission.questionnaireId);
-            if (!alreadyExists) {
-              await otherStore.set('submissions', JSON.stringify([...otherSubs, { ...newSubmission, leagueSynced: true }]));
-            }
-          } catch (e) { /* silent — don't fail main submission */ }
-        }
-      }
 
       // Append to submission audit log (silently — never interrupts submission flow)
       try {
