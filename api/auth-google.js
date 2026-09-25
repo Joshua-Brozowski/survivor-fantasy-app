@@ -16,7 +16,7 @@ async function connectToDatabase() {
     try { await cachedDb.command({ ping: 1 }); return { client: cachedClient, db: cachedDb }; }
     catch { cachedClient = null; cachedDb = null; }
   }
-  const client = new MongoClient(uri);
+  const client = new MongoClient(uri, { maxPoolSize: 1 });
   await client.connect();
   const db = client.db('survivor_fantasy');
   cachedClient = client; cachedDb = db;

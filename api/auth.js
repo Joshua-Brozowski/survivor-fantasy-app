@@ -102,7 +102,7 @@ async function connectToDatabase() {
     }
   }
 
-  const client = new MongoClient(uri);
+  const client = new MongoClient(uri, { maxPoolSize: 1 });
   await client.connect();
   const db = client.db('survivor_fantasy');
 
