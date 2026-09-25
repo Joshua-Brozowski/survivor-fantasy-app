@@ -28,7 +28,7 @@
   "crons": [
     {
       "path": "/api/gemini-episode",
-      "schedule": "0 14 * * 0"
+      "schedule": "30 13 * * 5"
     }
   ]
 }
