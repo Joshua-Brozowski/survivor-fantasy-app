@@ -1,5 +1,5 @@
 import { MongoClient } from 'mongodb';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { requireAuth } from './lib/auth-middleware.js';
 
 const uri = process.env.MONGODB_URI;
@@ -240,13 +240,7 @@ async function runAutoscore(db, leagueId, episodeNumber, triggeredBy) {
     throw new Error('GEMINI_API_KEY environment variable is not set');
   }
 
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-  // Use gemini-3.8-flash with Google Search grounding
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-3.8-flash',
-    tools: [{ googleSearch: {} }]
-  });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
   const prompt = buildScoringPrompt(
     currentSeason,
@@ -255,8 +249,15 @@ async function runAutoscore(db, leagueId, episodeNumber, triggeredBy) {
   );
 
   console.log(`[gemini-episode] Calling Gemini for Season ${currentSeason} Episode ${episodeNumber}...`);
-  const result = await model.generateContent(prompt);
-  const responseText = result.response.text();
+  const interaction = await ai.interactions.create({
+    model: 'gemini-3.8-flash',
+    input: prompt,
+    tools: [{ type: 'google_search' }]
+  });
+  let responseText = '';
+  for (const output of (interaction.outputs || [])) {
+    if (output.type === 'text') responseText += output.text;
+  }
   console.log(`[gemini-episode] Raw Gemini response (first 500 chars): ${responseText.substring(0, 500)}`);
 
   // 5. Parse response
@@ -423,15 +424,18 @@ export default async function handler(req, res) {
       return res.status(200).json({ suggestion: '' });
     }
     try {
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-3.8-flash',
-        tools: [{ googleSearch: {} }],
-      });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `For Survivor Season 51, Episode ${episodeNum}, suggest ONE interesting "Question of the Week" for a fantasy league. This is an open-ended short-answer question players answer before watching the episode — about predictions, strategy, alliances, or player dynamics. Make it specific, fun, and thought-provoking. Return ONLY the question text (one sentence, ending in a question mark), nothing else.`;
-      const result = await model.generateContent(prompt);
-      const suggestion = result.response.text().trim();
-      return res.status(200).json({ suggestion });
+      const interaction = await ai.interactions.create({
+        model: 'gemini-3.8-flash',
+        input: prompt,
+        tools: [{ type: 'google_search' }]
+      });
+      let suggestion = '';
+      for (const output of (interaction.outputs || [])) {
+        if (output.type === 'text') suggestion += output.text;
+      }
+      return res.status(200).json({ suggestion: suggestion.trim() });
     } catch (e) {
       console.error('[gemini-episode] suggestQotw error:', e.message);
       return res.status(200).json({ suggestion: '' });
@@ -591,8 +595,7 @@ export default async function handler(req, res) {
 
       const currentSeason = (await readKey(gameDataCollection, `league_${leagueId}_currentSeason`)) || 51;
 
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
       const scoringSummary = scoringData
         ? `Scoring data: ${JSON.stringify(scoringData)}`
@@ -604,8 +607,11 @@ Focus on drama, alliances, and key moments.
 ${scoringSummary}
 Keep it under 100 words.`;
 
-      const result = await model.generateContent(recapPrompt);
-      const recap = result.response.text();
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: recapPrompt
+      });
+      const recap = response.text;
 
       return res.status(200).json({ success: true, recap });
     }
