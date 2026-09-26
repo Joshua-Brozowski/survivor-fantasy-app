@@ -242,10 +242,10 @@ async function runAutoscore(db, leagueId, episodeNumber, triggeredBy) {
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-  // Use gemini-1.5-flash with Google Search grounding
+  // Use gemini-2.0-flash with Google Search grounding
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
-    tools: [{ googleSearchRetrieval: {} }]
+    model: 'gemini-2.0-flash',
+    tools: [{ googleSearch: {} }]
   });
 
   const prompt = buildScoringPrompt(
@@ -425,8 +425,8 @@ export default async function handler(req, res) {
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({
-        model: 'gemini-1.5-flash',
-        tools: [{ googleSearchRetrieval: {} }],
+        model: 'gemini-2.0-flash',
+        tools: [{ googleSearch: {} }],
       });
       const prompt = `For Survivor Season 51, Episode ${episodeNum}, suggest ONE interesting "Question of the Week" for a fantasy league. This is an open-ended short-answer question players answer before watching the episode — about predictions, strategy, alliances, or player dynamics. Make it specific, fun, and thought-provoking. Return ONLY the question text (one sentence, ending in a question mark), nothing else.`;
       const result = await model.generateContent(prompt);
@@ -592,7 +592,7 @@ export default async function handler(req, res) {
       const currentSeason = (await readKey(gameDataCollection, `league_${leagueId}_currentSeason`)) || 51;
 
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
       const scoringSummary = scoringData
         ? `Scoring data: ${JSON.stringify(scoringData)}`
