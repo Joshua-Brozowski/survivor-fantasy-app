@@ -249,16 +249,13 @@ async function runAutoscore(db, leagueId, episodeNumber, triggeredBy) {
   );
 
   console.log(`[gemini-episode] Calling Gemini for Season ${currentSeason} Episode ${episodeNumber}...`);
-  const interaction = await ai.interactions.create({
+  const result = await ai.models.generateContent({
     model: 'gemini-3.8-flash',
-    input: prompt,
-    tools: [{ type: 'google_search' }]
+    contents: prompt,
+    config: { tools: [{ googleSearch: {} }] }
   });
-  let responseText = '';
-  for (const output of (interaction.outputs || [])) {
-    if (output.type === 'text') responseText += output.text;
-  }
-  console.log(`[gemini-episode] Raw Gemini response (first 500 chars): ${responseText.substring(0, 500)}`);
+  const responseText = result.text;
+  console.log(`[gemini-episode] Raw response (first 800 chars): ${(responseText || '').substring(0, 800)}`);
 
   // 5. Parse response
   let scoringResult;
@@ -426,16 +423,12 @@ export default async function handler(req, res) {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `For Survivor Season 51, Episode ${episodeNum}, suggest ONE interesting "Question of the Week" for a fantasy league. This is an open-ended short-answer question players answer before watching the episode — about predictions, strategy, alliances, or player dynamics. Make it specific, fun, and thought-provoking. Return ONLY the question text (one sentence, ending in a question mark), nothing else.`;
-      const interaction = await ai.interactions.create({
+      const result = await ai.models.generateContent({
         model: 'gemini-3.8-flash',
-        input: prompt,
-        tools: [{ type: 'google_search' }]
+        contents: prompt,
+        config: { tools: [{ googleSearch: {} }] }
       });
-      let suggestion = '';
-      for (const output of (interaction.outputs || [])) {
-        if (output.type === 'text') suggestion += output.text;
-      }
-      return res.status(200).json({ suggestion: suggestion.trim() });
+      return res.status(200).json({ suggestion: (result.text || '').trim() });
     } catch (e) {
       console.error('[gemini-episode] suggestQotw error:', e.message);
       return res.status(200).json({ suggestion: '' });
