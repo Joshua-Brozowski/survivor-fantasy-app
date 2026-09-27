@@ -100,16 +100,7 @@ function fuzzyMatchContestant(geminiName, contestants) {
 function buildScoringPrompt(season, episode, remainingContestants) {
   const contestantList = remainingContestants.join(', ');
 
-  return `You are a Survivor TV show expert helping score a fantasy league. Search the web for detailed information about Survivor Season ${season} Episode ${episode}.
-
-Please search multiple sources including:
-- Survivor Wiki (survivor.fandom.com)
-- Reddit r/survivor episode discussion threads
-- CBS.com episode recaps
-- Entertainment Weekly, Vulture, or other entertainment sites with episode recaps
-- Fan recap blogs
-
-Cross-reference at least 2-3 sources to ensure accuracy. If sources conflict, use the majority view.
+  return `You are a Survivor TV show expert helping score a fantasy league. Use your knowledge of Survivor Season ${season} Episode ${episode} to answer accurately. If you do not have reliable information about this specific episode, set confidence to 0 and explain in the summary field — do not guess or hallucinate results.
 
 The remaining contestants in this episode are: ${contestantList}
 
@@ -251,8 +242,7 @@ async function runAutoscore(db, leagueId, episodeNumber, triggeredBy) {
   console.log(`[gemini-episode] Calling Gemini for Season ${currentSeason} Episode ${episodeNumber}...`);
   const result = await ai.models.generateContent({
     model: 'gemini-3.8-flash',
-    contents: prompt,
-    config: { tools: [{ googleSearch: {} }] }
+    contents: prompt
   });
   const responseText = result.text;
   console.log(`[gemini-episode] Raw response (first 800 chars): ${(responseText || '').substring(0, 800)}`);
@@ -425,8 +415,7 @@ export default async function handler(req, res) {
       const prompt = `For Survivor Season 51, Episode ${episodeNum}, suggest ONE interesting "Question of the Week" for a fantasy league. This is an open-ended short-answer question players answer before watching the episode — about predictions, strategy, alliances, or player dynamics. Make it specific, fun, and thought-provoking. Return ONLY the question text (one sentence, ending in a question mark), nothing else.`;
       const result = await ai.models.generateContent({
         model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: { tools: [{ googleSearch: {} }] }
+        contents: prompt
       });
       return res.status(200).json({ suggestion: (result.text || '').trim() });
     } catch (e) {
