@@ -10,7 +10,7 @@ A full-stack web application for running a fantasy game based on the TV show Sur
 - **Icons**: Lucide React
 - **Animation**: Framer Motion (tab transitions, accordions, modals, notification dropdown)
 - **Confetti**: canvas-confetti
-- **AI**: Google Gemini API (`@google/genai`) — episode auto-scoring, QotW question suggestions, episode recap generation
+- **AI**: Google Gemini API (`@google/genai`) — QotW question suggestions, episode recap generation (episode auto-scoring was built then disabled, see Key Feature 15)
 - **Deployment**: Vercel (auto-deploy from GitHub main branch)
 
 ## Project Structure
@@ -461,20 +461,20 @@ Visual celebrations for key moments using canvas-confetti library.
 - Respects `prefers-reduced-motion` media query
 - Users with motion sensitivity won't see animations
 
-### 15. AI Auto-Scoring (Gemini)
-Uses Google's Gemini API to score picks automatically instead of the admin manually entering results per contestant.
+### 15. AI Auto-Scoring (Gemini) — **DISABLED (Oct 2026)**
+Previously used Gemini to score picks automatically instead of the admin entering results per contestant. **Disabled because results weren't reliable** — Gemini has no live web search (Search grounding was removed Sept 26, 2026 for causing >60s timeouts), so it was scoring purely from training knowledge and could be wrong or low-confidence for current episodes.
 
-**How it works**:
-- Admin clicks **"Run AI Autoscore"** in the Admin Panel (or the Friday 13:30 UTC Vercel cron fires it for every league automatically)
-- Gemini is prompted with the current season/episode number and the list of remaining contestants, and asked to return structured JSON per contestant (survived, immunity, reward, journey, foundIdol, playedIdol, votesReceived, incorrectVote, votedOutWithIdol, madeMerge, eliminated) plus a `confidence` score (0-100) and `summary`
-- Contestant names are fuzzy-matched (exact → substring → first-name) against the DB cast list
-- Points are calculated with the same rules as manual Episode Scoring and appended to `league_X_pickScores` with `source: 'gemini-auto'`
-- Eliminated contestants are marked automatically; a new `league_X_episodes` entry and an `episode_auto_scored` notification (showing the confidence %) are created
-- Every run is logged to `league_X_episodeScoringHistory` with an admin-only `revert` action that undoes the score entries, un-eliminates contestants, and removes the episode record — **the revert/history API exists but has no admin UI wired up yet** (call `/api/gemini-episode` with `action: 'getHistory'` / `action: 'revert'` directly if needed)
-- **Known caveat**: Gemini relies on its training data, not live web search — Google Search grounding was removed (commit `5f664f6`, Sept 26 2026) because it caused >60s timeouts. The in-app confirmation dialog still says "Gemini will search the web," which is now inaccurate and should be updated. Confidence should be checked before trusting a run for a very recent episode.
-- Admin should treat results as a first pass — verify against the actual episode before relying on it, especially early in a season when Gemini's training cutoff may not cover the current cast
+**What was removed**:
+- The "Run AI Autoscore" button and its handler/state in the Admin Panel (`src/app.jsx`)
+- The Friday 13:30 UTC Vercel cron entry in `vercel.json` that ran it for every league automatically
+- The `runAutoscore` implementation and its helpers (`buildScoringPrompt`, `parseGeminiResponse`, `fuzzyMatchContestant`, `calcPickPoints`, `appendNotification`) in `api/gemini-episode.js`
 
-**Other Gemini-powered helpers**:
+**What's still in place (harmless, kept for existing data)**:
+- The `autoscore` action on `/api/gemini-episode` now returns `410 Gone` immediately if hit directly — a safety net in case anything still tries to trigger it
+- `action: 'getHistory'` / `action: 'revert'` still work, so any *already-applied* AI-scored episode from before the disable can still be reviewed/reverted through the API (no admin UI for this — call `/api/gemini-episode` directly)
+- `league_X_episodeScoringHistory` data from past runs is untouched
+
+**Other Gemini-powered helpers (unaffected, still live)**:
 - **QotW suggestion**: `GET /api/gemini-episode?action=suggestQotw&episode=N` (no auth) suggests one Question-of-the-Week when creating a questionnaire
 - **Recap generation**: `action: 'generateRecap'` (admin-only) drafts a 3-4 sentence recap paragraph from scoring data — the API exists but isn't currently called from the Episode Recaps admin UI (recaps are entered manually today, see below)
 
@@ -749,19 +749,16 @@ Players can only purchase/manage their own advantages (admins can act for any pl
   - Required: `advantageId` (player's advantage ID), `leagueId`
 
 ### `/api/gemini-episode`
-Gemini AI integration for episode auto-scoring, recap drafts, and QotW suggestions. GET requests (Vercel cron) are unauthenticated by design (internal, non-sensitive); POST requests from the admin UI require JWT auth.
+Gemini AI integration for recap drafts and QotW suggestions. **AI Auto-Scoring is disabled** (see [Key Feature 15](#15-ai-auto-scoring-gemini--disabled-oct-2026)) — no cron, no button; `action: 'autoscore'` now returns `410 Gone`. GET requests are unauthenticated by design (internal/non-sensitive); POST requests require JWT auth.
 
-- **GET** (Vercel cron, Friday 13:30 UTC, no auth) — runs `action: 'autoscore'` for every league in one pass
-- **POST** with `action: 'autoscore'` (auth required) - Score one league's most recent episode with Gemini
-  - Required: `leagueId`; Optional: `episodeNumber` (auto-detects next episode if omitted)
-- **GET/POST** with `action: 'getHistory'` - List all past autoscore runs for a league (`leagueId` required)
-- **POST** with `action: 'revert'` - **Admin only.** Undo a past autoscore run: removes its pick-score entries, un-eliminates any contestants it eliminated, and deletes its episode record
+- **`action: 'autoscore'`** (any method) - **Disabled.** Always returns `410 Gone`.
+- **GET/POST** with `action: 'getHistory'` - List past autoscore runs for a league from before the disable (`leagueId` required)
+- **POST** with `action: 'revert'` - **Admin only.** Undo a past (pre-disable) autoscore run: removes its pick-score entries, un-eliminates any contestants it eliminated, and deletes its episode record
   - Required: `leagueId`, `historyId`
 - **POST** with `action: 'generateRecap'` - **Admin only.** Draft a short recap paragraph from scoring data
   - Required: `leagueId`, `episodeNumber`; Optional: `scoringData`
 - **GET** with `action: 'suggestQotw'` (no auth) - Suggest one Question-of-the-Week for a given episode number
 - Requires `GEMINI_API_KEY` env var; uses model `gemini-3.8-flash` via `@google/genai`
-- **No Google Search grounding** — relies on the model's training knowledge only (grounding was removed for causing >60s timeouts); low `confidence` in the response means Gemini didn't recognize the episode
 
 ## Environment Variables
 
@@ -802,8 +799,7 @@ Live at: `https://survivor-fantasy-app-gamma.vercel.app` — Vercel auto-deploys
 **IMPORTANT**: Local Vite dev server does NOT run Vercel serverless functions. All `/api/*` calls fail locally. Real testing only happens on production after deploying to `main`.
 
 ### Cron Jobs (`vercel.json`)
-- `/api/gemini-episode` runs every Friday at 13:30 UTC — iterates all leagues and runs Gemini AI auto-scoring for each (see [Key Feature 15](#15-ai-auto-scoring-gemini))
-- Cron requests are GET and unauthenticated by design (Vercel-internal trigger, not a sensitive action); admin-triggered runs from the UI are POST and require JWT auth
+- None currently active. The Friday 13:30 UTC AI Auto-Scoring cron was removed Oct 2026 when that feature was disabled (see [Key Feature 15](#15-ai-auto-scoring-gemini--disabled-oct-2026))
 
 ### Branching Strategy (Season 51+)
 
@@ -1042,17 +1038,17 @@ Season 51 ("The Open Era") has 21 contestants across 2 tribes, defined in `DEFAU
 - [x] Pre-scheduled Wordle system — `DEFAULT_WORDLE_SCHEDULE` (13 weeks for S51), auto-release Thursday / auto-close Wednesday, per-league word lists so leagues never share the same word, admin Wordle Schedule view with rollback + audit log
 - [x] Contestant-based episode scoring — admin scores one contestant at a time; points fan out to all pickers automatically instead of scoring pick-by-pick
 - [x] Emergency recovery tools — `repairLeagueKey`, `reconstructQuestionnaire`, `readLiveKey` backup actions for rebuilding a lost questionnaire from raw submissions (see Backup Management above)
-- [x] AI Auto-Scoring (Gemini) — admin-triggered or Friday cron; scores picks and marks eliminations from Gemini's Survivor knowledge; full history + revert support (see [Key Feature 15](#15-ai-auto-scoring-gemini))
 - [x] Episode Recaps — admin-authored recap paragraphs shown in a Home page accordion (see [Key Feature 16](#16-episode-recaps))
 - [x] Profile photos with admin approval queue (see [Key Feature 17](#17-profile-photos))
 - [x] Demo mode — sandboxed guest view linked from the login page (see [Key Feature 18](#18-demo-mode))
 - [x] Player deactivation (soft delete) + self-serve join codes (see [Key Feature 19](#19-player-deactivation--self-serve-join-codes))
 - [x] Score Adjustments admin panel — direct editing of any player's score line items with an audit log (see [Key Feature 20](#20-score-adjustments-admin))
 
+### Retired Features
+- [x] ~~AI Auto-Scoring (Gemini)~~ — built Sept 2026, **disabled Oct 2026**: without live web search, Gemini's scoring wasn't reliable enough to trust. Button, cron, and implementation removed; API returns `410 Gone` for the `autoscore` action. See [Key Feature 15](#15-ai-auto-scoring-gemini--disabled-oct-2026).
+
 ### Planned Features
 - [ ] Wire up Gemini `generateRecap` to the Episode Recaps admin UI (API exists, no UI button yet)
-- [ ] Admin UI for AI Auto-Score history/revert (API exists as `getHistory`/`revert` actions, no UI yet)
-- [ ] Update the "Run AI Autoscore" confirmation text — it still claims Gemini "searches the web," which is no longer true since Search grounding was removed
 - [ ] Email/SMS notifications
 - [ ] Historical season comparisons
 - [ ] Export standings to PDF/Excel
@@ -1062,7 +1058,7 @@ Season 51 ("The Open Era") has 21 contestants across 2 tribes, defined in `DEFAU
 - No real SMS for password recovery (uses security questions)
 - No email notifications (in-app only via Tree Mail)
 - Single active season (past seasons archived)
-- Gemini AI auto-scoring has no live web search (grounding was removed for timeout reasons) — it relies purely on training knowledge, so very recent episodes may return low `confidence` or inaccurate results; always spot-check before trusting a run
+- AI Auto-Scoring is disabled (see Retired Features) — episodes must be scored manually via Episode Scoring
 - `scripts/` in the repo root holds ad-hoc, untracked Node scripts for direct-DB diagnostics/fixes (`health-check.mjs`, `fix-league2-submissions.mjs`) — one-off tools, not part of the deployed app
 
 ## Contact & Credits

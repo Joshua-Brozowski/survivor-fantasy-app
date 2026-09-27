@@ -5383,30 +5383,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
   const [adminView, setAdminView] = useState('main');
   const [releasingScores, setReleasingScores] = useState(false);
   const [grantTarget, setGrantTarget] = useState('');
-  const [aiScoringState, setAiScoringState] = useState({ loading: false, lastResult: null });
-
-  const runAiAutoscore = async () => {
-    if (!window.confirm('Run AI Autoscore for this league? Gemini will search the web for episode results and score picks automatically.')) return;
-    setAiScoringState({ loading: true, lastResult: null });
-    try {
-      const res = await authFetch('/api/gemini-episode', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'autoscore', leagueId: currentLeagueId })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setAiScoringState({ loading: false, lastResult: { success: true, message: data.message || 'Scores applied!' } });
-        alert(`AI Autoscore complete!\n\n${data.message || 'Pick scores have been updated.'}`);
-      } else {
-        setAiScoringState({ loading: false, lastResult: { success: false, message: data.error || 'Unknown error' } });
-        alert(`AI Autoscore failed: ${data.error || 'Unknown error'}`);
-      }
-    } catch (err) {
-      setAiScoringState({ loading: false, lastResult: { success: false, message: err.message } });
-      alert(`AI Autoscore error: ${err.message}`);
-    }
-  };
 
   // Helper to check guest mode and show alert
   const requireRealUser = (actionName) => {
@@ -11226,27 +11202,6 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               <div className="flex items-center gap-2">
                 <Award className="w-5 h-5" />
                 <span>Episode Scoring</span>
-              </div>
-              <ChevronRight className="w-5 h-5" />
-            </div>
-          </button>
-
-          <button
-            onClick={runAiAutoscore}
-            disabled={aiScoringState.loading}
-            className={`${aiScoringState.loading ? 'bg-gradient-to-r from-cyan-700 to-teal-700 opacity-70 cursor-not-allowed' : 'bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500'} text-white py-4 px-6 rounded-lg font-semibold transition text-left`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Zap className="w-5 h-5" />
-                <div>
-                  <div>{aiScoringState.loading ? 'Running AI Autoscore…' : 'Run AI Autoscore'}</div>
-                  {aiScoringState.lastResult && (
-                    <div className={`text-xs mt-0.5 font-normal ${aiScoringState.lastResult.success ? 'text-green-200' : 'text-red-200'}`}>
-                      {aiScoringState.lastResult.success ? '✓' : '✗'} {aiScoringState.lastResult.message}
-                    </div>
-                  )}
-                </div>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>

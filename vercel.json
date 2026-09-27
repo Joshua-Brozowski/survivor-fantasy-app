@@ -24,11 +24,5 @@
       "memory": 1024,
       "maxDuration": 60
     }
-  },
-  "crons": [
-    {
-      "path": "/api/gemini-episode",
-      "schedule": "30 13 * * 5"
-    }
-  ]
+  }
 }
