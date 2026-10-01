@@ -338,6 +338,7 @@ export default function SurvivorFantasyApp() {
   const sessionStartRef  = useRef(null);   // When current timing window started (null = paused/hidden)
   const pendingSecondsRef = useRef(0);     // Accumulated seconds not yet written to storage
   const activeTabRef     = useRef('home'); // Live mirror of currentView for event handler closures
+  const wordleReleaseInFlight = useRef(false); // Prevents overlapping Wordle auto-releases
 
   // Banner notification tracking - IDs of banners currently visible on Home tab
   const [visibleBannerIds, setVisibleBannerIds] = useState([]);
@@ -576,13 +577,22 @@ export default function SurvivorFantasyApp() {
     const toRelease = wordleSchedule.filter(e =>
       e.status === 'pending' && new Date(e.releaseDate) <= now
     );
-    if (toRelease.length === 0) return;
+    if (toRelease.length === 0 || wordleReleaseInFlight.current) return;
+    wordleReleaseInFlight.current = true;
     (async () => {
-      for (const entry of toRelease) {
-        await autoReleaseWordle(entry);
+      try {
+        for (const entry of toRelease) {
+          await autoReleaseWordle(entry);
+        }
+      } catch (e) {
+        console.error('Wordle auto-release failed:', e);
+      } finally {
+        wordleReleaseInFlight.current = false;
       }
     })();
-  }, [currentUser, wordleSchedule.length, challenges.length]);
+    // challenges.length is intentionally NOT a dependency: releasing creates a
+    // challenge, and re-running on that change caused a duplicate-challenge storm.
+  }, [currentUser, wordleSchedule]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-close active Wordle challenge: admin-only, runs when admin loads the app
   // If today is on or after the closeDate for the active challenge, finalize automatically
@@ -706,14 +716,18 @@ export default function SurvivorFantasyApp() {
     const leagueStore = createLeagueStorage(currentLeagueId);
     const poll = async () => {
       try {
-        const [scoresData, qData, notifData] = await Promise.all([
+        const [scoresData, qData, notifData, challengesData, attemptsData] = await Promise.all([
           leagueStore.get('playerScores'),
           leagueStore.get('questionnaires'),
           leagueStore.get('notifications'),
+          leagueStore.get('challenges'),
+          leagueStore.get('challengeAttempts'),
         ]);
         if (scoresData?.value) setPlayerScores(JSON.parse(scoresData.value));
         if (qData?.value) setQuestionnaires(JSON.parse(qData.value));
         if (notifData?.value) setNotifications(JSON.parse(notifData.value));
+        if (challengesData?.value) setChallenges(JSON.parse(challengesData.value));
+        if (attemptsData?.value) setChallengeAttempts(JSON.parse(attemptsData.value));
       } catch {
         // silent — polling errors should never interrupt the app
       }
@@ -2339,6 +2353,24 @@ export default function SurvivorFantasyApp() {
     await leagueStore.set('challenges', JSON.stringify(updatedChallenges));
   };
 
+  // Write one attempt without clobbering other players' attempts: re-read the
+  // shared list, replace/append only this attempt, then save.
+  const saveChallengeAttempt = async (attempt) => {
+    let base = challengeAttempts;
+    if (!isGuestMode()) {
+      try {
+        const fresh = await getLeagueStorage().get('challengeAttempts');
+        if (fresh?.value) base = JSON.parse(fresh.value);
+      } catch {
+        // fall back to local copy
+      }
+    }
+    const exists = base.some(a => a.id === attempt.id);
+    const updated = exists ? base.map(a => (a.id === attempt.id ? attempt : a)) : [...base, attempt];
+    setChallengeAttempts(updated);
+    await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
+  };
+
   // Get player's attempt for a challenge
   const getPlayerAttempt = (challengeId, playerId) => {
     return challengeAttempts.find(
@@ -2352,13 +2384,7 @@ export default function SurvivorFantasyApp() {
 
     if (existing) {
       // Resume: update lastActiveAt
-      const updated = challengeAttempts.map(a =>
-        a.id === existing.id
-          ? { ...a, lastActiveAt: new Date().toISOString() }
-          : a
-      );
-      setChallengeAttempts(updated);
-      await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
+      await saveChallengeAttempt({ ...existing, lastActiveAt: new Date().toISOString() });
       return existing;
     }
 
@@ -2376,9 +2402,7 @@ export default function SurvivorFantasyApp() {
       status: 'in_progress'
     };
 
-    const updated = [...challengeAttempts, newAttempt];
-    setChallengeAttempts(updated);
-    await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
+    await saveChallengeAttempt(newAttempt);
 
     return newAttempt;
   };
@@ -2405,24 +2429,20 @@ export default function SurvivorFantasyApp() {
       completedAt: isComplete ? new Date().toISOString() : null
     };
 
-    const updated = challengeAttempts.map(a =>
-      a.id === attemptId ? updatedAttempt : a
-    );
-    setChallengeAttempts(updated);
-    await guestSafeLeagueSet('challengeAttempts', JSON.stringify(updated));
+    await saveChallengeAttempt(updatedAttempt);
 
     return updatedAttempt;
   };
 
   // Admin: manually create challenge (no auto-expiration - admin must end it)
-  const adminCreateChallenge = async (word) => {
+  const adminCreateChallenge = async (word, baseChallenges = challenges, id = Date.now()) => {
     // Cancel any existing active challenge
-    const updatedChallenges = challenges.map(c =>
+    const updatedChallenges = baseChallenges.map(c =>
       c.status === 'active' ? { ...c, status: 'cancelled' } : c
     );
 
     const newChallenge = {
-      id: Date.now(),
+      id,
       word: word.toUpperCase(),
       status: 'active',
       createdBy: currentUser.id,
@@ -2466,12 +2486,31 @@ export default function SurvivorFantasyApp() {
 
   // Auto-release a scheduled Wordle entry: create challenge, mark as released, log it
   const autoReleaseWordle = async (scheduleEntry) => {
-    const newChallenge = await adminCreateChallenge(scheduleEntry.word);
-    const updatedSchedule = wordleSchedule.map(e =>
-      e.id === scheduleEntry.id ? { ...e, status: 'released', challengeId: newChallenge.id } : e
+    // Re-read from storage: another player may have already released this entry
+    // since our page loaded. Local state can be stale.
+    const leagueStore = getLeagueStorage();
+    const [freshScheduleData, freshChallengesData] = await Promise.all([
+      leagueStore.get('wordleSchedule'),
+      leagueStore.get('challenges'),
+    ]);
+    const freshSchedule = freshScheduleData?.value ? JSON.parse(freshScheduleData.value) : wordleSchedule;
+    const freshChallenges = freshChallengesData?.value ? JSON.parse(freshChallengesData.value) : challenges;
+    const freshEntry = freshSchedule.find(e => e.id === scheduleEntry.id);
+    if (!freshEntry || freshEntry.status !== 'pending') {
+      setWordleSchedule(freshSchedule);
+      setChallenges(freshChallenges);
+      return;
+    }
+
+    // Claim the entry before creating the challenge so concurrent loads skip it
+    const pendingChallengeId = Date.now();
+    const updatedSchedule = freshSchedule.map(e =>
+      e.id === scheduleEntry.id ? { ...e, status: 'released', challengeId: pendingChallengeId } : e
     );
     setWordleSchedule(updatedSchedule);
-    await getLeagueStorage().set('wordleSchedule', JSON.stringify(updatedSchedule));
+    await leagueStore.set('wordleSchedule', JSON.stringify(updatedSchedule));
+
+    const newChallenge = await adminCreateChallenge(scheduleEntry.word, freshChallenges, pendingChallengeId);
     await appendWordleAuditLog({
       action: 'auto-released',
       challengeId: newChallenge.id,
@@ -3670,6 +3709,7 @@ export default function SurvivorFantasyApp() {
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
         >
+        <TabErrorBoundary key={currentView} tabName={currentView}>
         {currentView === 'picks' && (
           <div className="space-y-6">
             {/* Info Banner */}
@@ -5312,6 +5352,7 @@ export default function SurvivorFantasyApp() {
             />
           </div>
         )}
+        </TabErrorBoundary>
         </motion.div>
         </AnimatePresence>
 
@@ -5330,6 +5371,40 @@ export default function SurvivorFantasyApp() {
       </footer>
     </div>
   );
+}
+
+// Catches render errors in a single tab so one bad tab shows a message instead
+// of blanking the whole app. Keyed by tab name, so switching tabs resets it.
+class TabErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error(`[TabErrorBoundary] "${this.props.tabName}" tab crashed:`, error, info?.componentStack);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="bg-black/60 border-2 border-red-600 rounded-lg p-6 text-center space-y-3">
+        <p className="text-red-300 text-lg font-semibold">This tab hit an error.</p>
+        <p className="text-amber-200 text-sm">Try another tab or reload. If it keeps happening, send a screenshot of this message to the admin.</p>
+        <p className="text-amber-500 text-xs break-words">{this.props.tabName}: {String(this.state.error?.message || this.state.error)}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="bg-amber-600 hover:bg-amber-500 text-black font-semibold px-4 py-2 rounded"
+        >
+          Reload
+        </button>
+      </div>
+    );
+  }
 }
 
 // Google Email Mapping component — used in Player Management admin view
