@@ -236,6 +236,38 @@ const migrateToMultiLeague = async () => {
   return true;
 };
 
+// Crash reporting: saves client errors to the shared 'errorLog' key so the
+// admin can see what broke (Admin -> Error Log) without asking for screenshots.
+// errorContext is kept current by SurvivorFantasyApp. Never throws.
+const errorContext = { playerId: null, playerName: null, leagueId: null, view: null };
+let errorReportsThisSession = 0;
+const reportClientError = async (where, error, componentStack) => {
+  try {
+    if (errorReportsThisSession >= 5 || !errorContext.playerId) return;
+    errorReportsThisSession += 1;
+    const entry = {
+      id: Date.now(),
+      time: new Date().toISOString(),
+      where,
+      message: String(error?.message || error).slice(0, 300),
+      stack: String(error?.stack || '').slice(0, 800),
+      componentStack: String(componentStack || '').slice(0, 800),
+      ...errorContext,
+      userAgent: navigator.userAgent.slice(0, 160),
+    };
+    const existing = await storage.get('errorLog');
+    let list = [];
+    try { list = existing?.value ? JSON.parse(existing.value) : []; } catch { list = []; }
+    if (!Array.isArray(list)) list = [];
+    await storage.set('errorLog', JSON.stringify([...list, entry].slice(-100)));
+  } catch {
+    // reporting must never cause another error
+  }
+};
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', e => reportClientError('window', e.error || e.message));
+}
+
 // Parse a stored value, falling back when it is missing, unparseable, or the
 // wrong shape (a stored null would otherwise crash every render that reads it).
 const parseStored = (data, fallback) => {
@@ -735,6 +767,14 @@ export default function SurvivorFantasyApp() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [currentUser, isDataLoaded]);
+
+  // Keep crash-report context current
+  useEffect(() => {
+    errorContext.playerId = currentUser?.isGuest ? null : (currentUser?.id ?? null);
+    errorContext.playerName = currentUser?.name ?? null;
+    errorContext.leagueId = currentLeagueId;
+    errorContext.view = currentView;
+  }, [currentUser, currentLeagueId, currentView]);
 
   // Background poll: refresh live data every 60s when logged in
   useEffect(() => {
@@ -5623,6 +5663,7 @@ class TabErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error(`[TabErrorBoundary] "${this.props.tabName}" tab crashed:`, error, info?.componentStack);
+    reportClientError(`tab:${this.props.tabName}`, error, info?.componentStack);
   }
 
   render() {
@@ -5632,15 +5673,76 @@ class TabErrorBoundary extends React.Component {
         <p className="text-red-300 text-lg font-semibold">This tab hit an error.</p>
         <p className="text-amber-200 text-sm">Try another tab or reload. If it keeps happening, send a screenshot of this message to the admin.</p>
         <p className="text-amber-500 text-xs break-words">{this.props.tabName}: {String(this.state.error?.message || this.state.error)}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="bg-amber-600 hover:bg-amber-500 text-black font-semibold px-4 py-2 rounded"
-        >
-          Reload
-        </button>
+        <div className="flex justify-center gap-2">
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="bg-gray-600 hover:bg-gray-500 text-white font-semibold px-4 py-2 rounded"
+          >
+            Try again
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-amber-600 hover:bg-amber-500 text-black font-semibold px-4 py-2 rounded"
+          >
+            Reload
+          </button>
+        </div>
+        <p className="text-amber-500/70 text-xs">This error was reported to the admin automatically.</p>
       </div>
     );
   }
+}
+
+// Admin -> Error Log: crashes reported by reportClientError, newest first
+function ErrorLogView({ storage, players, onBack }) {
+  const [entries, setEntries] = useState(null);
+  const load = async () => {
+    setEntries(null);
+    try {
+      const data = await storage.get('errorLog');
+      const list = data?.value ? JSON.parse(data.value) : [];
+      setEntries(Array.isArray(list) ? [...list].reverse() : []);
+    } catch {
+      setEntries([]);
+    }
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const clearAll = async () => {
+    if (!window.confirm('Clear the error log?')) return;
+    await storage.set('errorLog', JSON.stringify([]));
+    setEntries([]);
+  };
+
+  return (
+    <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-red-600 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-red-300">Error Log</h2>
+        <div className="flex items-center gap-2">
+          <button onClick={load} className="px-3 py-1.5 bg-gray-700 text-gray-300 rounded text-sm hover:bg-gray-600 flex items-center gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </button>
+          <button onClick={clearAll} className="px-3 py-1.5 bg-red-800 text-white rounded text-sm hover:bg-red-700">Clear</button>
+          <button onClick={onBack} className="px-4 py-2 bg-gray-600 text-white rounded-lg font-semibold hover:bg-gray-500 text-sm">← Back</button>
+        </div>
+      </div>
+      <p className="text-amber-200/70 text-sm">Crashes players hit (blank or error screens), reported automatically. Last 100 kept.</p>
+      {entries === null && <p className="text-amber-300 text-center py-6">Loading...</p>}
+      {entries?.length === 0 && <p className="text-gray-400 text-center py-6">No errors reported.</p>}
+      {entries?.map(e => (
+        <details key={e.id} className="bg-gray-900/70 border border-gray-700 rounded p-3">
+          <summary className="cursor-pointer text-sm">
+            <span className="text-red-300 font-semibold">{e.message}</span>
+            <span className="block text-gray-400 text-xs mt-1">
+              {new Date(e.time).toLocaleString()} · {e.playerName || players.find(p => p.id === e.playerId)?.name || `player ${e.playerId}`} · league {e.leagueId ?? '?'} · {e.where} · view {e.view ?? '?'}
+            </span>
+          </summary>
+          <pre className="mt-2 text-xs text-gray-300 whitespace-pre-wrap break-words">{e.stack}{e.componentStack ? `\n\nComponent stack:${e.componentStack}` : ''}</pre>
+          <p className="text-gray-500 text-xs mt-1 break-words">{e.userAgent}</p>
+        </details>
+      ))}
+    </div>
+  );
 }
 
 // Google Email Mapping component — used in Player Management admin view
@@ -10154,6 +10256,10 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
     );
   }
 
+  if (adminView === 'error-log') {
+    return <ErrorLogView storage={storage} players={players} onBack={() => setAdminView('main')} />;
+  }
+
   if (adminView === 'action-log') {
     return (
       <div className="space-y-6">
@@ -11657,6 +11763,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               <div className="flex items-center gap-2">
                 <Clock className="w-5 h-5" />
                 <span>Submission Log</span>
+              </div>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAdminView('error-log')}
+            className="bg-gradient-to-r from-red-800 to-rose-700 text-white py-4 px-6 rounded-lg font-semibold hover:from-red-700 hover:to-rose-600 transition text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5" />
+                <span>Error Log</span>
               </div>
               <ChevronRight className="w-5 h-5" />
             </div>

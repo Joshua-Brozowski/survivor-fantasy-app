@@ -925,6 +925,12 @@ Season 51 ("The Open Era") has 21 contestants across 2 tribes, defined in `DEFAU
 6. Commit to `dev` branch
 7. Merge to `main` when ready to deploy
 
+### Blank-Screen Safeguards
+- **Lint gate**: `npm run build` runs `npm run lint` first (ESLint, `.eslintrc.cjs`) and fails the build — including the Vercel deploy — on the two bugs that repeatedly blanked the app: hooks called conditionally (`react-hooks/rules-of-hooks`, e.g. a `useState` inside an `if (adminView === ...)` block) and undefined variables (`no-undef`, e.g. using a parent variable in AdminPanel without passing it as a prop). Fix the error; don't disable the rule.
+- **Error boundaries**: each main tab renders through `RenderTab` inside `TabErrorBoundary`, so a crash shows an error card (Try again / Reload) for that tab only. `RootErrorBoundary` in `main.jsx` is the last resort.
+- **Error Log**: crashes are reported by `reportClientError` to the global `errorLog` key (last 100, max 5 per page session) and shown in Jeff's Controls → Error Log with player, league, tab, and stack.
+- **Shared lists**: keys every player writes (`challengeAttempts`, `notifications`, `wordleAuditLog`) must be re-read from storage right before writing and changed only for the caller's own entry — writing a stale local copy wipes other players' data.
+
 ### Common Tasks
 
 **Add a new player**:
