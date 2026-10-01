@@ -2571,21 +2571,30 @@ export default function SurvivorFantasyApp() {
     const target = newestFirst.find(c => c.status === 'active')
       || newestFirst.find(c => c.status === 'completed' && Date.now() - c.id < THREE_DAYS);
     if (!target) return null;
+    // This week's window starts at the scheduled release date (a day of slack for
+    // time zones); challenge ids are creation timestamps.
+    const DAY = 24 * 60 * 60 * 1000;
+    const schedEntry = schedule.find(e => e.word === target.word);
+    const windowStart = schedEntry?.releaseDate ? Date.parse(schedEntry.releaseDate) - DAY : target.id - 7 * DAY;
     const dupIds = new Set(
       latestChallenges
-        .filter(c => c.status === 'cancelled' && c.word === target.word && c.id !== target.id)
+        .filter(c => c.status === 'cancelled' && c.word === target.word && c.id !== target.id && c.id >= windowStart)
         .map(c => c.id)
     );
-    if (dupIds.size === 0) return null;
+    // Concurrent whole-list writes during the loop also deleted some challenge
+    // records outright, so attempts can point at ids that no longer exist.
+    const knownIds = new Set(latestChallenges.map(c => c.id));
+    const isOrphanId = id => id !== target.id && (dupIds.has(id) || (!knownIds.has(id) && id >= windowStart));
+    if (dupIds.size === 0 && !attempts.some(a => isOrphanId(a.challengeId))) return null;
 
     // Per player: earliest-started attempt with at least one guess is their real play
     const byPlayer = {};
     attempts.forEach(a => {
-      if (a.challengeId === target.id || dupIds.has(a.challengeId)) {
+      if (a.challengeId === target.id || isOrphanId(a.challengeId)) {
         (byPlayer[a.playerId] = byPlayer[a.playerId] || []).push(a);
       }
     });
-    const fallbackDupId = [...dupIds][0];
+    const fallbackParkId = dupIds.size ? [...dupIds][0] : target.id - 1;
     const reassign = new Map();
     Object.values(byPlayer).forEach(list => {
       const keep = list
@@ -2593,7 +2602,9 @@ export default function SurvivorFantasyApp() {
         .sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt))[0];
       if (!keep) return;
       if (keep.challengeId !== target.id) reassign.set(keep.id, target.id);
-      const parkId = dupIds.has(keep.challengeId) ? keep.challengeId : fallbackDupId;
+      const parkId = keep.challengeId !== target.id
+        ? keep.challengeId
+        : (list.find(a => a.challengeId !== target.id)?.challengeId ?? fallbackParkId);
       list.forEach(a => {
         if (a.id !== keep.id && a.challengeId === target.id) reassign.set(a.id, parkId);
       });
@@ -2603,15 +2614,24 @@ export default function SurvivorFantasyApp() {
       e.word === target.word && e.status !== 'pending' && e.challengeId !== target.id
     );
 
-    const firstDupCreated = Math.min(...dupIds);
+    const firstDupCreated = dupIds.size ? Math.min(...dupIds) : Infinity;
     const isLoopNotif = n => n.type === 'challenge_started'
       && n.id >= firstDupCreated - 60000 && n.id <= target.id + 60000;
     const loopNotifs = notifs.filter(isLoopNotif);
     const notifsNeedFix = loopNotifs.length > 1;
 
-    if (reassign.size === 0 && !schedNeedsFix && !notifsNeedFix) return null;
+    // Drop duplicate challenge records no attempt points at (League 2 had ~1,900)
+    const referencedIds = new Set(
+      attempts.map(a => (reassign.has(a.id) ? reassign.get(a.id) : a.challengeId))
+    );
+    const prunable = latestChallenges.filter(c => dupIds.has(c.id) && !referencedIds.has(c.id));
+
+    if (reassign.size === 0 && !schedNeedsFix && !notifsNeedFix && prunable.length === 0) return null;
 
     attempts = attempts.map(a => (reassign.has(a.id) ? { ...a, challengeId: reassign.get(a.id) } : a));
+    if (prunable.length > 0) {
+      latestChallenges = latestChallenges.filter(c => !(dupIds.has(c.id) && !referencedIds.has(c.id)));
+    }
     schedule = schedule.map(e =>
       e.word === target.word && e.status !== 'pending' ? { ...e, challengeId: target.id } : e
     );
@@ -2655,6 +2675,7 @@ export default function SurvivorFantasyApp() {
     }
 
     await leagueStore.set('challengeAttempts', JSON.stringify(attempts));
+    if (prunable.length > 0) await leagueStore.set('challenges', JSON.stringify(latestChallenges));
     await leagueStore.set('wordleSchedule', JSON.stringify(schedule));
     if (notifsNeedFix || winnerNote) await leagueStore.set('notifications', JSON.stringify(notifs));
     setChallenges(latestChallenges);
@@ -2666,7 +2687,7 @@ export default function SurvivorFantasyApp() {
       action: 'repair',
       challengeId: target.id,
       word: target.word,
-      note: `Duplicate-release repair: moved ${reassign.size} attempt(s) from ${dupIds.size} cancelled duplicate(s), removed ${notifsNeedFix ? loopNotifs.length - 1 : 0} duplicate notification(s).${winnerNote}`
+      note: `Duplicate-release repair: moved ${reassign.size} attempt(s), pruned ${prunable.length} duplicate challenge record(s), removed ${notifsNeedFix ? loopNotifs.length - 1 : 0} duplicate notification(s).${winnerNote}`
     });
 
     return { challenges: latestChallenges, schedule };
