@@ -339,6 +339,8 @@ export default function SurvivorFantasyApp() {
   const pendingSecondsRef = useRef(0);     // Accumulated seconds not yet written to storage
   const activeTabRef     = useRef('home'); // Live mirror of currentView for event handler closures
   const wordleReleaseInFlight = useRef(false); // Prevents overlapping Wordle auto-releases
+  const wordleCloseInFlight  = useRef(false); // Prevents overlapping Wordle repair/auto-close runs
+  const attemptsWriteSeq     = useRef(0);     // Bumped on every attempt save; lets the poll drop stale reads
 
   // Banner notification tracking - IDs of banners currently visible on Home tab
   const [visibleBannerIds, setVisibleBannerIds] = useState([]);
@@ -596,17 +598,29 @@ export default function SurvivorFantasyApp() {
 
   // Auto-close active Wordle challenge: admin-only, runs when admin loads the app
   // If today is on or after the closeDate for the active challenge, finalize automatically
+  // Repair runs first so a close never finalizes against orphaned attempts.
   useEffect(() => {
-    if (!currentUser?.isAdmin || !wordleSchedule.length) return;
-    const now = new Date();
-    const activeChallenge = challenges.find(c => c.status === 'active');
-    if (!activeChallenge) return;
-    const schedEntry = wordleSchedule.find(e => e.challengeId === activeChallenge.id);
-    if (!schedEntry) return;
-    if (new Date(schedEntry.closeDate) <= now) {
-      autoCloseWordle(activeChallenge.id, schedEntry.id);
-    }
-  }, [currentUser, challenges.length, wordleSchedule.length]);
+    if (!currentUser?.isAdmin || !isDataLoaded || isGuestMode() || wordleCloseInFlight.current) return;
+    wordleCloseInFlight.current = true;
+    (async () => {
+      try {
+        const repaired = await repairOrphanedWordleAttempts();
+        const latestChallenges = repaired?.challenges || challenges;
+        const latestSchedule = repaired?.schedule || wordleSchedule;
+        const activeChallenge = latestChallenges.find(c => c.status === 'active');
+        if (!activeChallenge) return;
+        const schedEntry = latestSchedule.find(e => e.challengeId === activeChallenge.id);
+        if (!schedEntry) return;
+        if (new Date(schedEntry.closeDate) <= new Date()) {
+          await autoCloseWordle(activeChallenge.id, schedEntry.id, latestSchedule);
+        }
+      } catch (e) {
+        console.error('Wordle repair/auto-close failed:', e);
+      } finally {
+        wordleCloseInFlight.current = false;
+      }
+    })();
+  }, [currentUser, isDataLoaded, currentLeagueId, challenges.length, wordleSchedule.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check if current user has security question
   useEffect(() => {
@@ -715,6 +729,7 @@ export default function SurvivorFantasyApp() {
     if (!currentUser || !isDataLoaded || !currentLeagueId || isGuestMode()) return;
     const leagueStore = createLeagueStorage(currentLeagueId);
     const poll = async () => {
+      const seqAtStart = attemptsWriteSeq.current;
       try {
         const [scoresData, qData, notifData, challengesData, attemptsData] = await Promise.all([
           leagueStore.get('playerScores'),
@@ -727,7 +742,10 @@ export default function SurvivorFantasyApp() {
         if (qData?.value) setQuestionnaires(JSON.parse(qData.value));
         if (notifData?.value) setNotifications(JSON.parse(notifData.value));
         if (challengesData?.value) setChallenges(JSON.parse(challengesData.value));
-        if (attemptsData?.value) setChallengeAttempts(JSON.parse(attemptsData.value));
+        // Skip if this player saved an attempt mid-poll; our read may predate it
+        if (attemptsData?.value && attemptsWriteSeq.current === seqAtStart) {
+          setChallengeAttempts(JSON.parse(attemptsData.value));
+        }
       } catch {
         // silent — polling errors should never interrupt the app
       }
@@ -2294,37 +2312,49 @@ export default function SurvivorFantasyApp() {
     return new Date(attempt.completedAt).getTime() - new Date(attempt.startedAt).getTime();
   };
 
-  const finalizeChallenge = async (challengeId) => {
-    const challenge = challenges.find(c => c.id === challengeId);
-    if (!challenge || challenge.status !== 'active') return;
-
-    // Find winner: solved attempts, sorted by guesses (asc) then time (asc)
-    const solvedAttempts = challengeAttempts
+  // Winner = fewest guesses, then fastest. Returns { winnerId, winnerData } or nulls.
+  const pickWordleWinner = (attempts, challengeId) => {
+    const winner = attempts
       .filter(a => a.challengeId === challengeId && a.solved)
       .sort((a, b) => {
         if (a.guesses.length !== b.guesses.length) {
           return a.guesses.length - b.guesses.length;
         }
-        // Calculate time from startedAt to completedAt
-        const timeA = calculateElapsedTime(a);
-        const timeB = calculateElapsedTime(b);
-        return timeA - timeB;
-      });
-
-    let winnerId = null;
-    let winnerData = null;
-
-    if (solvedAttempts.length > 0) {
-      const winner = solvedAttempts[0];
-      winnerId = winner.playerId;
-      const elapsedTime = calculateElapsedTime(winner);
-      winnerData = {
+        return calculateElapsedTime(a) - calculateElapsedTime(b);
+      })[0];
+    if (!winner) return { winnerId: null, winnerData: null };
+    return {
+      winnerId: winner.playerId,
+      winnerData: {
         guesses: winner.guesses.length,
-        timeSpent: elapsedTime,
+        timeSpent: calculateElapsedTime(winner),
         startedAt: winner.startedAt,
         completedAt: winner.completedAt
-      };
+      }
+    };
+  };
 
+  const finalizeChallenge = async (challengeId) => {
+    // Read fresh: the admin's local copy can be missing attempts other players saved
+    const leagueStore = getLeagueStorage();
+    let latestChallenges = challenges;
+    let latestAttempts = challengeAttempts;
+    try {
+      const [cData, aData] = await Promise.all([
+        leagueStore.get('challenges'),
+        leagueStore.get('challengeAttempts'),
+      ]);
+      if (cData?.value) latestChallenges = JSON.parse(cData.value);
+      if (aData?.value) latestAttempts = JSON.parse(aData.value);
+    } catch {
+      // fall back to local copy
+    }
+    const challenge = latestChallenges.find(c => c.id === challengeId);
+    if (!challenge || challenge.status !== 'active') return;
+
+    const { winnerId, winnerData } = pickWordleWinner(latestAttempts, challengeId);
+
+    if (winnerId) {
       // Award 3 points to winner
       await updatePlayerScore(winnerId, 3, 'Wordle Challenge Winner', 'challenge');
 
@@ -2343,19 +2373,20 @@ export default function SurvivorFantasyApp() {
     }
 
     // Update challenge status
-    const updatedChallenges = challenges.map(c =>
+    const updatedChallenges = latestChallenges.map(c =>
       c.id === challengeId
         ? { ...c, status: 'completed', winnerId, winnerData }
         : c
     );
     setChallenges(updatedChallenges);
-    const leagueStore = getLeagueStorage();
+    setChallengeAttempts(latestAttempts);
     await leagueStore.set('challenges', JSON.stringify(updatedChallenges));
   };
 
   // Write one attempt without clobbering other players' attempts: re-read the
   // shared list, replace/append only this attempt, then save.
   const saveChallengeAttempt = async (attempt) => {
+    attemptsWriteSeq.current += 1;
     let base = challengeAttempts;
     if (!isGuestMode()) {
       try {
@@ -2409,7 +2440,16 @@ export default function SurvivorFantasyApp() {
 
   // Submit a guess
   const submitChallengeGuess = async (attemptId, guess) => {
-    const attempt = challengeAttempts.find(a => a.id === attemptId);
+    let attempt = challengeAttempts.find(a => a.id === attemptId);
+    if (!isGuestMode()) {
+      try {
+        const fresh = await getLeagueStorage().get('challengeAttempts');
+        const stored = fresh?.value ? JSON.parse(fresh.value).find(a => a.id === attemptId) : null;
+        if (stored && (stored.guesses?.length || 0) >= (attempt?.guesses?.length || 0)) attempt = stored;
+      } catch {
+        // fall back to local copy
+      }
+    }
     if (!attempt || attempt.status !== 'in_progress') return null;
 
     const challenge = challenges.find(c => c.id === attempt.challengeId);
@@ -2484,6 +2524,133 @@ export default function SurvivorFantasyApp() {
     await leagueStore.set('wordleAuditLog', JSON.stringify(updated));
   };
 
+  // One-time repair for the Sept 30 duplicate-challenge loop: each duplicate
+  // release cancelled the previous challenge, orphaning players' attempts on it.
+  // Moves each player's first real attempt onto the surviving challenge, re-links
+  // the schedule, drops duplicate "challenge live" notifications, and re-picks
+  // the winner if the challenge already closed without those attempts.
+  // Idempotent: a clean league is a no-op. Returns fresh data when it changed anything.
+  const repairOrphanedWordleAttempts = async () => {
+    const leagueStore = getLeagueStorage();
+    const [cData, aData, sData, pData, nData] = await Promise.all([
+      leagueStore.get('challenges'),
+      leagueStore.get('challengeAttempts'),
+      leagueStore.get('wordleSchedule'),
+      leagueStore.get('playerScores'),
+      leagueStore.get('notifications'),
+    ]);
+    let latestChallenges = cData?.value ? JSON.parse(cData.value) : [];
+    let attempts = aData?.value ? JSON.parse(aData.value) : [];
+    let schedule = sData?.value ? JSON.parse(sData.value) : [];
+    let scores = pData?.value ? JSON.parse(pData.value) : {};
+    let notifs = nData?.value ? JSON.parse(nData.value) : [];
+
+    const newestFirst = [...latestChallenges].sort((a, b) => b.id - a.id);
+    const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+    const target = newestFirst.find(c => c.status === 'active')
+      || newestFirst.find(c => c.status === 'completed' && Date.now() - c.id < THREE_DAYS);
+    if (!target) return null;
+    const dupIds = new Set(
+      latestChallenges
+        .filter(c => c.status === 'cancelled' && c.word === target.word && c.id !== target.id)
+        .map(c => c.id)
+    );
+    if (dupIds.size === 0) return null;
+
+    // Per player: earliest-started attempt with at least one guess is their real play
+    const byPlayer = {};
+    attempts.forEach(a => {
+      if (a.challengeId === target.id || dupIds.has(a.challengeId)) {
+        (byPlayer[a.playerId] = byPlayer[a.playerId] || []).push(a);
+      }
+    });
+    const fallbackDupId = [...dupIds][0];
+    const reassign = new Map();
+    Object.values(byPlayer).forEach(list => {
+      const keep = list
+        .filter(a => (a.guesses?.length || 0) > 0)
+        .sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt))[0];
+      if (!keep) return;
+      if (keep.challengeId !== target.id) reassign.set(keep.id, target.id);
+      const parkId = dupIds.has(keep.challengeId) ? keep.challengeId : fallbackDupId;
+      list.forEach(a => {
+        if (a.id !== keep.id && a.challengeId === target.id) reassign.set(a.id, parkId);
+      });
+    });
+
+    const schedNeedsFix = schedule.some(e =>
+      e.word === target.word && e.status !== 'pending' && e.challengeId !== target.id
+    );
+
+    const firstDupCreated = Math.min(...dupIds);
+    const isLoopNotif = n => n.type === 'challenge_started'
+      && n.id >= firstDupCreated - 60000 && n.id <= target.id + 60000;
+    const loopNotifs = notifs.filter(isLoopNotif);
+    const notifsNeedFix = loopNotifs.length > 1;
+
+    if (reassign.size === 0 && !schedNeedsFix && !notifsNeedFix) return null;
+
+    attempts = attempts.map(a => (reassign.has(a.id) ? { ...a, challengeId: reassign.get(a.id) } : a));
+    schedule = schedule.map(e =>
+      e.word === target.word && e.status !== 'pending' ? { ...e, challengeId: target.id } : e
+    );
+    if (notifsNeedFix) {
+      const keepNotifId = Math.min(...loopNotifs.map(n => n.id));
+      notifs = notifs.filter(n => !isLoopNotif(n) || n.id === keepNotifId);
+    }
+
+    // Already closed without the orphaned attempts: re-pick the winner and fix points
+    let winnerNote = '';
+    if (target.status === 'completed' && reassign.size > 0) {
+      const { winnerId, winnerData } = pickWordleWinner(attempts, target.id);
+      if (winnerId !== target.winnerId) {
+        if (target.winnerId && scores[target.winnerId]?.breakdown) {
+          const breakdown = [...scores[target.winnerId].breakdown];
+          const idx = breakdown.map(e => e.description === 'Wordle Challenge Winner' && e.type === 'challenge').lastIndexOf(true);
+          if (idx !== -1) breakdown.splice(idx, 1);
+          scores[target.winnerId] = { ...scores[target.winnerId], breakdown, totalPoints: breakdown.reduce((sum, e) => sum + e.points, 0) };
+        }
+        if (winnerId) {
+          const prev = scores[winnerId] || { totalPoints: 0, breakdown: [] };
+          const breakdown = [...(prev.breakdown || []), { description: 'Wordle Challenge Winner', points: 3, date: new Date().toISOString(), type: 'challenge' }];
+          scores[winnerId] = { ...prev, breakdown, totalPoints: breakdown.reduce((sum, e) => sum + e.points, 0) };
+          const winnerPlayer = players.find(p => p.id === winnerId);
+          notifs = [...notifs, {
+            id: Date.now(),
+            type: 'challenge_winner',
+            message: `Wordle results corrected: ${winnerPlayer?.name || 'Someone'} won this week's challenge with ${winnerData.guesses} guess${winnerData.guesses > 1 ? 'es' : ''}!`,
+            targetPlayerId: null,
+            createdAt: new Date().toISOString(),
+            readBy: [],
+            seenBy: []
+          }];
+        }
+        latestChallenges = latestChallenges.map(c => (c.id === target.id ? { ...c, winnerId, winnerData } : c));
+        winnerNote = ` Winner re-picked: ${target.winnerId ?? 'none'} -> ${winnerId ?? 'none'}.`;
+        await leagueStore.set('playerScores', JSON.stringify(scores));
+        await leagueStore.set('challenges', JSON.stringify(latestChallenges));
+        setPlayerScores(scores);
+      }
+    }
+
+    await leagueStore.set('challengeAttempts', JSON.stringify(attempts));
+    await leagueStore.set('wordleSchedule', JSON.stringify(schedule));
+    if (notifsNeedFix || winnerNote) await leagueStore.set('notifications', JSON.stringify(notifs));
+    setChallenges(latestChallenges);
+    setChallengeAttempts(attempts);
+    setWordleSchedule(schedule);
+    setNotifications(notifs);
+
+    await appendWordleAuditLog({
+      action: 'repair',
+      challengeId: target.id,
+      word: target.word,
+      note: `Duplicate-release repair: moved ${reassign.size} attempt(s) from ${dupIds.size} cancelled duplicate(s), removed ${notifsNeedFix ? loopNotifs.length - 1 : 0} duplicate notification(s).${winnerNote}`
+    });
+
+    return { challenges: latestChallenges, schedule };
+  };
+
   // Auto-release a scheduled Wordle entry: create challenge, mark as released, log it
   const autoReleaseWordle = async (scheduleEntry) => {
     // Re-read from storage: another player may have already released this entry
@@ -2521,9 +2688,9 @@ export default function SurvivorFantasyApp() {
   };
 
   // Auto-close an active scheduled challenge: finalize, mark as completed, log it
-  const autoCloseWordle = async (challengeId, scheduleId) => {
+  const autoCloseWordle = async (challengeId, scheduleId, baseSchedule = wordleSchedule) => {
     await finalizeChallenge(challengeId);
-    const updatedSchedule = wordleSchedule.map(e =>
+    const updatedSchedule = baseSchedule.map(e =>
       e.id === scheduleId ? { ...e, status: 'completed' } : e
     );
     setWordleSchedule(updatedSchedule);
