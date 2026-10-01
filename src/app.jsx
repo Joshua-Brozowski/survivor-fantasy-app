@@ -781,15 +781,15 @@ export default function SurvivorFantasyApp() {
     if (!currentUser || !isDataLoaded || !currentLeagueId || isGuestMode()) return;
     const leagueStore = createLeagueStorage(currentLeagueId);
     const poll = async () => {
+      // Skip while the app is in the background: idle open tabs were a steady
+      // source of database connections
+      if (document.hidden) return;
       const seqAtStart = attemptsWriteSeq.current;
       try {
-        const [scoresData, qData, notifData, challengesData, attemptsData] = await Promise.all([
-          leagueStore.get('playerScores'),
-          leagueStore.get('questionnaires'),
-          leagueStore.get('notifications'),
-          leagueStore.get('challenges'),
-          leagueStore.get('challengeAttempts'),
-        ]);
+        // One batched request instead of five parallel ones
+        const batch = await leagueStore.getMany(['playerScores', 'questionnaires', 'notifications', 'challenges', 'challengeAttempts']);
+        if (!batch) return;
+        const { playerScores: scoresData, questionnaires: qData, notifications: notifData, challenges: challengesData, challengeAttempts: attemptsData } = batch;
         const scores = parseStored(scoresData, null);
         const qs = parseStored(qData, null);
         const notifs = parseStored(notifData, null);
@@ -808,7 +808,13 @@ export default function SurvivorFantasyApp() {
       }
     };
     const intervalId = setInterval(poll, 60000);
-    return () => clearInterval(intervalId);
+    // Catch up right away when the player comes back to the app
+    const onVisible = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [currentUser, isDataLoaded, currentLeagueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadGameData = async () => {

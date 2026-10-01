@@ -190,6 +190,16 @@ export const createLeagueStorage = (leagueId) => {
       return storage.get(getFullKey(key));
     },
 
+    // Read several keys in one request; returns { key: { value } | null } keyed by unprefixed name
+    async getMany(keys) {
+      const fullKeys = keys.map(getFullKey);
+      const items = await storage.getMany(fullKeys);
+      if (!items) return null;
+      const out = {};
+      keys.forEach((k, i) => { out[k] = items[fullKeys[i]] !== undefined ? { value: items[fullKeys[i]] } : null; });
+      return out;
+    },
+
     async set(key, value) {
       return storage.set(getFullKey(key), value);
     },
@@ -586,6 +596,19 @@ export const storage = {
       return data;
     } catch (error) {
       console.error('Storage get error:', error);
+      return null;
+    }
+  },
+
+  // Batch read via /api/storage/_batch; returns { fullKey: value } or null on failure
+  async getMany(keys) {
+    try {
+      const response = await authFetch(`${API_BASE}/storage/_batch?keys=${keys.map(encodeURIComponent).join(',')}`);
+      if (!response.ok) throw new Error('Batch read failed');
+      const data = await response.json();
+      return data.items || {};
+    } catch (error) {
+      console.error('Storage getMany error:', error);
       return null;
     }
   },

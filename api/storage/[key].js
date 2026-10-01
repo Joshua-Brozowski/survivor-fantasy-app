@@ -20,7 +20,8 @@ async function connectToDatabase() {
     }
   }
 
-  const client = new MongoClient(uri, { maxPoolSize: 1 });
+  // maxIdleTimeMS lets idle sockets close so warm-but-quiet instances don't hold connections
+  const client = new MongoClient(uri, { maxPoolSize: 1, maxIdleTimeMS: 60000 });
   await client.connect();
   const db = client.db('survivor_fantasy');
 
@@ -69,6 +70,20 @@ export default async function handler(req, res) {
 
     // Authenticate request (returns user object or null)
     const user = authenticateRequest(req);
+
+    // Batch read: GET /api/storage/_batch?keys=a,b,c returns { items: { key: value } }.
+    // One request (one function instance) instead of one per key; used by the
+    // 60s client poll. Keys the caller may not read are left out.
+    if (req.method === 'GET' && key === '_batch') {
+      const keys = String(req.query.keys || '').split(',').filter(Boolean).slice(0, 20);
+      const readable = keys.filter(k => isPublicReadKey(k) || user);
+      const docs = readable.length ? await collection.find({ key: { $in: readable } }).toArray() : [];
+      const items = {};
+      docs.forEach(d => { items[d.key] = d.value; });
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).json({ items });
+      return;
+    }
 
     if (req.method === 'GET' && key) {
       // Public keys can be read without auth, others require auth
