@@ -12821,9 +12821,8 @@ function WordleGame({
   }, [currentGuess, attempt]);
 
   // Get letter status for coloring (two-pass algorithm — matches official NYT Wordle)
-  const getLetterStatus = (letter, position, word) => {
-    if (!activeChallenge) return 'empty';
-    const answer = activeChallenge.word;
+  const getLetterStatus = (letter, position, word, answer = activeChallenge?.word) => {
+    if (!answer) return 'empty';
 
     const statuses = Array(5).fill('absent');
     const answerPool = answer.split('');
@@ -12934,6 +12933,64 @@ function WordleGame({
     return rows;
   };
 
+  // Read-only board for a finished attempt, colored against the given answer
+  const renderFinishedBoard = (guesses, answer) => (
+    guesses.map((guess, i) => (
+      <div key={i} className="flex gap-2 justify-center">
+        {[0, 1, 2, 3, 4].map(j => {
+          const status = getLetterStatus(guess[j], j, guess, answer);
+          const bgClass = status === 'correct' ? 'bg-green-600 border-green-500'
+            : status === 'present' ? 'bg-yellow-600 border-yellow-500'
+            : 'bg-gray-600 border-gray-500';
+          return (
+            <div
+              key={j}
+              className={`w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-lg sm:text-xl font-bold text-white border-2 rounded ${bgClass}`}
+            >
+              {guess[j]}
+            </div>
+          );
+        })}
+      </div>
+    ))
+  );
+
+  // Ranked results for a challenge: solved first, then fewest guesses, then fastest
+  const renderResults = (challengeId, title) => {
+    const attemptsList = challengeAttempts
+      .filter(a => a.challengeId === challengeId && a.status !== 'in_progress')
+      .sort((a, b) => {
+        if (a.solved !== b.solved) return b.solved - a.solved;
+        if (a.guesses.length !== b.guesses.length) return a.guesses.length - b.guesses.length;
+        return calculateElapsedTime(a) - calculateElapsedTime(b);
+      });
+    if (attemptsList.length === 0) return null;
+    return (
+      <div className="mt-6 bg-amber-900/30 p-4 rounded border border-amber-600">
+        <h3 className="text-lg text-amber-300 font-semibold mb-3">{title}</h3>
+        <div className="space-y-2">
+          {attemptsList.map((a, i) => {
+            const player = players.find(p => p.id === a.playerId);
+            const isYou = a.playerId === currentUser.id;
+            const elapsedTime = calculateElapsedTime(a);
+            return (
+              <div key={a.id} className={`flex justify-between text-sm p-2 rounded ${isYou ? 'bg-amber-800/50' : ''}`}>
+                <span className={`flex items-center gap-2 ${a.solved ? 'text-green-400' : 'text-gray-400'}`}>
+                  {i === 0 && a.solved && <Trophy className="w-4 h-4 text-yellow-400" />}
+                  {player?.name || 'Unknown'}
+                  {isYou && <span className="text-amber-400 text-xs">(You)</span>}
+                </span>
+                <span className="text-amber-300">
+                  {a.solved ? `${a.guesses.length} guess${a.guesses.length === 1 ? '' : 'es'}, ${formatTime(elapsedTime)}` : 'Did not solve'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   // Render keyboard
   const renderKeyboard = () => {
     const rows = [
@@ -12972,6 +13029,12 @@ function WordleGame({
   // No active challenge
   if (!activeChallenge) {
     const completedChallenges = challenges.filter(c => c.status === 'completed');
+    // Keep the most recent results visible until the next challenge starts
+    const lastCompleted = [...completedChallenges].sort((a, b) => b.id - a.id)[0];
+    const lastWinner = lastCompleted && players.find(p => p.id === lastCompleted.winnerId);
+    const myLastAttempt = lastCompleted && challengeAttempts.find(
+      a => a.challengeId === lastCompleted.id && a.playerId === currentUser.id && a.guesses?.length > 0
+    );
 
     return (
       <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
@@ -12979,9 +13042,32 @@ function WordleGame({
           <Zap className="w-6 h-6" />
           Survivor Wordle
         </h2>
-        <p className="text-amber-200 text-center py-8">
-          No active challenge right now. Check back Monday for the next weekly challenge!
-        </p>
+
+        {lastCompleted ? (
+          <div className="text-center py-4">
+            <p className="text-amber-200 mb-2">This week's challenge is closed.</p>
+            <p className="text-white text-lg">
+              The word was <span className="font-mono font-bold tracking-widest text-green-400">{lastCompleted.word}</span>
+            </p>
+            <p className="text-amber-300 mt-1 flex items-center justify-center gap-2">
+              {lastWinner && <Trophy className="w-4 h-4 text-yellow-400" />}
+              {lastWinner ? `Winner: ${lastWinner.name}` : 'No winner'}
+            </p>
+            {myLastAttempt && (
+              <div className="mt-4 space-y-2">
+                <p className="text-amber-400 text-sm">Your board</p>
+                {renderFinishedBoard(myLastAttempt.guesses, lastCompleted.word)}
+              </div>
+            )}
+            <p className="text-amber-200 text-sm mt-4">The next challenge starts soon. Check back!</p>
+          </div>
+        ) : (
+          <p className="text-amber-200 text-center py-8">
+            No active challenge right now. Check back Monday for the next weekly challenge!
+          </p>
+        )}
+
+        {lastCompleted && renderResults(lastCompleted.id, 'Final Results')}
 
         {completedChallenges.length > 0 && (
           <div className="mt-6">
@@ -13059,13 +13145,6 @@ function WordleGame({
   // Game completed (won or lost)
   if (attempt.status !== 'in_progress') {
     const myElapsedTime = calculateElapsedTime(attempt);
-    const attemptsList = challengeAttempts
-      .filter(a => a.challengeId === activeChallenge.id && a.status !== 'in_progress')
-      .sort((a, b) => {
-        if (a.solved !== b.solved) return b.solved - a.solved;
-        if (a.guesses.length !== b.guesses.length) return a.guesses.length - b.guesses.length;
-        return calculateElapsedTime(a) - calculateElapsedTime(b);
-      });
 
     return (
       <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-amber-600">
@@ -13098,30 +13177,7 @@ function WordleGame({
           )}
         </div>
 
-        {attemptsList.length > 0 && (
-          <div className="mt-6 bg-amber-900/30 p-4 rounded border border-amber-600">
-            <h3 className="text-lg text-amber-300 font-semibold mb-3">This Week's Results</h3>
-            <div className="space-y-2">
-              {attemptsList.map((a, i) => {
-                const player = players.find(p => p.id === a.playerId);
-                const isYou = a.playerId === currentUser.id;
-                const elapsedTime = calculateElapsedTime(a);
-                return (
-                  <div key={a.id} className={`flex justify-between text-sm p-2 rounded ${isYou ? 'bg-amber-800/50' : ''}`}>
-                    <span className={`flex items-center gap-2 ${a.solved ? 'text-green-400' : 'text-gray-400'}`}>
-                      {i === 0 && a.solved && <Trophy className="w-4 h-4 text-yellow-400" />}
-                      {player?.name || 'Unknown'}
-                      {isYou && <span className="text-amber-400 text-xs">(You)</span>}
-                    </span>
-                    <span className="text-amber-300">
-                      {a.solved ? `${a.guesses.length} guesses, ${formatTime(elapsedTime)}` : 'Did not solve'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {renderResults(activeChallenge.id, "This Week's Results")}
       </div>
     );
   }
