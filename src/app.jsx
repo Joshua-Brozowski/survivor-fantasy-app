@@ -55,7 +55,7 @@ const S51_Q1_TEXT_REPAIR = {
 };
 const repairS51Q1Text = (questionnairesArr) => {
   const needsRepair = questionnairesArr.some(
-    q => q.id === 1790044008118 && q.questions.some(qq => S51_Q1_TEXT_REPAIR[qq.id] && qq.text.startsWith('Question '))
+    q => q.id === 1790044008118 && q.questions?.some(qq => S51_Q1_TEXT_REPAIR[qq.id] && qq.text?.startsWith('Question '))
   );
   if (!needsRepair) return { questionnaires: questionnairesArr, changed: false };
   const repaired = questionnairesArr.map(q =>
@@ -234,6 +234,20 @@ const migrateToMultiLeague = async () => {
   await storage.set('_multiLeagueMigrated', 'true');
   console.log('Multi-league migration completed');
   return true;
+};
+
+// Parse a stored value, falling back when it is missing, unparseable, or the
+// wrong shape (a stored null would otherwise crash every render that reads it).
+const parseStored = (data, fallback) => {
+  if (!data?.value) return fallback;
+  try {
+    const parsed = JSON.parse(data.value);
+    if (parsed === null || typeof parsed !== 'object') return fallback;
+    if (fallback !== null && Array.isArray(fallback) !== Array.isArray(parsed)) return fallback;
+    return parsed;
+  } catch {
+    return fallback;
+  }
 };
 
 export default function SurvivorFantasyApp() {
@@ -653,9 +667,7 @@ export default function SurvivorFantasyApp() {
     // Only run when view changes FROM 'home' to something else
     if (previousView === 'home' && currentView !== 'home' && visibleBannerIds.length > 0) {
       // Mark all visible banners as seen for this user
-      visibleBannerIds.forEach(notifId => {
-        markNotificationSeen(notifId);
-      });
+      markNotificationSeen(visibleBannerIds);
       setVisibleBannerIds([]);
     }
     setPreviousView(currentView);
@@ -665,9 +677,7 @@ export default function SurvivorFantasyApp() {
   useEffect(() => {
     if (currentView === 'home' && visibleBannerIds.length > 0) {
       const timer = setTimeout(() => {
-        visibleBannerIds.forEach(notifId => {
-          markNotificationSeen(notifId);
-        });
+        markNotificationSeen(visibleBannerIds);
         setVisibleBannerIds([]);
       }, 30000); // 30 seconds
 
@@ -738,13 +748,18 @@ export default function SurvivorFantasyApp() {
           leagueStore.get('challenges'),
           leagueStore.get('challengeAttempts'),
         ]);
-        if (scoresData?.value) setPlayerScores(JSON.parse(scoresData.value));
-        if (qData?.value) setQuestionnaires(JSON.parse(qData.value));
-        if (notifData?.value) setNotifications(JSON.parse(notifData.value));
-        if (challengesData?.value) setChallenges(JSON.parse(challengesData.value));
+        const scores = parseStored(scoresData, null);
+        const qs = parseStored(qData, null);
+        const notifs = parseStored(notifData, null);
+        const chs = parseStored(challengesData, null);
+        if (scores && !Array.isArray(scores)) setPlayerScores(scores);
+        if (Array.isArray(qs)) setQuestionnaires(qs);
+        if (Array.isArray(notifs)) setNotifications(notifs);
+        if (Array.isArray(chs)) setChallenges(chs);
         // Skip if this player saved an attempt mid-poll; our read may predate it
-        if (attemptsData?.value && attemptsWriteSeq.current === seqAtStart) {
-          setChallengeAttempts(JSON.parse(attemptsData.value));
+        const atts = parseStored(attemptsData, null);
+        if (Array.isArray(atts) && attemptsWriteSeq.current === seqAtStart) {
+          setChallengeAttempts(atts);
         }
       } catch {
         // silent — polling errors should never interrupt the app
@@ -866,8 +881,8 @@ export default function SurvivorFantasyApp() {
       setChallenges(challengesData ? JSON.parse(challengesData.value) : []);
       setChallengeAttempts(challengeAttemptsData ? JSON.parse(challengeAttemptsData.value) : []);
       setPicks(picksData ? JSON.parse(picksData.value) : []);
-      setPicksLocked(picksLockedData ? JSON.parse(picksLockedData.value) : { instinct: false, final: false });
-      setGamePhase(gamePhaseData ? gamePhaseData.value : 'instinct-picks');
+      setPicksLocked(parseStored(picksLockedData, { instinct: false, final: false }));
+      setGamePhase(gamePhaseData?.value || 'instinct-picks');
 
       // Auto-activate any draft questionnaires whose scheduledFor date has passed
       let loadedQuestionnaires = questionnairesData ? JSON.parse(questionnairesData.value) : [];
@@ -919,7 +934,7 @@ export default function SurvivorFantasyApp() {
       setAdvantages(advantagesData ? JSON.parse(advantagesData.value) : []);
       setEpisodes(episodesData ? JSON.parse(episodesData.value) : []);
       setPlayerAdvantages(playerAdvantagesData ? JSON.parse(playerAdvantagesData.value) : []);
-      setPlayerScores(playerScoresData ? JSON.parse(playerScoresData.value) : {});
+      setPlayerScores(parseStored(playerScoresData, {}));
 
       // Load notifications and clean up ones older than 7 days
       // (effectiveNotificationsData may include auto-activation notifications added above)
@@ -1687,8 +1702,8 @@ export default function SurvivorFantasyApp() {
     setChallengeAttempts(challengeAttemptsData ? JSON.parse(challengeAttemptsData.value) : []);
     setEpisodeRecaps(episodeRecapsData2 ? JSON.parse(episodeRecapsData2.value) : []);
     setPicks(picksData ? JSON.parse(picksData.value) : []);
-    setPicksLocked(picksLockedData ? JSON.parse(picksLockedData.value) : { instinct: false, final: false });
-    setGamePhase(gamePhaseData ? gamePhaseData.value : 'instinct-picks');
+    setPicksLocked(parseStored(picksLockedData, { instinct: false, final: false }));
+    setGamePhase(gamePhaseData?.value || 'instinct-picks');
     {
       let switchLoadedQuestionnaires = questionnairesData ? JSON.parse(questionnairesData.value) : [];
       const { questionnaires: repairedQ, changed } = repairS51Q1Text(switchLoadedQuestionnaires);
@@ -1705,7 +1720,7 @@ export default function SurvivorFantasyApp() {
     setAdvantages(advantagesData ? JSON.parse(advantagesData.value) : []);
     setEpisodes(episodesData ? JSON.parse(episodesData.value) : []);
     setPlayerAdvantages(playerAdvantagesData ? JSON.parse(playerAdvantagesData.value) : []);
-    setPlayerScores(playerScoresData ? JSON.parse(playerScoresData.value) : {});
+    setPlayerScores(parseStored(playerScoresData, {}));
     setNotifications(notificationsData ? JSON.parse(notificationsData.value) : []);
     setWordleSchedule(JSON.parse(switchWordleData.value));
     setWordleAuditLog(wordleAuditData2 ? JSON.parse(wordleAuditData2.value) : []);
@@ -1979,6 +1994,23 @@ export default function SurvivorFantasyApp() {
     await leagueStore.set('playerScores', JSON.stringify(currentScores));
   };
 
+  // Notifications are one shared list that every player writes (read/seen marks).
+  // Re-read before each write and change only what this call is about, so one
+  // player's stale copy never wipes others' marks or newly added notifications.
+  const updateNotifications = async (transform) => {
+    const leagueStore = getLeagueStorage();
+    let base = notifications;
+    try {
+      const fresh = parseStored(await leagueStore.get('notifications'), null);
+      if (Array.isArray(fresh)) base = fresh;
+    } catch {
+      // fall back to local copy
+    }
+    const updated = transform(base);
+    setNotifications(updated);
+    await leagueStore.set('notifications', JSON.stringify(updated));
+  };
+
   const addNotification = async (notification) => {
     const newNotif = {
       id: Date.now(),
@@ -1987,14 +2019,11 @@ export default function SurvivorFantasyApp() {
       readBy: [], // Array of user IDs who have read this notification
       seenBy: [] // Array of user IDs who have seen the banner (per-user tracking)
     };
-    const updated = [...notifications, newNotif];
-    setNotifications(updated);
-    const leagueStore = getLeagueStorage();
-    await leagueStore.set('notifications', JSON.stringify(updated));
+    await updateNotifications(list => [...list, newNotif]);
   };
 
   const markNotificationRead = async (notifId) => {
-    const updated = notifications.map(n => {
+    await updateNotifications(list => list.map(n => {
       if (n.id === notifId) {
         const readBy = n.readBy || [];
         if (!readBy.includes(currentUser.id)) {
@@ -2002,29 +2031,25 @@ export default function SurvivorFantasyApp() {
         }
       }
       return n;
-    });
-    setNotifications(updated);
-    const leagueStore = getLeagueStorage();
-    await leagueStore.set('notifications', JSON.stringify(updated));
+    }));
   };
 
-  const markNotificationSeen = async (notifId) => {
-    const updated = notifications.map(n => {
-      if (n.id === notifId) {
+  // Accepts one id or an array of ids (batched so marks don't race each other)
+  const markNotificationSeen = async (notifIds) => {
+    const ids = new Set(Array.isArray(notifIds) ? notifIds : [notifIds]);
+    await updateNotifications(list => list.map(n => {
+      if (ids.has(n.id)) {
         const seenBy = n.seenBy || [];
         if (!seenBy.includes(currentUser.id)) {
           return { ...n, seenBy: [...seenBy, currentUser.id] };
         }
       }
       return n;
-    });
-    setNotifications(updated);
-    const leagueStore = getLeagueStorage();
-    await leagueStore.set('notifications', JSON.stringify(updated));
+    }));
   };
 
   const markAllNotificationsRead = async () => {
-    const updated = notifications.map(n => {
+    await updateNotifications(list => list.map(n => {
       if (n.targetPlayerId === currentUser?.id || !n.targetPlayerId) {
         const readBy = n.readBy || [];
         if (!readBy.includes(currentUser.id)) {
@@ -2032,17 +2057,11 @@ export default function SurvivorFantasyApp() {
         }
       }
       return n;
-    });
-    setNotifications(updated);
-    const leagueStore = getLeagueStorage();
-    await leagueStore.set('notifications', JSON.stringify(updated));
+    }));
   };
 
   const deleteNotification = async (notifId) => {
-    const updated = notifications.filter(n => n.id !== notifId);
-    setNotifications(updated);
-    const leagueStore = getLeagueStorage();
-    await leagueStore.set('notifications', JSON.stringify(updated));
+    await updateNotifications(list => list.filter(n => n.id !== notifId));
   };
 
   const clearAllNotifications = async () => {
@@ -2518,9 +2537,11 @@ export default function SurvivorFantasyApp() {
       timestamp: new Date().toISOString(),
       triggeredByPlayerId: entry.triggeredByPlayerId ?? currentUser?.id
     };
-    const updated = [...wordleAuditLog, newEntry];
-    setWordleAuditLog(updated);
+    // Read fresh so back-to-back entries (e.g. repair then auto-close) don't overwrite each other
     const leagueStore = getLeagueStorage();
+    const stored = parseStored(await leagueStore.get('wordleAuditLog'), null);
+    const updated = [...(Array.isArray(stored) ? stored : wordleAuditLog), newEntry];
+    setWordleAuditLog(updated);
     await leagueStore.set('wordleAuditLog', JSON.stringify(updated));
   };
 
@@ -3448,12 +3469,9 @@ export default function SurvivorFantasyApp() {
                               onClick={async () => {
                                 if (window.confirm('Clear all your notifications?')) {
                                   // Clear notifications for this user (remove broadcasts and targeted ones)
-                                  const updated = notifications.filter(n =>
+                                  await updateNotifications(list => list.filter(n =>
                                     n.targetPlayerId !== null && n.targetPlayerId !== currentUser.id
-                                  );
-                                  setNotifications(updated);
-                                  const leagueStore = getLeagueStorage();
-                                  await leagueStore.set('notifications', JSON.stringify(updated));
+                                  ));
                                   setShowNotifications(false);
                                 }
                               }}
@@ -3877,7 +3895,7 @@ export default function SurvivorFantasyApp() {
           transition={{ duration: 0.15, ease: 'easeOut' }}
         >
         <TabErrorBoundary key={currentView} tabName={currentView}>
-        {currentView === 'picks' && (
+        {currentView === 'picks' && <RenderTab render={() => (
           <div className="space-y-6">
             {/* Info Banner */}
             <div className="bg-gradient-to-r from-blue-900/60 to-indigo-900/60 backdrop-blur-sm p-4 rounded-lg border border-blue-500/50">
@@ -4213,15 +4231,15 @@ export default function SurvivorFantasyApp() {
                 <div>
                   <p className="text-purple-300 text-sm mb-2">Game Phase</p>
                   <p className="text-white font-bold capitalize">
-                    {gamePhase.replace('-', ' ')}
+                    {(gamePhase || '').replace('-', ' ')}
                   </p>
                 </div>
               </div>
             </div>
           </div>
-        )}
+        )} />}
 
-        {currentView === 'leaderboard' && (
+        {currentView === 'leaderboard' && <RenderTab render={() => (
           <div className="space-y-6">
             {/* Season Winners Display - Shows when season is finalized */}
             {seasonFinalized && (
@@ -4365,7 +4383,7 @@ export default function SurvivorFantasyApp() {
                                   : 'from-amber-600 to-orange-600 border-amber-400'
                               }`}>
                                 <span className="text-white font-bold text-lg sm:text-xl" style={{ fontFamily: 'Impact, fantasy' }}>
-                                  {player.name.charAt(0).toUpperCase()}
+                                  {(player.name || '?').charAt(0).toUpperCase()}
                                 </span>
                               </div>
                             )}
@@ -4501,9 +4519,9 @@ export default function SurvivorFantasyApp() {
             </div>
             </div>
           </div>
-        )}
+        )} />}
 
-        {currentView === 'questionnaire' && (
+        {currentView === 'questionnaire' && <RenderTab render={() => (
           <QuestionnaireView
             currentUser={currentUser}
             questionnaires={questionnaires}
@@ -4522,9 +4540,9 @@ export default function SurvivorFantasyApp() {
             leagueMemberships={leagueMemberships}
             currentLeagueId={currentLeagueId}
           />
-        )}
+        )} />}
 
-        {currentView === 'admin' && currentUser.isAdmin && (
+        {currentView === 'admin' && currentUser.isAdmin && <RenderTab render={() => (
           <AdminPanel
             currentUser={currentUser}
             players={players}
@@ -4605,10 +4623,10 @@ export default function SurvivorFantasyApp() {
             pendingPhotos={pendingPhotos}
             setPendingPhotos={setPendingPhotos}
           />
-        )}
+        )} />}
 
         {/* Home View - Cast Display */}
-        {currentView === 'home' && (
+        {currentView === 'home' && <RenderTab render={() => (
           <div className="space-y-6">
             {/* Banner Notifications */}
             <NotificationBanners
@@ -5098,9 +5116,9 @@ export default function SurvivorFantasyApp() {
               </AnimatePresence>
             </div>
           </div>
-        )}
+        )} />}
 
-        {currentView === 'advantages' && (
+        {currentView === 'advantages' && <RenderTab render={() => (
           <div className="space-y-6">
             {/* Advantage Play Modal */}
             {advantageModal.show && advantageModal.advantage && (() => {
@@ -5502,10 +5520,10 @@ export default function SurvivorFantasyApp() {
               </div>
             </div>
           </div>
-        )}
+        )} />}
 
         {/* Wordle Challenge View */}
-        {currentView === 'challenge' && (
+        {currentView === 'challenge' && <RenderTab render={() => (
           <div className="space-y-6">
             <WordleGame
               currentUser={currentUser}
@@ -5518,7 +5536,7 @@ export default function SurvivorFantasyApp() {
               calculateElapsedTime={calculateElapsedTime}
             />
           </div>
-        )}
+        )} />}
         </TabErrorBoundary>
         </motion.div>
         </AnimatePresence>
@@ -5538,6 +5556,13 @@ export default function SurvivorFantasyApp() {
       </footer>
     </div>
   );
+}
+
+// Tabs are written inline in SurvivorFantasyApp; rendering them through this
+// child component makes their errors land inside TabErrorBoundary instead of
+// crashing the parent render.
+function RenderTab({ render }) {
+  return render();
 }
 
 // Catches render errors in a single tab so one bad tab shows a message instead
@@ -6048,7 +6073,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       let score = 0;
 
       questionnaire.questions.forEach(q => {
-        const answer = sub.answers[q.id];
+        const answer = sub.answers?.[q.id];
         const correct = correctAns[q.id];
 
         const isCorrect = Array.isArray(correct) ? correct.includes(answer) : answer === correct;
@@ -6766,7 +6791,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                       />
                       {q.type === 'multiple-choice' && (
                         <div className="space-y-2">
-                          {q.options.map((opt, optIdx) => (
+                          {(q.options || []).map((opt, optIdx) => (
                             <div key={optIdx} className="flex gap-2">
                               <input
                                 type="text"
@@ -7110,7 +7135,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                     className="w-full px-4 py-2 rounded bg-black/50 text-white border border-amber-600 focus:outline-none focus:border-amber-400"
                   >
                     <option value="">Select correct answer...</option>
-                    {q.options.map((opt, optIdx) => (
+                    {(q.options || []).map((opt, optIdx) => (
                       <option key={optIdx} value={opt}>{opt}</option>
                     ))}
                   </select>
@@ -7610,7 +7635,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
 
   // QOTW Management View
   if (adminView === 'qotw-management') {
-    const gradedQuestionnaires = questionnaires.filter(q => q.scoresReleased && !q.qotwAwarded);
+    const gradedQuestionnaires = questionnaires.filter(q => q.scoresReleased && !q.qotwAwarded && q.hasQotw !== false && q.qotw?.id && q.qotw?.text);
     return (
       <div className="space-y-6">
         <div className="bg-black/60 backdrop-blur-sm p-6 rounded-lg border-2 border-purple-600">
@@ -7628,7 +7653,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 });
 
                 const qotwSubmissions = submissions
-                  .filter(s => s.questionnaireId === q.id && s.answers[q.qotw.id])
+                  .filter(s => s.questionnaireId === q.id && s.answers?.[q.qotw.id])
                   .map(s => ({
                     playerId: s.playerId,
                     playerName: players.find(p => p.id === s.playerId)?.name,
@@ -8363,7 +8388,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
                 <p className="text-cyan-300 text-sm">Questionnaires</p>
               </div>
               <div className="bg-black/30 p-3 rounded">
-                <p className="text-2xl font-bold text-white capitalize">{gamePhase.replace('-', ' ')}</p>
+                <p className="text-2xl font-bold text-white capitalize">{(gamePhase || '').replace('-', ' ')}</p>
                 <p className="text-cyan-300 text-sm">Current Phase</p>
               </div>
             </div>
@@ -8765,7 +8790,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gray-600 to-gray-700 flex items-center justify-center border-2 border-gray-500">
-                    <span className="text-white font-bold">{player.name.charAt(0)}</span>
+                    <span className="text-white font-bold">{(player.name || '?').charAt(0)}</span>
                   </div>
                   <div>
                     <p className="text-white font-semibold">{player.name}</p>
@@ -11238,7 +11263,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       <div className="bg-gradient-to-r from-amber-900/60 to-orange-900/60 p-4 rounded-lg border-2 border-amber-600 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-amber-400">Season {currentSeason}</h2>
-          <p className="text-amber-200 text-sm capitalize">{gamePhase.replace('-', ' ')}</p>
+          <p className="text-amber-200 text-sm capitalize">{(gamePhase || '').replace('-', ' ')}</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-amber-300 text-sm">{contestants.filter(c => !c.eliminated).length}/{contestants.length} remaining</span>
@@ -11814,7 +11839,7 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
           <div className="grid md:grid-cols-2 gap-4">
             <div>
               <p className="text-yellow-200 text-sm">Current Phase</p>
-              <p className="text-white font-bold capitalize">{gamePhase.replace('-', ' ')}</p>
+              <p className="text-white font-bold capitalize">{(gamePhase || '').replace('-', ' ')}</p>
             </div>
             <div>
               <p className="text-yellow-200 text-sm">Instinct Picks</p>
@@ -12331,7 +12356,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
   // Voting view - now uses votingQuestionnaire (previous week)
   if (votingFor === 'qotw' && votingQuestionnaire) {
     const allQotwSubmissions = submissions
-      .filter(s => s.questionnaireId === votingQuestionnaire.id && s.answers[votingQotwQuestion.id])
+      .filter(s => s.questionnaireId === votingQuestionnaire.id && s.answers?.[votingQotwQuestion.id])
       .map(s => ({
         playerId: s.playerId,
         playerName: players.find(p => p.id === s.playerId)?.name,
@@ -12410,8 +12435,8 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
           <div className="space-y-4">
             {viewingArchived.questions.map((q, idx) => {
-              const myAnswer = mySub?.answers[q.id];
-              const correctAnswer = viewingArchived.correctAnswers[q.id];
+              const myAnswer = mySub?.answers?.[q.id];
+              const correctAnswer = viewingArchived.correctAnswers?.[q.id];
               const isCorrect = Array.isArray(correctAnswer) ? correctAnswer.includes(myAnswer) : myAnswer === correctAnswer;
               
               return (
@@ -12497,7 +12522,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
               {showMyAnswers && (
                 <div className="mt-3 space-y-3">
                   {activeQ.questions.map((q, idx) => {
-                    const myAnswer = mySubmission.answers[q.id];
+                    const myAnswer = mySubmission.answers?.[q.id];
                     return (
                       <div key={q.id} className="p-3 bg-black/40 border border-amber-800/50 rounded-lg">
                         <p className="text-amber-200 text-sm font-semibold mb-1">
@@ -12519,8 +12544,8 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
                         Question of the Week: {activeQ.qotw.text}
                       </p>
                       <p className="text-sm">
-                        {mySubmission.answers[activeQ.qotw.id]
-                          ? <span className="text-purple-100 italic">"{mySubmission.answers[activeQ.qotw.id]}"</span>
+                        {mySubmission.answers?.[activeQ.qotw.id]
+                          ? <span className="text-purple-100 italic">"{mySubmission.answers?.[activeQ.qotw.id]}"</span>
                           : <span className="text-gray-400 italic">(no answer)</span>
                         }
                       </p>
@@ -12554,7 +12579,7 @@ function QuestionnaireView({ currentUser, questionnaires, submissions, setSubmis
 
                   {question.type === 'multiple-choice' && (
                     <div className="space-y-2">
-                      {question.options.map((option, optIdx) => {
+                      {(question.options || []).map((option, optIdx) => {
                         const isSelected = answers[question.id] === option;
                         return (
                           <button
@@ -12706,10 +12731,10 @@ function WordleGame({
   // Load existing attempt on mount
   useEffect(() => {
     if (activeChallenge && currentUser) {
-      const existingAttempt = getPlayerAttempt(activeChallenge.id, currentUser.id);
-      if (existingAttempt) {
-        setAttempt(existingAttempt);
-      }
+      // Reset when the active challenge changes so an old board never shows against a new word
+      setAttempt(getPlayerAttempt(activeChallenge.id, currentUser.id) || null);
+    } else {
+      setAttempt(null);
     }
   }, [activeChallenge?.id, currentUser?.id, challengeAttempts]);
 
@@ -12734,6 +12759,7 @@ function WordleGame({
     if (!attempt || currentGuess.length !== 5) return;
 
     const updatedAttempt = await submitChallengeGuess(attempt.id, currentGuess);
+    if (!updatedAttempt) return; // stale or closed attempt; keep the board as is
     setAttempt(updatedAttempt);
     setCurrentGuess('');
   };
