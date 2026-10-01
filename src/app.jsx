@@ -625,7 +625,9 @@ export default function SurvivorFantasyApp() {
         if (!activeChallenge) return;
         const schedEntry = latestSchedule.find(e => e.challengeId === activeChallenge.id);
         if (!schedEntry) return;
-        if (new Date(schedEntry.closeDate) <= new Date()) {
+        // Stays open until the next word releases: schedule dates are UTC
+        // midnight (8 PM ET the evening before), so close + 1 day is Thursday 8 PM ET.
+        if (Date.parse(schedEntry.closeDate) + 24 * 60 * 60 * 1000 <= Date.now()) {
           await autoCloseWordle(activeChallenge.id, schedEntry.id, latestSchedule);
         }
       } catch (e) {
@@ -2374,8 +2376,13 @@ export default function SurvivorFantasyApp() {
     const { winnerId, winnerData } = pickWordleWinner(latestAttempts, challengeId);
 
     if (winnerId) {
-      // Award 3 points to winner
-      await updatePlayerScore(winnerId, 3, 'Wordle Challenge Winner', 'challenge');
+      // Award 3 points to winner, from fresh scores so a stale copy can't overwrite others' points
+      const freshScores = parseStored(await leagueStore.get('playerScores'), null) || { ...playerScores };
+      const prev = freshScores[winnerId] || { totalPoints: 0, breakdown: [] };
+      const breakdown = [...(prev.breakdown || []), { description: 'Wordle Challenge Winner', points: 3, date: new Date().toISOString(), type: 'challenge' }];
+      freshScores[winnerId] = { ...prev, breakdown, totalPoints: breakdown.reduce((sum, e) => sum + e.points, 0) };
+      setPlayerScores(freshScores);
+      await leagueStore.set('playerScores', JSON.stringify(freshScores));
 
       const winnerPlayer = players.find(p => p.id === winnerId);
       await addNotification({
@@ -2703,7 +2710,7 @@ export default function SurvivorFantasyApp() {
       leagueStore.get('challenges'),
     ]);
     const freshSchedule = freshScheduleData?.value ? JSON.parse(freshScheduleData.value) : wordleSchedule;
-    const freshChallenges = freshChallengesData?.value ? JSON.parse(freshChallengesData.value) : challenges;
+    let freshChallenges = freshChallengesData?.value ? JSON.parse(freshChallengesData.value) : challenges;
     const freshEntry = freshSchedule.find(e => e.id === scheduleEntry.id);
     if (!freshEntry || freshEntry.status !== 'pending') {
       setWordleSchedule(freshSchedule);
@@ -2713,11 +2720,27 @@ export default function SurvivorFantasyApp() {
 
     // Claim the entry before creating the challenge so concurrent loads skip it
     const pendingChallengeId = Date.now();
-    const updatedSchedule = freshSchedule.map(e =>
-      e.id === scheduleEntry.id ? { ...e, status: 'released', challengeId: pendingChallengeId } : e
-    );
+    const stillActive = freshChallenges.find(c => c.status === 'active');
+    const updatedSchedule = freshSchedule.map(e => {
+      if (e.id === scheduleEntry.id) return { ...e, status: 'released', challengeId: pendingChallengeId };
+      if (stillActive && e.challengeId === stillActive.id) return { ...e, status: 'completed' };
+      return e;
+    });
     setWordleSchedule(updatedSchedule);
     await leagueStore.set('wordleSchedule', JSON.stringify(updatedSchedule));
+
+    // Last week's challenge is still open: close it with a winner rather than
+    // letting adminCreateChallenge cancel it
+    if (stillActive) {
+      await finalizeChallenge(stillActive.id);
+      const afterFinalize = parseStored(await leagueStore.get('challenges'), null);
+      if (Array.isArray(afterFinalize)) freshChallenges = afterFinalize;
+      await appendWordleAuditLog({
+        action: 'auto-closed',
+        challengeId: stillActive.id,
+        note: 'Closed when the next word released'
+      });
+    }
 
     const newChallenge = await adminCreateChallenge(scheduleEntry.word, freshChallenges, pendingChallengeId);
     await appendWordleAuditLog({
