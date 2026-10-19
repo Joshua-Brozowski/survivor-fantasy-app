@@ -460,6 +460,22 @@ export const backup = {
     }
   },
 
+  // Value of one key from the newest snapshot created before `before` (ISO string)
+  async readSnapshotKey(key, before) {
+    try {
+      const response = await authFetch(`${API_BASE}/backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'readSnapshotKey', key, before })
+      });
+      const data = await response.json();
+      return response.ok ? data : { found: false };
+    } catch (error) {
+      console.error('Backup readSnapshotKey error:', error);
+      return { found: false };
+    }
+  },
+
   async readLiveKey(key) {
     try {
       const response = await authFetch(`${API_BASE}/backup`, {

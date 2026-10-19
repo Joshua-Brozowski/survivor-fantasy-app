@@ -611,6 +611,28 @@ export default async function handler(req, res) {
         break;
       }
 
+      case 'readSnapshotKey': {
+        // Value of one key from the newest snapshot created before `before`.
+        // Read-only; projects just that key so the full snapshot isn't loaded.
+        const { key: snapKey, before } = req.body;
+        if (!snapKey || !before || !/^[\w-]+$/.test(snapKey)) {
+          res.status(400).json({ error: 'Missing or invalid key/before' });
+          return;
+        }
+        const snap = await backupsCollection
+          .find({ createdAt: { $lt: before }, [`data.${snapKey}`]: { $exists: true } })
+          .project({ id: 1, trigger: 1, createdAt: 1, [`data.${snapKey}`]: 1, _id: 0 })
+          .sort({ createdAt: -1 })
+          .limit(1)
+          .next();
+        if (!snap) {
+          res.status(200).json({ found: false });
+          return;
+        }
+        res.status(200).json({ found: true, id: snap.id, trigger: snap.trigger, createdAt: snap.createdAt, value: snap.data[snapKey] });
+        break;
+      }
+
       case 'readLiveKey': {
         // Read and return the raw value of any key — for diagnostics
         const { key: readKey } = req.body;
