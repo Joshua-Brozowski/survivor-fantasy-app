@@ -625,7 +625,9 @@ export default function SurvivorFantasyApp() {
     const toRelease = wordleSchedule.filter(e =>
       e.status === 'pending' && new Date(e.releaseDate) <= now
     );
-    if (toRelease.length === 0 || wordleReleaseInFlight.current) return;
+    // Shares one lock with repair/auto-close so the two never interleave writes;
+    // whichever is skipped re-runs when the other updates state
+    if (toRelease.length === 0 || wordleReleaseInFlight.current || wordleCloseInFlight.current) return;
     wordleReleaseInFlight.current = true;
     (async () => {
       try {
@@ -646,10 +648,12 @@ export default function SurvivorFantasyApp() {
   // If today is on or after the closeDate for the active challenge, finalize automatically
   // Repair runs first so a close never finalizes against orphaned attempts.
   useEffect(() => {
-    if (!currentUser?.isAdmin || !isDataLoaded || isGuestMode() || wordleCloseInFlight.current) return;
+    if (!currentUser?.isAdmin || !isDataLoaded || isGuestMode() || wordleCloseInFlight.current || wordleReleaseInFlight.current) return;
     wordleCloseInFlight.current = true;
     (async () => {
       try {
+        await repairCrossLeagueScores();
+        await reconcileWordleWinnerPoints();
         const repaired = await repairOrphanedWordleAttempts();
         const latestChallenges = repaired?.challenges || challenges;
         const latestSchedule = repaired?.schedule || wordleSchedule;
@@ -668,7 +672,7 @@ export default function SurvivorFantasyApp() {
         wordleCloseInFlight.current = false;
       }
     })();
-  }, [currentUser, isDataLoaded, currentLeagueId, challenges.length, wordleSchedule.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentUser, isDataLoaded, currentLeagueId, challenges.length, wordleSchedule]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check if current user has security question
   useEffect(() => {
@@ -2030,6 +2034,7 @@ export default function SurvivorFantasyApp() {
     }
 
     currentScores[playerId].breakdown.push({
+      id: Date.now(),
       description,
       points,
       date: new Date().toISOString(),
@@ -2425,7 +2430,7 @@ export default function SurvivorFantasyApp() {
       // Award 3 points to winner, from fresh scores so a stale copy can't overwrite others' points
       const freshScores = parseStored(await leagueStore.get('playerScores'), null) || { ...playerScores };
       const prev = freshScores[winnerId] || { totalPoints: 0, breakdown: [] };
-      const breakdown = [...(prev.breakdown || []), { description: 'Wordle Challenge Winner', points: 3, date: new Date().toISOString(), type: 'challenge' }];
+      const breakdown = [...(prev.breakdown || []), { id: Date.now(), description: 'Wordle Challenge Winner', points: 3, date: new Date().toISOString(), type: 'challenge', challengeId }];
       freshScores[winnerId] = { ...prev, breakdown, totalPoints: breakdown.reduce((sum, e) => sum + e.points, 0) };
       setPlayerScores(freshScores);
       await leagueStore.set('playerScores', JSON.stringify(freshScores));
@@ -2598,6 +2603,130 @@ export default function SurvivorFantasyApp() {
     await leagueStore.set('wordleAuditLog', JSON.stringify(updated));
   };
 
+  // Safety net for Wordle points: every completed challenge's winner must have a
+  // 'Wordle Challenge Winner' +3 entry. Entries tagged with challengeId are
+  // matched exactly; older untagged entries count toward that player's wins.
+  // Adds only what is missing; never removes. Also drops empty winner-less
+  // duplicates of a word that was re-released. Idempotent.
+  const reconcileWordleWinnerPoints = async () => {
+    const leagueStore = getLeagueStorage();
+    const [cData, pData] = await Promise.all([leagueStore.get('challenges'), leagueStore.get('playerScores')]);
+    const allChallenges = parseStored(cData, null);
+    const scores = parseStored(pData, null);
+    if (!Array.isArray(allChallenges) || !scores || Array.isArray(scores)) return;
+
+    const added = [];
+    const winsByPlayer = {};
+    allChallenges
+      .filter(c => c.status === 'completed' && c.winnerId != null)
+      .sort((a, b) => a.id - b.id)
+      .forEach(c => { (winsByPlayer[c.winnerId] = winsByPlayer[c.winnerId] || []).push(c); });
+    Object.entries(winsByPlayer).forEach(([pid, won]) => {
+      const prev = scores[pid] || { totalPoints: 0, breakdown: [] };
+      const entries = (prev.breakdown || []).filter(e => e.description === 'Wordle Challenge Winner');
+      const tagged = new Set(entries.filter(e => e.challengeId != null).map(e => e.challengeId));
+      let untagged = entries.filter(e => e.challengeId == null).length;
+      const missing = won.filter(c => {
+        if (tagged.has(c.id)) return false;
+        if (untagged > 0) { untagged -= 1; return false; }
+        return true;
+      });
+      if (missing.length === 0) return;
+      const breakdown = [...(prev.breakdown || []), ...missing.map((c, i) => ({
+        id: Date.now() + i, description: 'Wordle Challenge Winner', points: 3,
+        date: new Date().toISOString(), type: 'challenge', challengeId: c.id
+      }))];
+      scores[pid] = { ...prev, breakdown, totalPoints: breakdown.reduce((sum, e) => sum + e.points, 0) };
+      missing.forEach(c => added.push(`${players.find(p => p.id === Number(pid))?.name || pid}: ${c.word}`));
+    });
+
+    const attemptsData = await leagueStore.get('challengeAttempts');
+    const attempts = parseStored(attemptsData, []);
+    const attempted = new Set(attempts.map(a => a.challengeId));
+    const phantom = allChallenges.filter(c =>
+      c.status === 'completed' && c.winnerId == null && !attempted.has(c.id)
+      && allChallenges.some(o => o.word === c.word && o.id > c.id && o.status !== 'cancelled')
+    );
+
+    if (added.length > 0) {
+      await leagueStore.set('playerScores', JSON.stringify(scores));
+      setPlayerScores(scores);
+    }
+    if (phantom.length > 0) {
+      const phantomIds = new Set(phantom.map(c => c.id));
+      const kept = allChallenges.filter(c => !phantomIds.has(c.id));
+      await leagueStore.set('challenges', JSON.stringify(kept));
+      setChallenges(kept);
+    }
+    if (added.length > 0 || phantom.length > 0) {
+      await appendWordleAuditLog({
+        action: 'points-reconciled',
+        note: `${added.length ? `Awarded missing winner points: ${added.join(', ')}.` : ''}${phantom.length ? ` Removed ${phantom.length} empty duplicate challenge(s).` : ''}`.trim()
+      });
+    }
+  };
+
+  // One-time repair for the Oct 19 cross-league overwrite: the old AdminPanel
+  // id migration saved one league's in-memory scores into another league.
+  // Detected by entries for non-members whose ids also appear in another
+  // league's scores (a straight copy). Restores this league's scores from the
+  // newest snapshot taken before the copy, then re-adds members' own entries
+  // made since that snapshot. Does nothing if no such snapshot exists.
+  const repairCrossLeagueScores = async () => {
+    const leagueId = currentLeagueId;
+    const leagueStore = getLeagueStorage();
+    const scores = parseStored(await leagueStore.get('playerScores'), null);
+    if (!scores || Array.isArray(scores)) return;
+    const memberIds = new Set(leagueMemberships.filter(m => m.leagueId === leagueId).map(m => String(m.playerId)));
+    if (memberIds.size === 0) return;
+    const foreignPids = Object.keys(scores).filter(pid => !memberIds.has(pid) && (scores[pid]?.breakdown || []).length > 0);
+    if (foreignPids.length === 0) return;
+
+    const otherIds = new Set();
+    for (const lg of leagues.filter(l => l.id !== leagueId)) {
+      const other = parseStored(await createLeagueStorage(lg.id).get('playerScores'), null);
+      if (other && !Array.isArray(other)) {
+        Object.values(other).forEach(v => (v?.breakdown || []).forEach(e => { if (e.id) otherIds.add(e.id); }));
+      }
+    }
+    const foreignEntries = foreignPids.flatMap(pid => scores[pid].breakdown);
+    if (!foreignEntries.some(e => e.id && otherIds.has(e.id))) return; // not a copy
+
+    // The copy happened after the newest foreign entry was created
+    const copyTime = Math.max(...foreignEntries.map(e => Math.max(Number(e.id) || 0, Date.parse(e.date) || 0))) + 1000;
+    const snap = await backup.readSnapshotKey(`league_${leagueId}_playerScores`, new Date(copyTime).toISOString());
+    if (!snap?.found) {
+      console.error('Cross-league score repair: no snapshot before', new Date(copyTime).toISOString());
+      return;
+    }
+    const restored = parseStored({ value: snap.value }, null);
+    if (!restored || Array.isArray(restored)) return;
+
+    // Members' own entries added after the snapshot (not copied ones)
+    const snapTime = Date.parse(snap.createdAt);
+    let kept = 0;
+    memberIds.forEach(pid => {
+      (scores[pid]?.breakdown || []).forEach(e => {
+        const t = Date.parse(e.date) || Number(e.id) || 0;
+        if (t <= snapTime || (e.id && otherIds.has(e.id))) return;
+        const prev = restored[pid] || { totalPoints: 0, breakdown: [] };
+        const dup = (prev.breakdown || []).some(x => x.description === e.description && x.date === e.date && x.points === e.points);
+        if (dup) return;
+        const breakdown = [...(prev.breakdown || []), e];
+        restored[pid] = { ...prev, breakdown, totalPoints: breakdown.reduce((sum, x) => sum + x.points, 0) };
+        kept += 1;
+      });
+    });
+
+    await backup.createSnapshot('before-cross-league-score-repair');
+    await leagueStore.set('playerScores', JSON.stringify(restored));
+    setPlayerScores(restored);
+    await appendWordleAuditLog({
+      action: 'score-repair',
+      note: `Restored scores from snapshot "${snap.trigger}" (${snap.createdAt}) after a cross-league overwrite; removed copied entries for ${foreignPids.length} non-member(s); re-added ${kept} entr${kept === 1 ? 'y' : 'ies'} made since.`
+    });
+  };
+
   // One-time repair for the Sept 30 duplicate-challenge loop: each duplicate
   // release cancelled the previous challenge, orphaning players' attempts on it.
   // Moves each player's first real attempt onto the surviving challenge, re-links
@@ -2706,7 +2835,7 @@ export default function SurvivorFantasyApp() {
         }
         if (winnerId) {
           const prev = scores[winnerId] || { totalPoints: 0, breakdown: [] };
-          const breakdown = [...(prev.breakdown || []), { description: 'Wordle Challenge Winner', points: 3, date: new Date().toISOString(), type: 'challenge' }];
+          const breakdown = [...(prev.breakdown || []), { id: Date.now(), description: 'Wordle Challenge Winner', points: 3, date: new Date().toISOString(), type: 'challenge', challengeId: target.id }];
           scores[winnerId] = { ...prev, breakdown, totalPoints: breakdown.reduce((sum, e) => sum + e.points, 0) };
           const winnerPlayer = players.find(p => p.id === winnerId);
           notifs = [...notifs, {
@@ -2801,7 +2930,10 @@ export default function SurvivorFantasyApp() {
   // Auto-close an active scheduled challenge: finalize, mark as completed, log it
   const autoCloseWordle = async (challengeId, scheduleId, baseSchedule = wordleSchedule) => {
     await finalizeChallenge(challengeId);
-    const updatedSchedule = baseSchedule.map(e =>
+    // Re-read: an auto-release may have just claimed the next entry, and writing
+    // a stale copy un-claimed it (CROWN released twice in League 2 on Oct 19)
+    const stored = parseStored(await getLeagueStorage().get('wordleSchedule'), null);
+    const updatedSchedule = (Array.isArray(stored) ? stored : baseSchedule).map(e =>
       e.id === scheduleId ? { ...e, status: 'completed' } : e
     );
     setWordleSchedule(updatedSchedule);
@@ -5920,10 +6052,19 @@ function AdminPanel({ currentUser, players, leaguePlayers, setPlayers, contestan
       });
       migrated[pid] = { ...data, breakdown: updatedBreakdown };
     });
+    // In memory only. This used to save the whole score list from the screen to
+    // the current league; right after a league switch the screen could still hold
+    // the other league's scores, which overwrote League 2 with League 1's on Oct 19.
     if (needsMigration) {
-      setPlayerScores(migrated);
-      const leagueStore = getLeagueStorage();
-      leagueStore.set('playerScores', JSON.stringify(migrated)).catch(() => {});
+      setPlayerScores(prev => {
+        const next = {};
+        Object.entries(prev || {}).forEach(([pid, data]) => {
+          next[pid] = data?.breakdown
+            ? { ...data, breakdown: data.breakdown.map((entry, i) => (entry.id ? entry : { ...entry, id: Date.now() + i })) }
+            : data;
+        });
+        return next;
+      });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
